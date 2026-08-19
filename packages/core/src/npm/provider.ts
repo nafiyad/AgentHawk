@@ -7,8 +7,15 @@ import {
   SafeHttpClient,
   SafeHttpError,
 } from "../http/safe-http-client.js";
+import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
 const lifecycleNames = ["preinstall", "install", "postinstall", "prepack", "prepare"] as const;
+
+const registryTimestampSchema = z
+  .string()
+  .refine((value) => parseStrictIsoTimestamp(value) !== undefined, {
+    message: "Invalid registry timestamp.",
+  });
 
 const versionDocumentSchema = z
   .object({
@@ -37,7 +44,7 @@ const packumentSchema = z
     name: z.string().min(1),
     "dist-tags": z.record(z.string(), z.string()),
     versions: z.record(z.string(), versionDocumentSchema),
-    time: z.record(z.string(), z.string()).optional(),
+    time: z.record(z.string(), registryTimestampSchema).optional(),
   })
   .passthrough();
 
@@ -57,21 +64,24 @@ export interface NpmPackageMetadata {
 }
 
 export type NpmProviderResult =
-  | { ok: true; status: "ok"; data: NpmPackageMetadata }
-  | { ok: false; status: HttpErrorKind; message: string };
+  | { ok: true; status: "ok"; fetchedAt: string; data: NpmPackageMetadata }
+  | { ok: false; status: HttpErrorKind; fetchedAt: string; message: string };
 
 export interface NpmRegistryProviderOptions {
   httpClient?: JsonHttpClient;
+  now?: () => Date;
   registryUrl?: string;
 }
 
 export class NpmRegistryProvider {
   readonly id = "npm";
   readonly #httpClient: JsonHttpClient;
+  readonly #now: () => Date;
   readonly #registryUrl: URL;
 
   constructor(options: NpmRegistryProviderOptions = {}) {
     this.#httpClient = options.httpClient ?? new SafeHttpClient();
+    this.#now = options.now ?? (() => new Date());
     this.#registryUrl = normalizeRegistryUrl(options.registryUrl ?? "https://registry.npmjs.org/");
   }
 
@@ -80,16 +90,28 @@ export class NpmRegistryProvider {
       const document = await this.#httpClient.getJson(packageUrl(this.#registryUrl, input.name));
       const packument = packumentSchema.parse(document);
       if (packument.name !== input.name) {
-        return failure("invalid_response", "Registry package name did not match the request.");
+        return failure(
+          "invalid_response",
+          "Registry package name did not match the request.",
+          validClockValue(this.#now(), "Provider clock"),
+        );
       }
 
       const resolvedVersion = resolveVersion(packument, input.requestedSpec);
       if (!resolvedVersion) {
-        return failure("not_found", "Requested package version or selector was not found.");
+        return failure(
+          "not_found",
+          "Requested package version or selector was not found.",
+          validClockValue(this.#now(), "Provider clock"),
+        );
       }
       const version = packument.versions[resolvedVersion];
       if (!version || version.name !== input.name || version.version !== resolvedVersion) {
-        return failure("invalid_response", "Registry version metadata was inconsistent.");
+        return failure(
+          "invalid_response",
+          "Registry version metadata was inconsistent.",
+          validClockValue(this.#now(), "Provider clock"),
+        );
       }
 
       const repositoryUrl = normalizeRepository(version.repository);
@@ -99,6 +121,7 @@ export class NpmRegistryProvider {
       const dist = normalizeDist(version.dist);
 
       return {
+        fetchedAt: validClockValue(this.#now(), "Provider clock"),
         ok: true,
         status: "ok",
         data: {
@@ -117,12 +140,20 @@ export class NpmRegistryProvider {
       };
     } catch (error) {
       if (error instanceof SafeHttpError) {
-        return failure(error.kind, error.message);
+        return failure(error.kind, error.message, validClockValue(this.#now(), "Provider clock"));
       }
       if (error instanceof z.ZodError) {
-        return failure("invalid_response", "Registry returned metadata with an invalid shape.");
+        return failure(
+          "invalid_response",
+          "Registry returned metadata with an invalid shape.",
+          validClockValue(this.#now(), "Provider clock"),
+        );
       }
-      return failure("provider_error", "Registry evaluation failed.");
+      return failure(
+        "provider_error",
+        "Registry evaluation failed.",
+        validClockValue(this.#now(), "Provider clock"),
+      );
     }
   }
 }
@@ -177,8 +208,8 @@ function normalizeDist(
   };
 }
 
-function failure(status: HttpErrorKind, message: string): NpmProviderResult {
-  return { ok: false, status, message };
+function failure(status: HttpErrorKind, message: string, fetchedAt: string): NpmProviderResult {
+  return { fetchedAt, ok: false, status, message };
 }
 
 function isLoopback(hostname: string): boolean {

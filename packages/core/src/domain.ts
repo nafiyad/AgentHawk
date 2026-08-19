@@ -34,7 +34,7 @@ export type Evidence = z.infer<typeof evidenceSchema>;
 export const findingSchema = z
   .object({
     ruleId: z.string().regex(/^PG\d{3}$/u),
-    verdict: verdictSchema,
+    verdict: z.enum(["allow", "warn", "review", "block"]),
     severity: severitySchema,
     basis: findingBasisSchema,
     title: z.string().min(1),
