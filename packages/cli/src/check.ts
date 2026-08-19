@@ -12,6 +12,7 @@ import {
   type Verdict,
 } from "@agenthawk/core";
 import { parseDocument } from "yaml";
+import { escapeTerminal } from "./terminal.js";
 
 const maximumPolicyBytes = 256 * 1_024;
 
@@ -122,10 +123,10 @@ function defaultGetPackage(registryUrl?: string) {
     provider.getPackage({ ecosystem: "npm", name, requestedSpec });
 }
 
-async function readPolicyFile(path: string): Promise<unknown> {
+export async function readPolicyFile(path: string, openFile: typeof open = open): Promise<unknown> {
   let handle: FileHandle;
   try {
-    handle = await open(path, "r");
+    handle = await openFile(path, "r");
   } catch {
     throw new PolicyInputError("Policy file could not be read.");
   }
@@ -134,12 +135,23 @@ async function readPolicyFile(path: string): Promise<unknown> {
     if (!stats.isFile() || stats.size > maximumPolicyBytes) {
       throw new PolicyInputError("Policy file must be a regular file no larger than 256 KiB.");
     }
-    const buffer = Buffer.alloc(stats.size + 1);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    const buffer = Buffer.alloc(maximumPolicyBytes + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const chunk = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+      if (chunk.bytesRead === 0) break;
+      bytesRead += chunk.bytesRead;
+    }
     if (bytesRead > maximumPolicyBytes) {
       throw new PolicyInputError("Policy file exceeded the 256 KiB limit.");
     }
-    const document = parseDocument(buffer.subarray(0, bytesRead).toString("utf8"), {
+    let source: string;
+    try {
+      source = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, bytesRead));
+    } catch {
+      throw new PolicyInputError("Policy file must be valid UTF-8.");
+    }
+    const document = parseDocument(source, {
       prettyErrors: false,
       strict: true,
       uniqueKeys: true,
@@ -210,15 +222,6 @@ function renderTerminal(report: EvaluationReport): string {
     "No package was installed.",
   );
   return `${lines.join("\n")}\n`;
-}
-
-function escapeTerminal(value: string): string {
-  return Array.from(value, (character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 31 || (codePoint >= 127 && codePoint <= 159)
-      ? `\\u${codePoint.toString(16).padStart(4, "0")}`
-      : character;
-  }).join("");
 }
 
 function digest(value: unknown): string {

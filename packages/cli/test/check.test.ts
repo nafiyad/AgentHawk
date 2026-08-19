@@ -1,6 +1,10 @@
+import type { FileHandle } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { NpmProviderResult } from "@agenthawk/core";
 import { describe, expect, it } from "vitest";
-import { checkNpmPackage } from "../src/check.js";
+import { checkNpmPackage, readPolicyFile } from "../src/check.js";
 
 const now = new Date("2026-08-19T18:00:00.000Z");
 
@@ -179,5 +183,78 @@ describe("checkNpmPackage", () => {
     );
     expect(first.policyDigest).toBe(second.policyDigest);
     expect(first.evidenceDigest).toBe(second.evidenceDigest);
+  });
+
+  it("loads valid policy files at the exact size limit", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-"));
+    try {
+      const path = join(directory, "policy.yml");
+      const prefix = "version: 1\n#";
+      await writeFile(path, `${prefix}${"x".repeat(256 * 1_024 - prefix.length)}`, "utf8");
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", policyPath: path, strict: false },
+        { getPackage: async () => success(), now: () => now },
+      );
+      expect(result.exitCode).toBe(0);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    ["duplicate keys", Buffer.from("version: 1\nversion: 1\n")],
+    ["aliases", Buffer.from("version: &version 1\nmode: *version\n")],
+    ["invalid UTF-8", Buffer.from([0xff, 0xfe])],
+    ["oversized content", Buffer.alloc(256 * 1_024 + 1, 0x20)],
+  ])("rejects policy file boundary violation: %s", async (_label, contents) => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-"));
+    try {
+      const path = join(directory, "policy.yml");
+      await writeFile(path, contents);
+      const result = await checkNpmPackage("example-package", {
+        format: "json",
+        policyPath: path,
+        strict: false,
+      });
+      expect(result.exitCode).toBe(2);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects a directory used as a policy file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-"));
+    try {
+      const result = await checkNpmPackage("example-package", {
+        format: "json",
+        policyPath: directory,
+        strict: false,
+      });
+      expect(result.exitCode).toBe(2);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("continues bounded reads until EOF after short FileHandle reads", async () => {
+    const source = Buffer.from("version: 1\n");
+    let closed = false;
+    const handle = {
+      close: async () => {
+        closed = true;
+      },
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        const bytesRead = Math.min(2, length, source.length - position);
+        if (bytesRead > 0) source.copy(buffer, offset, position, position + bytesRead);
+        return { buffer, bytesRead };
+      },
+      stat: async () => ({ isFile: () => true, size: source.length }),
+    } as unknown as FileHandle;
+
+    await expect(readPolicyFile("ignored", async () => handle)).resolves.toMatchObject({
+      version: 1,
+    });
+    expect(closed).toBe(true);
   });
 });

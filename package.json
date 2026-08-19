@@ -16,7 +16,7 @@
     "lint": "biome check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm --filter @agenthawk/core build && pnpm -r typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.9",

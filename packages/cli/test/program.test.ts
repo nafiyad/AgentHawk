@@ -43,4 +43,18 @@ describe("CLI program", () => {
     expect(exitCode).toBe(0);
     expect(JSON.parse(output)).toMatchObject({ verdict: "allow" });
   });
+
+  it("escapes ANSI controls in Commander parser errors", async () => {
+    let errorOutput = "";
+    const program = createProgram({ writeError: (value) => (errorOutput += value) }).exitOverride();
+
+    await expect(
+      program.parseAsync(["check", "npm", "example-package", `--bad\u001b[31moption`], {
+        from: "user",
+      }),
+    ).rejects.toThrow();
+
+    expect(errorOutput).toContain("\\u001b[31m");
+    expect(errorOutput).not.toContain("\u001b");
+  });
 });
