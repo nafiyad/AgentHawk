@@ -21,11 +21,27 @@ interface ScanOptions extends Omit<CheckOptions, "format"> {
   format: OutputFormat;
 }
 
+interface ScanDependencies extends CheckDependencies {
+  checkPackage?: typeof checkNpmPackage;
+  inventory?: typeof inventoryDependencies;
+}
+
 export async function scanDependencies(
   options: ScanOptions,
-  dependencies: CheckDependencies = {},
+  dependencies: ScanDependencies = {},
 ): Promise<{ exitCode: number; output: string }> {
-  const inventory = await inventoryDependencies({
+  try {
+    return await scanDependenciesUnsafe(options, dependencies);
+  } catch {
+    return scanInternalFailure(options.format);
+  }
+}
+
+async function scanDependenciesUnsafe(
+  options: ScanOptions,
+  dependencies: ScanDependencies,
+): Promise<{ exitCode: number; output: string }> {
+  const inventory = await (dependencies.inventory ?? inventoryDependencies)({
     ...(options.cwd ? { cwd: options.cwd } : {}),
     format: "json",
   });
@@ -33,7 +49,7 @@ export async function scanDependencies(
   const direct = inventoryReportSchema.parse(JSON.parse(inventory.output)).dependencies;
   const results = await Promise.all(
     direct.map(async (item) => {
-      const checked = await checkNpmPackage(
+      const checked = await (dependencies.checkPackage ?? checkNpmPackage)(
         `${item.name}@${item.requestedSpec}`,
         { ...options, format: "json" },
         dependencies,
@@ -44,8 +60,7 @@ export async function scanDependencies(
     }),
   ).catch((error: unknown) => error);
   if (results instanceof ScanInputError) return results.result;
-  if (!Array.isArray(results))
-    return { exitCode: 4, output: "AgentHawk: dependency scan failed safely.\n" };
+  if (!Array.isArray(results)) return scanInternalFailure(options.format);
   const verdict = aggregateVerdict(results.map(({ report }) => report.verdict));
   const exitCode =
     verdict === "error" ? 3 : options.strict && ["review", "block"].includes(verdict) ? 1 : 0;
@@ -82,6 +97,23 @@ export async function scanDependencies(
   return Buffer.byteLength(output, "utf8") <= maximumScanOutputBytes
     ? { exitCode, output }
     : { exitCode: 2, output: "AgentHawk: scan output exceeds the 2 MiB limit.\n" };
+}
+
+function scanInternalFailure(format: OutputFormat): { exitCode: 4; output: string } {
+  const message = "Dependency scan failed safely.";
+  return {
+    exitCode: 4,
+    output:
+      format === "json"
+        ? `${JSON.stringify(
+            cliErrorReportSchema.parse({
+              schemaVersion: "1.0",
+              error: { code: "internal_error", message },
+              exitCode: 4,
+            }),
+          )}\n`
+        : `AgentHawk: ${message}\n`,
+  };
 }
 
 class ScanInputError extends Error {

@@ -121,6 +121,29 @@ describe("scanDependencies", () => {
     }
   });
 
+  it("envelopes malformed nested JSON as a redacted internal failure", async () => {
+    const result = await scanDependencies(
+      { format: "json", strict: true },
+      {
+        inventory: async () => ({
+          exitCode: 0,
+          output: `${JSON.stringify({
+            schemaVersion: "1.0",
+            manifest: "package.json",
+            dependencies: [{ name: "alpha", requestedSpec: "1.0.0", section: "dependencies" }],
+          })}\n`,
+        }),
+        checkPackage: async () => ({ exitCode: 4, output: "not-json" }),
+      },
+    );
+    expect(result.exitCode).toBe(4);
+    expect(JSON.parse(result.output)).toEqual({
+      schemaVersion: "1.0",
+      error: { code: "internal_error", message: "Dependency scan failed safely." },
+      exitCode: 4,
+    });
+  });
+
   it("preserves a non-overridable malicious-package block in the aggregate", async () => {
     const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
     try {

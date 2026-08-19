@@ -4,24 +4,29 @@ import { dependencyChangeSchema, dependencySectionSchema } from "./scan/dependen
 
 export const cliErrorCodeSchema = z.enum(["invalid_input", "output_limit", "internal_error"]);
 
-export const cliErrorReportSchema = z
+const inputErrorSchema = z
   .object({
-    schemaVersion: z.literal("1.0"),
-    error: z
-      .object({
-        code: cliErrorCodeSchema,
-        message: z.string().min(1),
-      })
-      .strict(),
-    exitCode: z.union([z.literal(2), z.literal(4)]),
+    code: z.enum(["invalid_input", "output_limit"]),
+    message: z.string().min(1).max(4_096),
   })
   .strict();
+const internalErrorSchema = z
+  .object({ code: z.literal("internal_error"), message: z.string().min(1).max(4_096) })
+  .strict();
+export const cliErrorReportSchema = z.discriminatedUnion("exitCode", [
+  z
+    .object({ schemaVersion: z.literal("1.0"), error: inputErrorSchema, exitCode: z.literal(2) })
+    .strict(),
+  z
+    .object({ schemaVersion: z.literal("1.0"), error: internalErrorSchema, exitCode: z.literal(4) })
+    .strict(),
+]);
 export type CliErrorReport = z.infer<typeof cliErrorReportSchema>;
 
 export const directDependencySchema = z
   .object({
-    name: z.string().min(1),
-    requestedSpec: z.string().min(1),
+    name: z.string().min(1).max(214),
+    requestedSpec: z.string().min(1).max(2_048),
     section: dependencySectionSchema,
   })
   .strict();
@@ -57,17 +62,39 @@ export type ScanReport = z.infer<typeof scanReportSchema>;
 export const diffReportSchema = z
   .object({
     schemaVersion: z.literal("1.0"),
-    base: z.string().min(1),
+    base: z.string().min(1).max(512),
     baseCommit: z.string().regex(/^[a-f0-9]{40,64}$/u),
     manifest: z.literal("package.json"),
     changes: z.array(dependencyChangeSchema).max(64),
     lockfiles: z
       .object({
-        present: z.array(z.string().min(1)),
-        updated: z.array(z.string().min(1)),
+        present: z
+          .array(
+            z.enum([
+              "package-lock.json",
+              "npm-shrinkwrap.json",
+              "pnpm-lock.yaml",
+              "yarn.lock",
+              "bun.lock",
+              "bun.lockb",
+            ]),
+          )
+          .max(6),
+        updated: z
+          .array(
+            z.enum([
+              "package-lock.json",
+              "npm-shrinkwrap.json",
+              "pnpm-lock.yaml",
+              "yarn.lock",
+              "bun.lock",
+              "bun.lockb",
+            ]),
+          )
+          .max(6),
       })
       .strict(),
-    findings: z.array(findingSchema),
+    findings: z.array(findingSchema).max(64),
     verdict: z.enum(["allow", "review"]),
   })
   .strict();

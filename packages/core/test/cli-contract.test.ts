@@ -16,6 +16,19 @@ describe("CLI JSON contract", () => {
     expect(cliErrorReportSchema.parse(error)).toEqual(error);
     expect(cliErrorReportSchema.safeParse({ ...error, detail: "unstable" }).success).toBe(false);
     expect(cliErrorReportSchema.safeParse({ ...error, exitCode: 0 }).success).toBe(false);
+    expect(
+      cliErrorReportSchema.safeParse({
+        ...error,
+        error: { ...error.error, code: "internal_error" },
+      }).success,
+    ).toBe(false);
+    expect(
+      cliErrorReportSchema.safeParse({
+        ...error,
+        error: { ...error.error, code: "output_limit" },
+        exitCode: 4,
+      }).success,
+    ).toBe(false);
   });
 
   it("bounds and strictly validates inventory reports", () => {
@@ -57,5 +70,12 @@ describe("CLI JSON contract", () => {
     };
     expect(diffReportSchema.parse(report)).toEqual(report);
     expect(diffReportSchema.safeParse({ ...report, verdict: "warn" }).success).toBe(false);
+    expect(diffReportSchema.safeParse({ ...report, base: "x".repeat(513) }).success).toBe(false);
+    expect(
+      diffReportSchema.safeParse({
+        ...report,
+        lockfiles: { present: ["unknown.lock"], updated: [] },
+      }).success,
+    ).toBe(false);
   });
 });
