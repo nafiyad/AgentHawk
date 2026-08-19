@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Local-first dependency admission control for AI coding agents.",
   "license": "Apache-2.0",
-  "packageManager": "pnpm@11.19.0",
+  "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=20"
   },

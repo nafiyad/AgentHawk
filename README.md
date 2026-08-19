@@ -24,7 +24,7 @@ pnpm build
 pnpm agenthawk --help
 ```
 
-Node.js 20 or newer and pnpm 11 are required.
+Node.js 20 or newer and pnpm 10 are required.
 
 ## Planned alpha scope
 
