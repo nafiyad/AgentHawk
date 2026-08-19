@@ -45,7 +45,7 @@ describe("scanDependencies", () => {
         },
       );
       const report = JSON.parse(result.output);
-      expect(contacted).toEqual(["alpha", "beta"]);
+      expect(contacted.toSorted()).toEqual(["alpha", "beta"]);
       expect(result.exitCode).toBe(1);
       expect(report.verdict).toBe("review");
       expect(report.results.map((entry: { section: string }) => entry.section)).toEqual([
@@ -53,6 +53,11 @@ describe("scanDependencies", () => {
         "devDependencies",
         "dependencies",
       ]);
+      expect(
+        report.results.map(
+          (entry: { report: { target: { name: string } } }) => entry.report.target.name,
+        ),
+      ).toEqual(["alpha", "beta", "local"]);
       expect(report.results[2].report.findings).toEqual(
         expect.arrayContaining([expect.objectContaining({ ruleId: "PG015" })]),
       );

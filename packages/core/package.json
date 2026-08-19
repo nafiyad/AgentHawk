@@ -4,7 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Deterministic policy and evidence engine for AgentHawk.",
+  "homepage": "https://github.com/nafiyad/AgentHawk#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nafiyad/AgentHawk.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/nafiyad/AgentHawk/issues"
+  },
   "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -12,7 +24,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

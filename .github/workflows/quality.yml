@@ -44,5 +44,8 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Verify package contents
+        run: pnpm package:check
+
       - name: CLI smoke test
         run: pnpm agenthawk --help
