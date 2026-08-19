@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { type FileHandle, open } from "node:fs/promises";
 import {
+  type ApprovalFile,
   agentHawkConfigSchema,
+  applyApprovals,
+  approvalFileSchema,
   type EvaluationReport,
   evaluatePolicy,
   evaluationReportSchema,
@@ -19,6 +22,7 @@ const maximumPolicyBytes = 256 * 1_024;
 export type OutputFormat = "json" | "terminal";
 
 export interface CheckOptions {
+  approvalsPath?: string;
   format: OutputFormat;
   policyPath?: string;
   registryUrl?: string;
@@ -34,6 +38,7 @@ export interface CheckDependencies {
   getPackage?: (name: string, requestedSpec: string) => Promise<NpmProviderResult>;
   now?: () => Date;
   readPolicy?: (path: string) => Promise<unknown>;
+  readApprovals?: (path: string, required: boolean) => Promise<unknown | undefined>;
 }
 
 export async function checkNpmPackage(
@@ -52,6 +57,14 @@ export async function checkNpmPackage(
     const config = options.strict
       ? agentHawkConfigSchema.parse({ ...baseConfig, mode: "strict" })
       : baseConfig;
+    const approvalPath = options.approvalsPath ?? ".agenthawk/approvals.yml";
+    const approvalDocument = await (dependencies.readApprovals ?? readApprovalFile)(
+      approvalPath,
+      options.approvalsPath !== undefined,
+    );
+    const approvals: ApprovalFile = approvalDocument
+      ? approvalFileSchema.parse(approvalDocument)
+      : approvalFileSchema.parse({ version: 1, approvals: [] });
 
     const providerResult =
       spec.type === "registry"
@@ -79,19 +92,30 @@ export async function checkNpmPackage(
             name: spec.name ?? "non-registry",
             requestedSpec: spec.raw,
           };
+    const approvalApplication = applyApprovals({
+      approvals,
+      config,
+      errors: evaluation.errors,
+      findings: evaluation.findings,
+      now,
+      target,
+    });
     const exitCode =
-      evaluation.verdict === "error" ? 3 : strictExitCode(evaluation.verdict, options.strict);
+      approvalApplication.verdict === "error"
+        ? 3
+        : strictExitCode(approvalApplication.verdict, options.strict);
     const report = evaluationReportSchema.parse({
       schemaVersion: "1.0",
       toolVersion: "0.0.0",
       generatedAt: now.toISOString(),
       target,
-      verdict: evaluation.verdict,
-      originalVerdict: evaluation.verdict,
+      verdict: approvalApplication.verdict,
+      originalVerdict: approvalApplication.originalVerdict,
       findings: evaluation.findings,
       providerStatus: providerStatuses(providerResult),
       policyDigest: digest(config),
       evidenceDigest: digest(normalizedEvidenceForDigest(providerResult, spec.type)),
+      ...(approvalApplication.approval ? { approval: approvalApplication.approval } : {}),
       exitCodeMeaning: exitMeaning(exitCode),
     });
     return {
@@ -124,16 +148,36 @@ function defaultGetPackage(registryUrl?: string) {
 }
 
 export async function readPolicyFile(path: string, openFile: typeof open = open): Promise<unknown> {
+  const document = await readYamlFile(path, true, openFile, "Policy");
+  if (document === undefined) throw new PolicyInputError("Policy file could not be read.");
+  return document;
+}
+
+export async function readApprovalFile(
+  path: string,
+  required: boolean,
+  openFile: typeof open = open,
+): Promise<unknown | undefined> {
+  return await readYamlFile(path, required, openFile, "Approval");
+}
+
+async function readYamlFile(
+  path: string,
+  required: boolean,
+  openFile: typeof open,
+  kind: "Approval" | "Policy",
+): Promise<unknown | undefined> {
   let handle: FileHandle;
   try {
     handle = await openFile(path, "r");
-  } catch {
-    throw new PolicyInputError("Policy file could not be read.");
+  } catch (error) {
+    if (!required && isMissingFile(error)) return undefined;
+    throw new PolicyInputError(`${kind} file could not be read.`);
   }
   try {
     const stats = await handle.stat();
     if (!stats.isFile() || stats.size > maximumPolicyBytes) {
-      throw new PolicyInputError("Policy file must be a regular file no larger than 256 KiB.");
+      throw new PolicyInputError(`${kind} file must be a regular file no larger than 256 KiB.`);
     }
     const buffer = Buffer.alloc(maximumPolicyBytes + 1);
     let bytesRead = 0;
@@ -143,28 +187,32 @@ export async function readPolicyFile(path: string, openFile: typeof open = open)
       bytesRead += chunk.bytesRead;
     }
     if (bytesRead > maximumPolicyBytes) {
-      throw new PolicyInputError("Policy file exceeded the 256 KiB limit.");
+      throw new PolicyInputError(`${kind} file exceeded the 256 KiB limit.`);
     }
     let source: string;
     try {
       source = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, bytesRead));
     } catch {
-      throw new PolicyInputError("Policy file must be valid UTF-8.");
+      throw new PolicyInputError(`${kind} file must be valid UTF-8.`);
     }
     const document = parseDocument(source, {
       prettyErrors: false,
       strict: true,
       uniqueKeys: true,
     });
-    if (document.errors.length > 0) throw new PolicyInputError("Policy file is invalid YAML.");
+    if (document.errors.length > 0) throw new PolicyInputError(`${kind} file is invalid YAML.`);
     try {
       return document.toJS({ maxAliasCount: 0 });
     } catch {
-      throw new PolicyInputError("Policy file contains unsupported aliases.");
+      throw new PolicyInputError(`${kind} file contains unsupported aliases.`);
     }
   } finally {
     await handle.close();
   }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "ENOENT");
 }
 
 function providerStatuses(result: NpmProviderResult | undefined): ProviderStatus[] {
@@ -214,6 +262,12 @@ function renderTerminal(report: EvaluationReport): string {
     );
   }
   if (report.findings.length === 0) lines.push("No policy findings.");
+  if (report.approval) {
+    lines.push(
+      "",
+      `Approval: ${escapeTerminal(report.approval.approvedBy)} (expires ${report.approval.expiresAt})`,
+    );
+  }
   lines.push(
     "",
     `Policy: ${report.policyDigest}`,

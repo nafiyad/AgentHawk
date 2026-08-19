@@ -1,4 +1,12 @@
 export {
+  type ApprovalApplication,
+  type ApprovalFile,
+  type ApprovalRecord,
+  applyApprovals,
+  approvalFileSchema,
+  approvalRecordSchema,
+} from "./approvals/index.js";
+export {
   type AgentHawkConfig,
   agentHawkConfigSchema,
   type PolicyAction,

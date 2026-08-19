@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing, registry metadata retrieval, and deterministic policy evaluation. Approvals, cache, diff scanning, and GitHub reporting will extend it in later milestones.
+This threat model covers npm request parsing, registry metadata retrieval, deterministic policy evaluation, and exact expiring approvals. Cache, diff scanning, and GitHub reporting will extend it later.
 
 ## Assets
 
@@ -38,6 +38,8 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 | Policy YAML exhausts memory or expands aliases | Require a regular file, enforce a 256 KiB bound, reject duplicate keys and aliases | Local filesystem races remain possible within the bounded read |
 | Provider diagnostics leak through reports or digests | Fixed rendered messages and normalized failure digest inputs | Timing and provider status remain observable by design |
 | Hostile text injects terminal controls | Escape C0/C1 control characters before terminal output | Terminal behavior outside standard control ranges is platform-dependent |
+| Broad, stale, or forged approval weakens policy | Strict exact coordinates, required reason/times, maximum validity, and preserved findings | Repository writers can still authorize approvable review findings |
+| Approval overrides a hard security result | Resolve only approvable review findings; never resolve blocks, errors, or non-approvable reviews | Incorrect `approvable` classification in a future rule remains a code-review risk |
 
 ## Unsupported claims
 
