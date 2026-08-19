@@ -218,13 +218,18 @@ describe("checkNpmPackage", () => {
     });
 
     expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.output)).toMatchObject({
+      schemaVersion: "1.0",
+      error: { code: "invalid_input" },
+      exitCode: 2,
+    });
     expect(result.output).not.toContain("password");
   });
 
   it("returns a redacted exit 4 for unexpected internal failures", async () => {
     const result = await checkNpmPackage(
       "example-package",
-      { format: "terminal", strict: false },
+      { format: "json", strict: false },
       {
         getPackage: async () => {
           throw new Error("token=internal-secret");
@@ -234,7 +239,13 @@ describe("checkNpmPackage", () => {
       },
     );
 
-    expect(result).toEqual({ exitCode: 4, output: "AgentHawk: Unexpected internal error.\n" });
+    expect(result.exitCode).toBe(4);
+    expect(JSON.parse(result.output)).toEqual({
+      schemaVersion: "1.0",
+      error: { code: "internal_error", message: "Unexpected internal error." },
+      exitCode: 4,
+    });
+    expect(result.output).not.toContain("internal-secret");
   });
 
   it("classifies non-registry input without contacting npm", async () => {

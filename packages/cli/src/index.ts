@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { createProgram } from "./program.js";
+import { runCli } from "./runner.js";
 
-await createProgram().parseAsync(process.argv);
+await runCli(process.argv);
 
-export { createProgram };
+export { createProgram, runCli };

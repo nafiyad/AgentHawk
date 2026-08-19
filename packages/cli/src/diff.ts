@@ -3,9 +3,12 @@ import { constants } from "node:fs";
 import { type FileHandle, lstat, open } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
+  cliErrorReportSchema,
   compareDirectDependencies,
   type DependencyChange,
+  diffReportSchema,
   directDependencies,
+  inventoryReportSchema,
   packageManifestSchema,
 } from "@agenthawk/core";
 import { parseDocument } from "yaml";
@@ -54,11 +57,11 @@ export async function inventoryDependencies(options: ScanOptions): Promise<DiffR
   try {
     const cwd = resolve(options.cwd ?? process.cwd());
     const manifest = await readManifest(join(cwd, "package.json"));
-    const report = {
+    const report = inventoryReportSchema.parse({
       schemaVersion: "1.0",
       manifest: "package.json",
       dependencies: directDependencies(manifest),
-    };
+    });
     return { exitCode: 0, output: render(report, options.format) };
   } catch (error) {
     return inputFailure(error, options.format);
@@ -120,7 +123,7 @@ export async function diffDependencies(
         ]
       : [];
     const verdict = findings.length > 0 ? "review" : "allow";
-    const report = {
+    const report = diffReportSchema.parse({
       schemaVersion: "1.0",
       base: options.base,
       baseCommit,
@@ -129,7 +132,7 @@ export async function diffDependencies(
       lockfiles: { present, updated: usableUpdates },
       findings,
       verdict,
-    };
+    });
     return {
       exitCode: options.strict && verdict === "review" ? 1 : 0,
       output: render(report, options.format),
@@ -255,13 +258,20 @@ function render(report: object, format: DiffOutputFormat): string {
 }
 
 function inputFailure(error: unknown, format: DiffOutputFormat): DiffResult {
-  const message =
-    error instanceof DiffInputError ? error.message : "Dependency diff failed safely.";
+  const invalid = error instanceof DiffInputError;
+  const message = invalid ? error.message : "Dependency diff failed safely.";
+  const exitCode = invalid ? 2 : 4;
   return {
-    exitCode: 2,
+    exitCode,
     output:
       format === "json"
-        ? `${JSON.stringify({ error: { code: "invalid_input", message } })}\n`
+        ? `${JSON.stringify(
+            cliErrorReportSchema.parse({
+              schemaVersion: "1.0",
+              error: { code: invalid ? "invalid_input" : "internal_error", message },
+              exitCode,
+            }),
+          )}\n`
         : `AgentHawk: ${escapeTerminal(message)}\n`,
   };
 }

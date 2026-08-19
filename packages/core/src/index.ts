@@ -15,6 +15,18 @@ export {
   type MetadataCacheOptions,
 } from "./cache/metadata-cache.js";
 export {
+  type CliErrorReport,
+  cliErrorCodeSchema,
+  cliErrorReportSchema,
+  type DiffReport,
+  diffReportSchema,
+  directDependencySchema,
+  type InventoryReport,
+  inventoryReportSchema,
+  type ScanReport,
+  scanReportSchema,
+} from "./cli-contract.js";
+export {
   type AgentHawkConfig,
   agentHawkConfigSchema,
   type PolicyAction,

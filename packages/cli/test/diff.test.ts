@@ -266,13 +266,18 @@ describe("diffDependencies", () => {
     }
   });
 
-  it("redacts unexpected injected Git failures", async () => {
+  it("redacts and classifies unexpected injected Git failures", async () => {
     const root = await repository();
     const result = await diffDependencies(
-      { base: "HEAD", cwd: root, format: "terminal", strict: true },
+      { base: "HEAD", cwd: root, format: "json", strict: true },
       { git: { run: async () => Promise.reject(new Error("secret git detail")) } },
     );
-    expect(result.output).toContain("failed safely");
+    expect(result.exitCode).toBe(4);
+    expect(JSON.parse(result.output)).toMatchObject({
+      schemaVersion: "1.0",
+      error: { code: "internal_error", message: "Dependency diff failed safely." },
+      exitCode: 4,
+    });
     expect(result.output).not.toContain("secret");
   });
 

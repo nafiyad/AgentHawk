@@ -1,4 +1,10 @@
-import type { EvaluationReport } from "@agenthawk/core";
+import {
+  cliErrorReportSchema,
+  type EvaluationReport,
+  evaluationReportSchema,
+  inventoryReportSchema,
+  scanReportSchema,
+} from "@agenthawk/core";
 import {
   type CheckDependencies,
   type CheckOptions,
@@ -15,46 +21,68 @@ interface ScanOptions extends Omit<CheckOptions, "format"> {
   format: OutputFormat;
 }
 
+interface ScanDependencies extends CheckDependencies {
+  checkPackage?: typeof checkNpmPackage;
+  inventory?: typeof inventoryDependencies;
+}
+
 export async function scanDependencies(
   options: ScanOptions,
-  dependencies: CheckDependencies = {},
+  dependencies: ScanDependencies = {},
 ): Promise<{ exitCode: number; output: string }> {
-  const inventory = await inventoryDependencies({
+  try {
+    return await scanDependenciesUnsafe(options, dependencies);
+  } catch {
+    return scanInternalFailure(options.format);
+  }
+}
+
+async function scanDependenciesUnsafe(
+  options: ScanOptions,
+  dependencies: ScanDependencies,
+): Promise<{ exitCode: number; output: string }> {
+  const inventory = await (dependencies.inventory ?? inventoryDependencies)({
     ...(options.cwd ? { cwd: options.cwd } : {}),
     format: "json",
   });
   if (inventory.exitCode !== 0) return inventory;
-  const direct = JSON.parse(inventory.output).dependencies as Array<{
-    name: string;
-    requestedSpec: string;
-    section: string;
-  }>;
+  const direct = inventoryReportSchema.parse(JSON.parse(inventory.output)).dependencies;
   const results = await Promise.all(
     direct.map(async (item) => {
-      const checked = await checkNpmPackage(
+      const checked = await (dependencies.checkPackage ?? checkNpmPackage)(
         `${item.name}@${item.requestedSpec}`,
         { ...options, format: "json" },
         dependencies,
       );
-      const parsed = JSON.parse(checked.output) as EvaluationReport | { error: unknown };
-      if (!("schemaVersion" in parsed)) throw new ScanInputError(checked);
-      return { report: parsed, section: item.section };
+      const parsed = evaluationReportSchema.safeParse(JSON.parse(checked.output));
+      if (!parsed.success) throw new ScanInputError(checked);
+      return { report: parsed.data, section: item.section };
     }),
   ).catch((error: unknown) => error);
   if (results instanceof ScanInputError) return results.result;
-  if (!Array.isArray(results))
-    return { exitCode: 4, output: "AgentHawk: dependency scan failed safely.\n" };
+  if (!Array.isArray(results)) return scanInternalFailure(options.format);
   const verdict = aggregateVerdict(results.map(({ report }) => report.verdict));
   const exitCode =
     verdict === "error" ? 3 : options.strict && ["review", "block"].includes(verdict) ? 1 : 0;
-  const report = { schemaVersion: "1.0", manifest: "package.json", verdict, results };
+  const report = scanReportSchema.parse({
+    schemaVersion: "1.0",
+    manifest: "package.json",
+    verdict,
+    results,
+  });
   if (options.format === "json") {
     const output = `${JSON.stringify(report, null, 2)}\n`;
     return Buffer.byteLength(output, "utf8") <= maximumScanOutputBytes
       ? { exitCode, output }
       : {
           exitCode: 2,
-          output: `${JSON.stringify({ error: "Scan output exceeds the 2 MiB limit." })}\n`,
+          output: `${JSON.stringify(
+            cliErrorReportSchema.parse({
+              schemaVersion: "1.0",
+              error: { code: "output_limit", message: "Scan output exceeds the 2 MiB limit." },
+              exitCode: 2,
+            }),
+          )}\n`,
         };
   }
   const lines = [`AgentHawk dependency scan: ${verdict.toUpperCase()}`];
@@ -69,6 +97,23 @@ export async function scanDependencies(
   return Buffer.byteLength(output, "utf8") <= maximumScanOutputBytes
     ? { exitCode, output }
     : { exitCode: 2, output: "AgentHawk: scan output exceeds the 2 MiB limit.\n" };
+}
+
+function scanInternalFailure(format: OutputFormat): { exitCode: 4; output: string } {
+  const message = "Dependency scan failed safely.";
+  return {
+    exitCode: 4,
+    output:
+      format === "json"
+        ? `${JSON.stringify(
+            cliErrorReportSchema.parse({
+              schemaVersion: "1.0",
+              error: { code: "internal_error", message },
+              exitCode: 4,
+            }),
+          )}\n`
+        : `AgentHawk: ${message}\n`,
+  };
 }
 
 class ScanInputError extends Error {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createProgram } from "../src/program.js";
+import { runCli } from "../src/runner.js";
 
 describe("CLI program", () => {
   it("exposes a stable name and description", () => {
@@ -62,5 +63,30 @@ describe("CLI program", () => {
 
     expect(errorOutput).toContain("\\u001b[31m");
     expect(errorOutput).not.toContain("\u001b");
+  });
+});
+
+describe("CLI runner JSON parser failures", () => {
+  it.each([
+    ["missing check spec", ["check", "npm", "--format", "json"]],
+    ["unknown scan option", ["scan", "--format", "json", "--unknown"]],
+    ["missing diff base", ["diff", "--format", "json"]],
+  ])("envelopes %s", async (_label, args) => {
+    let output = "";
+    let exitCode: number | undefined;
+    await runCli(["node", "agenthawk", ...args], {
+      setExitCode: (value) => {
+        exitCode = value;
+      },
+      write: (value) => {
+        output += value;
+      },
+    });
+    expect(exitCode).toBe(2);
+    expect(JSON.parse(output)).toEqual({
+      schemaVersion: "1.0",
+      error: { code: "invalid_input", message: "Command-line arguments are invalid." },
+      exitCode: 2,
+    });
   });
 });
