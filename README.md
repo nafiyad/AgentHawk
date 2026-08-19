@@ -40,6 +40,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 
 See [approvals](docs/approvals.md) for the exact exception model.
 See [GitHub Actions integration](docs/github-action.md) for the read-only pull-request workflow and opt-in idempotent comments.
+See [AI agent integrations](docs/agent-integrations.md) for copyable Codex, Claude Code, Cursor, and generic fail-closed instruction templates.
 
 ## Check a proposed dependency
 
