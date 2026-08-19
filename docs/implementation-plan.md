@@ -32,7 +32,7 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 7. **Approvals — complete**: exact match/expiry/reason, preserved findings, non-overridable malicious block.
 8. **Cache/offline — complete**: public metadata only, provider-specific TTLs, strict bounded schema, safe hashed keys, staleness/corruption handling, `--offline`, `--no-cache`.
 9. **Scan/diff — in progress**: bounded root direct dependency inventory, additions/version/section changes, PG014 lockfile correlation, argument-array Git, temporary-repository tests.
-10. **GitHub Action**: minimal permissions, safe summary/artifact, optional idempotent comment.
+10. **GitHub Action — in progress**: read-only pull-request evaluation, safe bounded summary/artifact, isolated opt-in idempotent comment.
 11. **Agent templates**: Codex/Claude/Cursor/generic instructions after JSON stability.
 
 Every milestone updates docs, reviews its diff, runs focused tests and the full available quality gate, scans staged content for secrets, commits, pushes, and verifies the exact remote head.

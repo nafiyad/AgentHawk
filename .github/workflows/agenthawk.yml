@@ -1,0 +1,78 @@
+name: AgentHawk
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+      - npm-shrinkwrap.json
+      - pnpm-lock.yaml
+      - yarn.lock
+      - bun.lock
+      - bun.lockb
+      - .agenthawk/**
+      - .github/workflows/agenthawk*.yml
+      - packages/cli/**
+      - packages/core/**
+      - scripts/render-github-summary.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install AgentHawk dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build AgentHawk
+        run: pnpm build
+
+      - name: Evaluate dependency diff
+        id: agenthawk
+        env:
+          AGENTHAWK_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p .agenthawk/reports
+          set +e
+          node packages/cli/dist/index.js diff --base "$AGENTHAWK_BASE" --strict --format json > .agenthawk/reports/dependency-diff.json
+          status=$?
+          set -e
+          if [ "$status" -gt 1 ]; then
+            exit "$status"
+          fi
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Write bounded job summary
+        if: always() && hashFiles('.agenthawk/reports/dependency-diff.json') != ''
+        run: node scripts/render-github-summary.mjs .agenthawk/reports/dependency-diff.json "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload normalized report
+        if: always() && hashFiles('.agenthawk/reports/dependency-diff.json') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agenthawk-dependency-diff
+          path: .agenthawk/reports/dependency-diff.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce AgentHawk verdict
+        if: steps.agenthawk.outputs.exit_code == '1'
+        run: exit 1

@@ -1,0 +1,55 @@
+name: AgentHawk PR comment
+
+on:
+  workflow_run:
+    workflows:
+      - AgentHawk
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: none
+  pull-requests: write
+
+jobs:
+  comment:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion != 'cancelled' &&
+      vars.AGENTHAWK_PR_COMMENT == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download normalized AgentHawk report
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: agenthawk-dependency-diff
+          path: ${{ runner.temp }}/agenthawk-report
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Update AgentHawk pull request comment
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          AGENTHAWK_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          AGENTHAWK_REPORT: ${{ runner.temp }}/agenthawk-report/dependency-diff.json
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- agenthawk-dependency-diff:v1 -->';
+            const issue_number = Number(process.env.AGENTHAWK_PR_NUMBER);
+            if (!Number.isSafeInteger(issue_number) || issue_number < 1) throw new Error('Invalid pull request number.');
+            const source = fs.readFileSync(process.env.AGENTHAWK_REPORT);
+            if (source.byteLength > 2_097_152) throw new Error('AgentHawk report exceeds 2 MiB.');
+            const report = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(source));
+            if (report.schemaVersion !== '1.0' || !Array.isArray(report.changes) || !Array.isArray(report.findings)) throw new Error('Invalid AgentHawk report schema.');
+            const clean = (value) => [...String(value)].map((character) => { const code = character.codePointAt(0); return (code < 32 && code !== 9) || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069) ? `\\u${code.toString(16).padStart(4, '0')}` : character; }).join('').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('|', '\\|').replaceAll('\r', ' ').replaceAll('\n', ' ').slice(0, 2_048);
+            const lines = [marker, '## AgentHawk dependency diff', '', `**Verdict:** ${clean(report.verdict)}`, '', '| Change | Dependency | Section |', '|---|---|---|'];
+            for (const change of report.changes.slice(0, 64)) lines.push(`| ${clean(change.kind)} | \`${clean(change.name)}@${clean(change.requestedSpec)}\` | ${clean(change.section)} |`);
+            for (const finding of report.findings.slice(0, 32)) lines.push('', `- **${clean(finding.ruleId)}:** ${clean(finding.message)}`);
+            const body = lines.join('\n').slice(0, 60_000);
+            const comments = await github.paginate(github.rest.issues.listComments, { owner: context.repo.owner, repo: context.repo.repo, issue_number, per_page: 100 });
+            const prior = comments.find((comment) => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
+            if (prior) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: prior.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number, body });
