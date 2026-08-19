@@ -29,6 +29,22 @@ describe("directDependencies", () => {
       expect(() => packageManifestSchema.parse(manifest)).toThrow();
     },
   );
+
+  it("bounds aggregate dependency count and individual names/specifiers", () => {
+    expect(() =>
+      packageManifestSchema.parse({
+        dependencies: Object.fromEntries(
+          Array.from({ length: 65 }, (_, index) => [`pkg-${index}`, "1"]),
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      packageManifestSchema.parse({ dependencies: { ["x".repeat(215)]: "1" } }),
+    ).toThrow();
+    expect(() =>
+      packageManifestSchema.parse({ dependencies: { valid: "x".repeat(2_049) } }),
+    ).toThrow();
+  });
 });
 
 describe("compareDirectDependencies", () => {

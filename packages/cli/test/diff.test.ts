@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -120,6 +120,68 @@ describe("diffDependencies", () => {
       lockfiles: { present: ["pnpm-lock.yaml"], updated: ["pnpm-lock.yaml"] },
       verdict: "allow",
     });
+  });
+
+  it("PG014 rejects a dependency addition paired only with lockfile deletion", async () => {
+    const root = await repository();
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({ dependencies: { added: "1.0.0" } }),
+    );
+    await unlink(join(root, "pnpm-lock.yaml"));
+    const result = await diffDependencies({
+      base: "HEAD",
+      cwd: root,
+      format: "json",
+      strict: true,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.output)).toMatchObject({
+      findings: [expect.objectContaining({ ruleId: "PG014" })],
+      lockfiles: { present: [], updated: [] },
+    });
+  });
+
+  it("ignores inherited Git repository redirection variables", async () => {
+    const root = await repository();
+    const other = await repository();
+    const previousGitDir = process.env.GIT_DIR;
+    const previousWorkTree = process.env.GIT_WORK_TREE;
+    process.env.GIT_DIR = join(other, ".git");
+    process.env.GIT_WORK_TREE = other;
+    try {
+      await writeFile(join(root, "package.json"), JSON.stringify({ dependencies: { added: "1" } }));
+      const result = await diffDependencies({
+        base: "HEAD",
+        cwd: root,
+        format: "json",
+        strict: true,
+      });
+      expect(JSON.parse(result.output).changes).toEqual([
+        { kind: "added", name: "added", requestedSpec: "1", section: "dependencies" },
+      ]);
+    } finally {
+      if (previousGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previousGitDir;
+      if (previousWorkTree === undefined) delete process.env.GIT_WORK_TREE;
+      else process.env.GIT_WORK_TREE = previousWorkTree;
+    }
+  });
+
+  it("rejects a root package.json symlink", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-symlink-"));
+    const externalRoot = await mkdtemp(join(tmpdir(), "agenthawk-external-"));
+    const external = join(externalRoot, "outside.json");
+    roots.push(root, externalRoot);
+    await writeFile(external, JSON.stringify({ dependencies: { escaped: "1" } }));
+    try {
+      await symlink(external, join(root, "package.json"), "file");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      throw error;
+    }
+    const result = await inventoryDependencies({ cwd: root, format: "json" });
+    expect(result.exitCode).toBe(2);
   });
 
   it("allows an unchanged manifest and renders terminal review output safely", async () => {

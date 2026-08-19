@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { type FileHandle, open } from "node:fs/promises";
+import { type FileHandle, lstat, open } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
   compareDirectDependencies,
@@ -101,7 +101,8 @@ export async function diffDependencies(
     const changes = compareDirectDependencies(baseManifest, currentManifest);
     const present = await presentLockfiles(repositoryRoot);
     const updated = parseNullSeparated(changedLockfiles).filter(isLockfileName);
-    const missingLockfileUpdate = changes.length > 0 && updated.length === 0;
+    const usableUpdates = updated.filter((name) => present.includes(name));
+    const missingLockfileUpdate = changes.length > 0 && usableUpdates.length === 0;
     const findings = missingLockfileUpdate
       ? [
           {
@@ -125,7 +126,7 @@ export async function diffDependencies(
       baseCommit,
       manifest: "package.json",
       changes,
-      lockfiles: { present, updated },
+      lockfiles: { present, updated: usableUpdates },
       findings,
       verdict,
     };
@@ -152,6 +153,15 @@ export function parseManifest(source: string): ReturnType<typeof packageManifest
 }
 
 async function readManifest(path: string): Promise<ReturnType<typeof packageManifestSchema.parse>> {
+  try {
+    const pathStats = await lstat(path);
+    if (!pathStats.isFile() || pathStats.isSymbolicLink()) {
+      throw new DiffInputError("package.json must be a regular non-symlink file.");
+    }
+  } catch (error) {
+    if (error instanceof DiffInputError) throw error;
+    throw new DiffInputError("Unable to open package.json.");
+  }
   let handle: FileHandle;
   try {
     handle = await open(path, constants.O_RDONLY);
@@ -188,6 +198,8 @@ async function presentLockfiles(repositoryRoot: string): Promise<string[]> {
   const results = await Promise.all(
     lockfileNames.map(async (name) => {
       try {
+        const pathStats = await lstat(join(repositoryRoot, name));
+        if (!pathStats.isFile() || pathStats.isSymbolicLink()) return undefined;
         const handle = await open(join(repositoryRoot, name), constants.O_RDONLY);
         try {
           return (await handle.stat()).isFile() ? name : undefined;
@@ -259,19 +271,14 @@ class DiffInputError extends Error {}
 const defaultGitRunner: GitRunner = {
   run: async (args, cwd) =>
     await new Promise<string>((resolveOutput, reject) => {
+      const environment = gitEnvironment();
       execFile(
         "git",
         ["-c", "core.pager=cat", "-c", "diff.external=", "--no-pager", ...args],
         {
           cwd,
-          encoding: "utf8",
-          env: {
-            ...process.env,
-            GIT_CONFIG_NOSYSTEM: "1",
-            GIT_OPTIONAL_LOCKS: "0",
-            GIT_PAGER: "cat",
-            GIT_TERMINAL_PROMPT: "0",
-          },
+          encoding: "buffer",
+          env: environment,
           maxBuffer: maximumGitOutputBytes,
           timeout: gitTimeoutMilliseconds,
           windowsHide: true,
@@ -279,8 +286,28 @@ const defaultGitRunner: GitRunner = {
         (error, stdout) => {
           if (error)
             reject(new DiffInputError("Git operation failed; verify the repository and base ref."));
-          else resolveOutput(stdout);
+          else {
+            try {
+              resolveOutput(new TextDecoder("utf-8", { fatal: true }).decode(stdout));
+            } catch {
+              reject(new DiffInputError("Git output must be valid UTF-8."));
+            }
+          }
         },
       );
     }),
 };
+
+function gitEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const key of Object.keys(environment)) {
+    if (key.startsWith("GIT_")) delete environment[key];
+  }
+  return {
+    ...environment,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_PAGER: "cat",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+}

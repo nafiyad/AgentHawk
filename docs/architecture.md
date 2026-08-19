@@ -90,9 +90,9 @@ Terminal rendering escapes control and ANSI characters. JSON output is validated
 
 ## Scan and Git diff boundary
 
-`agenthawk scan` reads only the repository-root `package.json`, bounded to 1 MiB and requiring a regular UTF-8 JSON file without duplicate keys. It evaluates each direct `dependencies`, `devDependencies`, `optionalDependencies`, and `peerDependencies` entry through the same npm/OSV/policy/approval pipeline as `check npm`, preserves the manifest section, and combines verdicts by deterministic precedence. It does not traverse installed packages or execute manifest scripts.
+`agenthawk scan` reads only the repository-root `package.json`, bounded to 1 MiB and requiring a regular non-symlink UTF-8 JSON file without duplicate keys. It accepts at most 64 direct entries with bounded names/specifiers, evaluates them as one bounded parallel set through the same npm/OSV/policy/approval pipeline as `check npm`, preserves the manifest section, combines verdicts by deterministic precedence, and caps serialized output at 2 MiB. It does not traverse installed packages or execute manifest scripts.
 
-`agenthawk diff --base <git-ref>` resolves the requested ref to an immutable commit before reading the base manifest. Git is invoked directly with argument arrays, bounded output and time, disabled external diff/text conversion, no pager, no terminal prompts, and no shell. The comparison reports direct additions, requested-version changes, and section moves. PG014 reviews dependency changes when none of the recognized root lockfiles changed relative to the same base commit. This establishes correlation, not proof that a lockfile is semantically correct.
+`agenthawk diff --base <git-ref>` resolves the requested ref to an immutable commit before reading the base manifest. Git is invoked directly with argument arrays, a sanitized Git environment, fatal UTF-8 decoding, bounded output and time, disabled external diff/text conversion, no pager, no terminal prompts, and no shell. The comparison reports direct additions, requested-version changes, and section moves. PG014 requires at least one recognized root lockfile to be both updated and still present as a regular non-symlink file. This establishes correlation, not proof that a lockfile is semantically correct.
 
 ## Approval boundary
 

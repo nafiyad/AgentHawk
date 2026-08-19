@@ -8,7 +8,8 @@ export const dependencySectionSchema = z.enum([
 ]);
 export type DependencySection = z.infer<typeof dependencySectionSchema>;
 
-const dependencyMapSchema = z.record(z.string().min(1), z.string().min(1));
+const maximumDirectDependencies = 64;
+const dependencyMapSchema = z.record(z.string().min(1).max(214), z.string().min(1).max(2_048));
 
 export const packageManifestSchema = z
   .object({
@@ -18,7 +19,19 @@ export const packageManifestSchema = z
     optionalDependencies: dependencyMapSchema.optional(),
     peerDependencies: dependencyMapSchema.optional(),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((manifest, context) => {
+    const count = dependencySectionSchema.options.reduce(
+      (total, section) => total + Object.keys(manifest[section] ?? {}).length,
+      0,
+    );
+    if (count > maximumDirectDependencies) {
+      context.addIssue({
+        code: "custom",
+        message: "package.json may contain at most 64 direct dependencies.",
+      });
+    }
+  });
 export type PackageManifest = z.infer<typeof packageManifestSchema>;
 
 export const dependencyChangeSchema = z
