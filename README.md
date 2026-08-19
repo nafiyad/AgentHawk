@@ -4,7 +4,7 @@
 
 AgentHawk is a local-first, deterministic security gate that checks dependencies proposed by AI coding agents before they enter a repository.
 
-> **Project status:** early development. The CLI foundation and public schemas exist; dependency evaluation is not implemented yet. Do not use this release as a security control.
+> **Project status:** early development. npm request parsing and normalized registry metadata retrieval are implemented in the core; policy decisions and the `check` command are not. Do not use this release as a security control.
 
 ## Why AgentHawk
 
@@ -30,7 +30,7 @@ Node.js 20 or newer and pnpm 10 are required.
 
 The first alpha focuses on npm dependency admission: package/version resolution, age and lifecycle-script signals, deprecation and repository metadata, OSV evidence, deterministic policy, exact expiring approvals, stable JSON, and strict CI exit codes.
 
-See [the implementation plan](docs/implementation-plan.md) for milestone sequencing. Security assumptions and limitations will be maintained in `docs/threat-model.md` as the core is implemented.
+See [the architecture](docs/architecture.md), [threat model](docs/threat-model.md), and [implementation plan](docs/implementation-plan.md) for current boundaries and milestone sequencing.
 
 ## Security and privacy posture
 

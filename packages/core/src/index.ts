@@ -22,3 +22,25 @@ export {
   type Verdict,
   verdictSchema,
 } from "./domain.js";
+export {
+  type HttpErrorKind,
+  type JsonHttpClient,
+  SafeHttpClient,
+  type SafeHttpClientOptions,
+  SafeHttpError,
+} from "./http/safe-http-client.js";
+export {
+  type NpmPackageMetadata,
+  type NpmProviderResult,
+  NpmRegistryProvider,
+  type NpmRegistryProviderOptions,
+} from "./npm/provider.js";
+export {
+  type NonRegistryKind,
+  type NpmNonRegistrySpec,
+  type NpmRegistrySpec,
+  type NpmSelectorKind,
+  NpmSpecError,
+  type ParsedNpmSpec,
+  parseNpmSpec,
+} from "./npm/spec.js";
