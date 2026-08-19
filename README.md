@@ -47,6 +47,7 @@ See [AI agent integrations](docs/agent-integrations.md) for copyable Codex, Clau
 See the [CLI JSON contract](docs/json-contract.md) for versioning, report families, failure envelopes, and stable exit codes.
 See [release readiness](docs/releasing.md) for the offline package gate and the decisions required before any publication.
 See [alpha acceptance status](docs/alpha-acceptance.md) for the implemented-scope matrix, remaining publication blockers, and explicitly deferred platform work.
+See [the age-threshold decision](docs/adr/0007-policy-age-thresholds.md) for the evidence, real-project calibration, and limitations behind the default review windows.
 
 ## Check a proposed dependency
 
