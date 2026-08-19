@@ -1,7 +1,9 @@
+import { prerelease, valid } from "semver";
 import type { AgentHawkConfig, PolicyAction } from "../config.js";
 import type { Evidence, Finding, Verdict } from "../domain.js";
 import type { NpmPackageMetadata, NpmProviderResult } from "../npm/provider.js";
 import type { ParsedNpmSpec } from "../npm/spec.js";
+import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
 const verdictRank: Record<Verdict, number> = {
   allow: 0,
@@ -20,8 +22,14 @@ export interface PolicyEvaluationInput {
 }
 
 export interface PolicyEvaluation {
+  errors: PolicyEvaluationError[];
   findings: Finding[];
   verdict: Verdict;
+}
+
+export interface PolicyEvaluationError {
+  code: "required_provider_unavailable" | "unknown_version";
+  message: string;
 }
 
 export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
@@ -38,47 +46,69 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
       severity: "high",
       title: "Non-registry dependency specifier",
     });
-    return finalize(finding ? [finding] : []);
+    return finalize(finding ? [finding] : [], []);
   }
 
   if (!input.config.registries.npm.enabled) {
-    return finalize([providerUnavailable(input, "The npm evidence provider is disabled.")]);
+    return unavailableEvaluation(input, "The npm evidence provider is disabled.");
   }
 
   if (!input.providerResult) {
-    return finalize([providerUnavailable(input, "Required npm evidence was not provided.")]);
+    return unavailableEvaluation(input, "Required npm evidence was not provided.");
+  }
+
+  if (parseStrictIsoTimestamp(input.providerResult.fetchedAt) === undefined) {
+    return unavailableEvaluation(input, "The npm evidence retrieval timestamp was invalid.");
   }
 
   if (!input.providerResult.ok) {
     if (input.providerResult.status === "not_found") {
-      return finalize([
-        requiredFinding({
-          action: "block",
-          approvable: false,
-          basis: "evidence",
-          message: "The requested npm package or version could not be resolved.",
-          remediation: "Correct the package name or select a published version.",
-          ruleId: "PG001",
-          severity: "high",
-          title: "Package or version does not exist",
-        }),
-      ]);
+      const finding = requiredFinding({
+        action: "block",
+        approvable: false,
+        basis: "evidence",
+        evidence: [
+          {
+            data: { providerStatus: "not_found" },
+            fetchedAt: input.providerResult.fetchedAt,
+            provider: "npm",
+          },
+        ],
+        message: "The requested npm package or version could not be resolved.",
+        remediation: "Correct the package name or select a published version.",
+        ruleId: "PG001",
+        severity: "high",
+        title: "Package or version does not exist",
+      });
+      const errors =
+        input.config.defaults.onUnknownVersion === "error"
+          ? [{ code: "unknown_version" as const, message: "The requested version is unknown." }]
+          : [];
+      return finalize([finding], errors);
     }
-    return finalize([
-      providerUnavailable(input, providerFailureMessage(input.providerResult.status)),
-    ]);
+    return unavailableEvaluation(input, providerFailureMessage(input.providerResult.status));
   }
 
   const metadata = input.providerResult.data;
-  const evidence = npmEvidence(metadata, input.now);
+  if (!valid(metadata.resolvedVersion)) {
+    return unknownVersionEvaluation(
+      input,
+      "The npm provider returned an invalid resolved version.",
+    );
+  }
+  const evidence = npmEvidence(metadata, input.providerResult.fetchedAt);
   const findings: Finding[] = [];
+  const errors: PolicyEvaluationError[] = [];
 
   const packageAge = ageInMilliseconds(metadata.packagePublishedAt, input.now);
   const releaseAge = ageInMilliseconds(metadata.releasePublishedAt, input.now);
   if (packageAge === undefined || releaseAge === undefined) {
-    findings.push(
-      providerUnavailable(input, "Required npm publication timestamps were unavailable."),
+    const unavailable = providerUnavailable(
+      input,
+      "Required npm publication timestamps were unavailable.",
     );
+    findings.push(unavailable.finding);
+    errors.push(...unavailable.errors);
   }
 
   if (packageAge !== undefined && packageAge < days(input.config.rules.packageAge.minDays)) {
@@ -98,7 +128,16 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
     );
   }
 
-  if (releaseAge !== undefined && releaseAge < hours(input.config.rules.releaseAge.minHours)) {
+  const prereleaseSelected = prerelease(metadata.resolvedVersion) !== null;
+  const prereleaseDisallowed = prereleaseSelected && !input.config.defaults.allowPrerelease;
+  const releaseIsFresh =
+    releaseAge !== undefined && releaseAge < hours(input.config.rules.releaseAge.minHours);
+  if (releaseIsFresh || prereleaseDisallowed) {
+    const message = prereleaseDisallowed
+      ? releaseIsFresh
+        ? `Selected release is a prerelease and younger than the configured ${input.config.rules.releaseAge.minHours}-hour threshold.`
+        : "Selected release is a prerelease and policy does not allow prereleases."
+      : `Selected release is younger than the configured ${input.config.rules.releaseAge.minHours}-hour threshold.`;
     add(
       findings,
       createFinding({
@@ -106,11 +145,11 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
         approvable: true,
         basis: "heuristic",
         evidence: [evidence],
-        message: `Selected release is younger than the configured ${input.config.rules.releaseAge.minHours}-hour threshold.`,
+        message,
         remediation: "Allow time for ecosystem review or inspect the release before use.",
         ruleId: "PG003",
         severity: "medium",
-        title: "Extremely fresh release",
+        title: prereleaseDisallowed ? "Prerelease requires review" : "Extremely fresh release",
       }),
     );
   }
@@ -140,7 +179,11 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
         action: input.config.rules.similarToExistingDependency.action,
         approvable: true,
         basis: "heuristic",
-        evidence: [npmEvidence(metadata, input.now, { similarTo: similarDependency })],
+        evidence: [
+          npmEvidence(metadata, input.providerResult.fetchedAt, {
+            similarTo: similarDependency,
+          }),
+        ],
         message: `Package name resembles existing direct dependency ${similarDependency}.`,
         remediation: "Confirm the intended package name and publisher to rule out typosquatting.",
         ruleId: "PG005",
@@ -178,7 +221,7 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
         action: input.config.rules.lifecycleScripts.action,
         approvable: true,
         basis: "evidence",
-        evidence: [npmEvidence(metadata, input.now, { lifecycleScripts })],
+        evidence: [npmEvidence(metadata, input.providerResult.fetchedAt, { lifecycleScripts })],
         message: `Package declares security-relevant lifecycle scripts: ${lifecycleScripts.join(", ")}.`,
         remediation: "Inspect the lifecycle scripts without executing them before installation.",
         ruleId: "PG007",
@@ -188,7 +231,7 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
     );
   }
 
-  return finalize(findings);
+  return finalize(findings, errors);
 }
 
 export function combineVerdicts(verdicts: readonly Verdict[]): Verdict {
@@ -198,38 +241,68 @@ export function combineVerdicts(verdicts: readonly Verdict[]): Verdict {
   );
 }
 
-function providerUnavailable(input: PolicyEvaluationInput, message: string): Finding {
+function providerUnavailable(
+  input: PolicyEvaluationInput,
+  message: string,
+): { errors: PolicyEvaluationError[]; finding: Finding } {
   const strict =
     input.config.mode === "strict" || input.config.defaults.onProviderError === "error";
-  return requiredFinding({
-    action: strict ? "error" : "review",
-    approvable: !strict,
-    basis: "policy",
-    message,
-    remediation:
-      "Restore the required provider and retry; do not treat missing evidence as approval.",
-    ruleId: "PG013",
-    severity: strict ? "high" : "medium",
-    title: "Required provider unavailable",
-  });
+  return {
+    errors: strict ? [{ code: "required_provider_unavailable", message }] : [],
+    finding: requiredFinding({
+      action: "review",
+      approvable: !strict,
+      basis: "policy",
+      message,
+      remediation:
+        "Restore the required provider and retry; do not treat missing evidence as approval.",
+      ruleId: "PG013",
+      severity: strict ? "high" : "medium",
+      title: "Required provider unavailable",
+    }),
+  };
 }
 
-function finalize(findings: Finding[]): PolicyEvaluation {
-  const ordered = [...findings].sort((left, right) =>
-    left.ruleId === right.ruleId
-      ? left.message.localeCompare(right.message)
-      : left.ruleId.localeCompare(right.ruleId),
-  );
-  return { findings: ordered, verdict: combineVerdicts(ordered.map((finding) => finding.verdict)) };
+function unavailableEvaluation(input: PolicyEvaluationInput, message: string): PolicyEvaluation {
+  const unavailable = providerUnavailable(input, message);
+  return finalize([unavailable.finding], unavailable.errors);
+}
+
+function unknownVersionEvaluation(input: PolicyEvaluationInput, message: string): PolicyEvaluation {
+  const errors: PolicyEvaluationError[] =
+    input.config.defaults.onUnknownVersion === "error"
+      ? [{ code: "unknown_version", message }]
+      : [];
+  const finding = requiredFinding({
+    action: "review",
+    approvable: errors.length === 0,
+    basis: "policy",
+    message,
+    remediation: "Resolve the dependency to an exact valid npm version before evaluation.",
+    ruleId: "PG013",
+    severity: "high",
+    title: "Resolved version unavailable",
+  });
+  return finalize([finding], errors);
+}
+
+function finalize(findings: Finding[], errors: PolicyEvaluationError[]): PolicyEvaluation {
+  const ordered = [...findings].sort((left, right) => left.ruleId.localeCompare(right.ruleId));
+  return {
+    errors,
+    findings: ordered,
+    verdict:
+      errors.length > 0 ? "error" : combineVerdicts(ordered.map((finding) => finding.verdict)),
+  };
 }
 
 interface FindingInput {
-  action: PolicyAction | "error";
+  action: PolicyAction;
   approvable: boolean;
   basis: Finding["basis"];
   evidence?: Evidence[];
   message: string;
-  remediation?: string;
+  remediation: string;
   ruleId: Finding["ruleId"];
   severity: Finding["severity"];
   title: string;
@@ -259,7 +332,7 @@ function add(findings: Finding[], finding: Finding | undefined): void {
 
 function npmEvidence(
   metadata: NpmPackageMetadata,
-  now: Date,
+  fetchedAt: string,
   additional: Record<string, unknown> = {},
 ): Evidence {
   return {
@@ -272,7 +345,7 @@ function npmEvidence(
       resolvedVersion: metadata.resolvedVersion,
       ...additional,
     },
-    fetchedAt: now.toISOString(),
+    fetchedAt,
     provider: "npm",
   };
 }
@@ -293,8 +366,8 @@ function providerFailureMessage(
 
 function ageInMilliseconds(value: string | undefined, now: Date): number | undefined {
   if (!value) return undefined;
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp) || timestamp > now.getTime()) return undefined;
+  const timestamp = parseStrictIsoTimestamp(value);
+  if (timestamp === undefined || timestamp > now.getTime()) return undefined;
   return now.getTime() - timestamp;
 }
 
@@ -368,5 +441,5 @@ function isSingleAdjacentTransposition(left: string, right: string): boolean {
 }
 
 function assertValidNow(now: Date): void {
-  if (!Number.isFinite(now.getTime())) throw new TypeError("Policy evaluation time must be valid.");
+  validClockValue(now, "Policy evaluation clock");
 }
