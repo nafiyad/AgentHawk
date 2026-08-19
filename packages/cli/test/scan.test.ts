@@ -1,0 +1,156 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { scanDependencies } from "../src/scan.js";
+
+describe("scanDependencies", () => {
+  it("aggregates deterministic checks for every direct dependency and preserves sections", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
+    try {
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({
+          dependencies: { alpha: "1.0.0", local: "workspace:*" },
+          devDependencies: { beta: "2.0.0" },
+        }),
+      );
+      const contacted: string[] = [];
+      const result = await scanDependencies(
+        { cwd: root, format: "json", noCache: true, strict: true },
+        {
+          getPackage: async (name, requestedSpec) => {
+            contacted.push(name);
+            return {
+              data: {
+                lifecycleScripts: [],
+                name,
+                packagePublishedAt: "2020-01-01T00:00:00.000Z",
+                releasePublishedAt: "2025-01-01T00:00:00.000Z",
+                requestedSpec,
+                resolvedVersion: requestedSpec,
+              },
+              fetchedAt: "2026-08-19T17:59:00.000Z",
+              ok: true,
+              status: "ok",
+            };
+          },
+          now: () => new Date("2026-08-19T18:00:00.000Z"),
+          queryOsv: async () => ({
+            fetchedAt: "2026-08-19T17:59:00.000Z",
+            ok: true,
+            records: [],
+            status: "ok",
+          }),
+        },
+      );
+      const report = JSON.parse(result.output);
+      expect(contacted).toEqual(["alpha", "beta"]);
+      expect(result.exitCode).toBe(1);
+      expect(report.verdict).toBe("review");
+      expect(report.results.map((entry: { section: string }) => entry.section)).toEqual([
+        "dependencies",
+        "devDependencies",
+        "dependencies",
+      ]);
+      expect(report.results[2].report.findings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ ruleId: "PG015" })]),
+      );
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("renders terminal findings and propagates provider errors", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
+    try {
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({ dependencies: { alpha: "1.0.0" } }),
+      );
+      const result = await scanDependencies(
+        { cwd: root, format: "terminal", noCache: true, strict: true },
+        {
+          getPackage: async () => ({
+            fetchedAt: "2026-08-19T17:59:00.000Z",
+            message: "Provider unavailable.",
+            ok: false,
+            status: "network_error",
+          }),
+          now: () => new Date("2026-08-19T18:00:00.000Z"),
+        },
+      );
+      expect(result.exitCode).toBe(3);
+      expect(result.output).toContain("ERROR alpha");
+      expect(result.output).toContain("PG013");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("returns the bounded inventory error when package.json is unavailable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
+    try {
+      const result = await scanDependencies({ cwd: root, format: "json", strict: true });
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.output)).toMatchObject({ error: { code: "invalid_input" } });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("propagates an invalid direct dependency coordinate safely", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
+    try {
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({ dependencies: { "Bad Name": "1" } }),
+      );
+      const result = await scanDependencies({ cwd: root, format: "json", strict: true });
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.output)).toMatchObject({
+        error: "Package specification contains whitespace or control characters.",
+      });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves a non-overridable malicious-package block in the aggregate", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
+    try {
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({ dependencies: { alpha: "1.0.0" } }),
+      );
+      const result = await scanDependencies(
+        { cwd: root, format: "json", noCache: true, strict: false },
+        {
+          getPackage: async (name, requestedSpec) => ({
+            data: {
+              lifecycleScripts: [],
+              name,
+              packagePublishedAt: "2020-01-01T00:00:00.000Z",
+              releasePublishedAt: "2025-01-01T00:00:00.000Z",
+              requestedSpec,
+              resolvedVersion: requestedSpec,
+            },
+            fetchedAt: "2026-08-19T17:59:00.000Z",
+            ok: true,
+            status: "ok",
+          }),
+          now: () => new Date("2026-08-19T18:00:00.000Z"),
+          queryOsv: async () => ({
+            fetchedAt: "2026-08-19T17:59:00.000Z",
+            ok: true,
+            records: [{ id: "MAL-1", malicious: true }],
+            status: "ok",
+          }),
+        },
+      );
+      expect(JSON.parse(result.output).verdict).toBe("block");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+});
