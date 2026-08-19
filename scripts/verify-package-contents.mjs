@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { packageSpecifications, validatePackageReport } from "./package-policy.mjs";
 
 const execute = promisify(execFile);
 const root = resolve(import.meta.dirname, "..");
@@ -9,20 +10,8 @@ const npmCli =
   process.platform === "win32"
     ? join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")
     : resolve(dirname(process.execPath), "..", "lib", "node_modules", "npm", "bin", "npm-cli.js");
-const packages = [
-  {
-    directory: "packages/core",
-    maximumBytes: 250_000,
-    required: ["dist/index.js", "dist/index.d.ts"],
-  },
-  {
-    directory: "packages/cli",
-    maximumBytes: 150_000,
-    required: ["dist/index.js", "dist/index.d.ts", "dist/runner.js"],
-  },
-];
 
-for (const specification of packages) {
+for (const specification of packageSpecifications) {
   const directory = join(root, specification.directory);
   const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
   assert(
@@ -50,25 +39,30 @@ for (const specification of packages) {
     { cwd: directory, encoding: "utf8", maxBuffer: 1_048_576, timeout: 30_000, windowsHide: true },
   );
   const [report] = JSON.parse(stdout);
-  assert(report?.name === manifest.name, `${manifest.name} pack identity is inconsistent`);
-  assert(
-    report.unpackedSize <= specification.maximumBytes,
-    `${manifest.name} package is unexpectedly large`,
-  );
+  await validatePackageReport({ directory, manifest, report, specification });
   const paths = new Set(report.files.map((file) => file.path));
-  for (const path of ["package.json", "README.md", "LICENSE", ...specification.required]) {
-    assert(paths.has(path), `${manifest.name} package is missing ${path}`);
-  }
-  for (const path of paths) {
-    assert(!/(^|\/)(src|test|coverage)(\/|$)/u.test(path), `${manifest.name} leaks ${path}`);
-    assert(!/\.(map|tsbuildinfo|tgz)$/u.test(path), `${manifest.name} includes ${path}`);
-    assert(!/(^|\/)(\.env|\.npmrc)$/u.test(path), `${manifest.name} includes sensitive ${path}`);
-  }
   process.stdout.write(
     `Verified ${manifest.name}: ${paths.size} files, ${report.unpackedSize} bytes unpacked.\n`,
   );
 }
 
+await verifyConsumerEntrypoints();
+
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+async function verifyConsumerEntrypoints() {
+  const core = await import("../packages/core/dist/index.js");
+  assert(
+    typeof core.evaluationReportSchema?.safeParse === "function",
+    "Core entrypoint smoke failed",
+  );
+  const { stdout } = await execute(
+    process.execPath,
+    [join(root, "packages", "cli", "dist", "index.js"), "--help"],
+    { cwd: root, encoding: "utf8", maxBuffer: 65_536, timeout: 10_000, windowsHide: true },
+  );
+  assert(stdout.includes("Usage: agenthawk"), "CLI entrypoint smoke failed");
+  process.stdout.write("Verified core import and CLI startup entrypoints.\n");
 }

@@ -7,10 +7,11 @@ AgentHawk is not yet published. Both workspace packages remain `private: true` a
 `pnpm package:check` builds both packages and runs `npm pack --dry-run --ignore-scripts --offline --json` against each package directory. The verifier requires:
 
 - the expected package identity, repository, license, Node engine, and publication lock;
-- compiled JavaScript and declarations;
+- the exact reviewed compiled JavaScript/declaration manifest and consumer entrypoint smoke tests;
 - package-specific README and Apache-2.0 license files;
 - bounded unpacked size;
-- no source, tests, coverage, source maps, build metadata, `.env`, `.npmrc`, or tarballs.
+- canonical contained paths backed by regular non-symlink files;
+- no extra or missing files, source, tests, coverage, source maps, build metadata, `.env`, `.npmrc`, or tarballs.
 
 The quality workflow runs this gate on every change. It cannot publish, invoke lifecycle scripts, or contact the registry.
 
