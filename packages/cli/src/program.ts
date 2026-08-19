@@ -30,6 +30,7 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     .description("Evaluate an npm package specification without installing it.")
     .argument("<package-spec>")
     .option("--format <format>", "output format: terminal or json", "terminal")
+    .option("--approvals <path>", "path to a strict AgentHawk approvals YAML file")
     .option("--policy <path>", "path to a strict AgentHawk YAML policy")
     .option("--registry <url>", "npm registry base URL")
     .option("--strict", "return a failing exit code for review or block findings", false)
@@ -46,6 +47,7 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     const result = await checkNpmPackage(
       packageSpec,
       {
+        ...(typeof options.approvals === "string" ? { approvalsPath: options.approvals } : {}),
         format: format as OutputFormat,
         ...(typeof options.policy === "string" ? { policyPath: options.policy } : {}),
         ...(typeof options.registry === "string" ? { registryUrl: options.registry } : {}),

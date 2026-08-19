@@ -29,7 +29,7 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 4. **Policy engine — complete**: strict policy, precedence, PG001-007/013/015, complete positive/negative tests.
 5. **CLI check — complete**: terminal/JSON, strict mode, policy path, stable errors/codes, smoke tests.
 6. **OSV evidence — in review**: version-aware query and records, PG010/011, batch-ready contract.
-7. **Approvals**: exact match/expiry/reason, preserved findings, non-overridable malicious block.
+7. **Approvals — complete**: exact match/expiry/reason, preserved findings, non-overridable malicious block.
 8. **Cache/offline**: public metadata only, TTL/schema/staleness/corruption, `--offline`, `--no-cache`.
 9. **Scan/diff**: direct dependency changes, lockfile correlation, argument-array Git tests.
 10. **GitHub Action**: minimal permissions, safe summary/artifact, optional idempotent comment.
