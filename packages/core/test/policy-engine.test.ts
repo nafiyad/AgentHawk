@@ -140,6 +140,24 @@ describe("deterministic policy rules", () => {
     expect(result.findings.map((finding) => finding.ruleId)).not.toContain("PG003");
   });
 
+  it("does not let release-age allow bypass a disallowed prerelease", () => {
+    const releaseAgeDisabled = agentHawkConfigSchema.parse({
+      version: 1,
+      rules: { releaseAge: { action: "allow", minHours: 72 } },
+    });
+    const result = evaluatePolicy({
+      config: releaseAgeDisabled,
+      now,
+      providerResult: success({
+        releasePublishedAt: "2026-01-01T00:00:00.000Z",
+        resolvedVersion: "2.0.0-beta.1",
+      }),
+      spec: parseNpmSpec("mature-package@2.0.0-beta.1"),
+    });
+    expect(result.verdict).toBe("review");
+    expect(result.findings[0]).toMatchObject({ ruleId: "PG003", verdict: "review" });
+  });
+
   it("does not flag package or release age at the exact configured boundary", () => {
     const result = evaluate(
       success({
