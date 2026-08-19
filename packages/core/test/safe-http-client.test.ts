@@ -160,6 +160,19 @@ describe("SafeHttpClient", () => {
     expect((error as Error).message).not.toContain(url.toString());
   });
 
+  it("times out when a response body stalls after headers", async () => {
+    const url = await listen((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.write('{"partial":');
+    });
+
+    const error = await new SafeHttpClient({ maxRetries: 0, timeoutMs: 20 })
+      .getJson(url)
+      .catch((reason: unknown) => reason);
+
+    expect(error).toMatchObject({ kind: "timeout", message: "Provider request timed out." });
+  });
+
   it.each([
     "http://example.com/data",
     "ftp://example.com/data",

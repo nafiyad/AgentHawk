@@ -86,55 +86,45 @@ export class SafeHttpClient implements JsonHttpClient {
   }
 
   async #getJsonOnce(initialUrl: URL): Promise<unknown> {
-    let current = new URL(initialUrl);
-    for (let redirects = 0; redirects <= this.#maxRedirects; redirects += 1) {
-      const response = await this.#request(current);
-      if (redirectStatuses.has(response.status)) {
-        if (redirects === this.#maxRedirects) {
-          throw new SafeHttpError("provider_error", "Provider exceeded the redirect limit.");
-        }
-        const location = response.headers.get("location");
-        if (!location) {
-          throw new SafeHttpError("invalid_response", "Provider redirect omitted Location.");
-        }
-        current = new URL(location, current);
-        assertAllowedUrl(current);
-        continue;
-      }
-
-      if (response.status === 404) {
-        throw new SafeHttpError("not_found", "Provider resource was not found.", 404);
-      }
-      if (response.status === 429) {
-        throw new SafeHttpError("rate_limited", "Provider rate limit was reached.", 429);
-      }
-      if (!response.ok) {
-        const message = `Provider returned HTTP ${response.status}.`;
-        throw new SafeHttpError("provider_error", message, response.status);
-      }
-
-      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-      if (!contentType.includes("application/json")) {
-        throw new SafeHttpError("invalid_response", "Provider did not return JSON content.");
-      }
-      return parseJson(await readBoundedBody(response, this.#maxBodyBytes));
-    }
-
-    throw new SafeHttpError("provider_error", "Provider exceeded the redirect limit.");
-  }
-
-  async #request(url: URL): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.#timeoutMs);
+    let current = new URL(initialUrl);
     try {
-      return await this.#fetch(url, {
-        headers: {
-          accept: "application/json",
-          "user-agent": this.#userAgent,
-        },
-        redirect: "manual",
-        signal: controller.signal,
-      });
+      for (let redirects = 0; redirects <= this.#maxRedirects; redirects += 1) {
+        const response = await this.#request(current, controller.signal);
+        if (redirectStatuses.has(response.status)) {
+          if (redirects === this.#maxRedirects) {
+            throw new SafeHttpError("provider_error", "Provider exceeded the redirect limit.");
+          }
+          const location = response.headers.get("location");
+          if (!location) {
+            throw new SafeHttpError("invalid_response", "Provider redirect omitted Location.");
+          }
+          await response.body?.cancel();
+          current = new URL(location, current);
+          assertAllowedUrl(current);
+          continue;
+        }
+
+        if (response.status === 404) {
+          throw new SafeHttpError("not_found", "Provider resource was not found.", 404);
+        }
+        if (response.status === 429) {
+          throw new SafeHttpError("rate_limited", "Provider rate limit was reached.", 429);
+        }
+        if (!response.ok) {
+          const message = `Provider returned HTTP ${response.status}.`;
+          throw new SafeHttpError("provider_error", message, response.status);
+        }
+
+        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+        if (!contentType.includes("application/json")) {
+          throw new SafeHttpError("invalid_response", "Provider did not return JSON content.");
+        }
+        return parseJson(await readBoundedBody(response, this.#maxBodyBytes, controller.signal));
+      }
+
+      throw new SafeHttpError("provider_error", "Provider exceeded the redirect limit.");
     } catch (error) {
       if (controller.signal.aborted) {
         throw new SafeHttpError("timeout", "Provider request timed out.");
@@ -143,6 +133,17 @@ export class SafeHttpClient implements JsonHttpClient {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async #request(url: URL, signal: AbortSignal): Promise<Response> {
+    return await this.#fetch(url, {
+      headers: {
+        accept: "application/json",
+        "user-agent": this.#userAgent,
+      },
+      redirect: "manual",
+      signal,
+    });
   }
 }
 
@@ -159,7 +160,11 @@ function isLoopback(hostname: string): boolean {
   return hostname === "127.0.0.1" || hostname === "::1" || hostname === "localhost";
 }
 
-async function readBoundedBody(response: Response, maximum: number): Promise<string> {
+async function readBoundedBody(
+  response: Response,
+  maximum: number,
+  signal: AbortSignal,
+): Promise<string> {
   const contentLength = response.headers.get("content-length");
   if (contentLength && Number(contentLength) > maximum) {
     throw new SafeHttpError("invalid_response", "Provider response exceeded the body limit.");
@@ -174,7 +179,7 @@ async function readBoundedBody(response: Response, maximum: number): Promise<str
   let body = "";
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithAbort(reader, signal);
       if (done) break;
       size += value.byteLength;
       if (size > maximum) {
@@ -186,9 +191,31 @@ async function readBoundedBody(response: Response, maximum: number): Promise<str
     body += decoder.decode();
     return body;
   } catch (error) {
+    if (signal.aborted) {
+      await reader.cancel().catch(() => undefined);
+      throw new SafeHttpError("timeout", "Provider request timed out.");
+    }
     if (error instanceof SafeHttpError) throw error;
     throw new SafeHttpError("invalid_response", "Provider response was not valid UTF-8.");
   }
+}
+
+async function readWithAbort(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+): Promise<Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]>>> {
+  if (signal.aborted) throw signal.reason;
+
+  return await new Promise((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    reader
+      .read()
+      .then(resolve, reject)
+      .finally(() => {
+        signal.removeEventListener("abort", onAbort);
+      });
+  });
 }
 
 function parseJson(body: string): unknown {
