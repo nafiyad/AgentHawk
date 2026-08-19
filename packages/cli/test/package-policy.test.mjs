@@ -49,15 +49,21 @@ describe("package content policy", () => {
     await expect(validate(specification.paths, symlink)).rejects.toThrow("non-regular");
     await expect(validate(specification.paths, directory)).rejects.toThrow("non-regular");
   });
+
+  it.each([-1, 0, 1.5, 150_001, "1", null])("rejects invalid unpacked size %s", async (size) => {
+    await expect(validate(specification.paths, regular, size)).rejects.toThrow(
+      "unexpectedly large",
+    );
+  });
 });
 
-async function validate(paths, stat = regular) {
+async function validate(paths, stat = regular, unpackedSize = 1) {
   return validatePackageReport({
     directory: "/safe/package",
     manifest,
     report: {
       name: manifest.name,
-      unpackedSize: 1,
+      unpackedSize,
       files: paths.map((path) => ({ path })),
     },
     specification,

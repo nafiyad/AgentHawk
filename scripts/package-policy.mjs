@@ -71,7 +71,9 @@ export async function validatePackageReport({
 }) {
   assert(report?.name === manifest.name, `${manifest.name} pack identity is inconsistent`);
   assert(
-    Number.isSafeInteger(report.unpackedSize) && report.unpackedSize <= specification.maximumBytes,
+    Number.isSafeInteger(report.unpackedSize) &&
+      report.unpackedSize > 0 &&
+      report.unpackedSize <= specification.maximumBytes,
     `${manifest.name} package is unexpectedly large`,
   );
   assert(Array.isArray(report.files), `${manifest.name} pack file list is missing`);
