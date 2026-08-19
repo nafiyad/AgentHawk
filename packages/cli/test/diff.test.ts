@@ -145,10 +145,10 @@ describe("diffDependencies", () => {
   it("ignores inherited Git repository redirection variables", async () => {
     const root = await repository();
     const other = await repository();
-    const previousGitDir = process.env.GIT_DIR;
-    const previousWorkTree = process.env.GIT_WORK_TREE;
-    process.env.GIT_DIR = join(other, ".git");
-    process.env.GIT_WORK_TREE = other;
+    const previousGitDir = process.env.Git_Dir;
+    const previousWorkTree = process.env.Git_Work_Tree;
+    process.env.Git_Dir = join(other, ".git");
+    process.env.Git_Work_Tree = other;
     try {
       await writeFile(join(root, "package.json"), JSON.stringify({ dependencies: { added: "1" } }));
       const result = await diffDependencies({
@@ -161,10 +161,10 @@ describe("diffDependencies", () => {
         { kind: "added", name: "added", requestedSpec: "1", section: "dependencies" },
       ]);
     } finally {
-      if (previousGitDir === undefined) delete process.env.GIT_DIR;
-      else process.env.GIT_DIR = previousGitDir;
-      if (previousWorkTree === undefined) delete process.env.GIT_WORK_TREE;
-      else process.env.GIT_WORK_TREE = previousWorkTree;
+      if (previousGitDir === undefined) delete process.env.Git_Dir;
+      else process.env.Git_Dir = previousGitDir;
+      if (previousWorkTree === undefined) delete process.env.Git_Work_Tree;
+      else process.env.Git_Work_Tree = previousWorkTree;
     }
   });
 

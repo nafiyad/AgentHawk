@@ -301,7 +301,7 @@ const defaultGitRunner: GitRunner = {
 function gitEnvironment(): NodeJS.ProcessEnv {
   const environment = { ...process.env };
   for (const key of Object.keys(environment)) {
-    if (key.startsWith("GIT_")) delete environment[key];
+    if (key.toUpperCase().startsWith("GIT_")) delete environment[key];
   }
   return {
     ...environment,
