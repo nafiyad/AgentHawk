@@ -1,6 +1,8 @@
 export {
   type AgentHawkConfig,
   agentHawkConfigSchema,
+  type PolicyAction,
+  policyActionSchema,
 } from "./config.js";
 export {
   type ApprovalMatch,
@@ -44,3 +46,9 @@ export {
   type ParsedNpmSpec,
   parseNpmSpec,
 } from "./npm/spec.js";
+export {
+  combineVerdicts,
+  evaluatePolicy,
+  type PolicyEvaluation,
+  type PolicyEvaluationInput,
+} from "./policy/engine.js";

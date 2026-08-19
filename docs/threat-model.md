@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing and registry metadata retrieval. Policy evaluation, approvals, cache, diff scanning, and GitHub reporting will extend it in later milestones.
+This threat model covers npm request parsing, registry metadata retrieval, and deterministic policy evaluation. Approvals, cache, diff scanning, and GitHub reporting will extend it in later milestones.
 
 ## Assets
 
@@ -16,6 +16,8 @@ This threat model covers npm request parsing and registry metadata retrieval. Po
 
 Package specifications, registry URLs, registry responses, redirects, HTTP status codes, metadata strings, and repository configuration are untrusted. The npm registry is an evidence source, not a trust authority. AgentHawk's normalized internal model is trusted only after schema validation.
 
+Policy configuration is also untrusted input. Strict schemas reject unknown nested fields, numeric thresholds must be non-negative, and the known-malicious action cannot be weakened below `block`.
+
 ## Abuse cases and mitigations
 
 | Threat | Mitigation | Residual risk |
@@ -26,10 +28,12 @@ Package specifications, registry URLs, registry responses, redirects, HTTP statu
 | Redirect escapes to an unsafe protocol | Manual bounded redirects; validate every target | HTTPS endpoint itself may be malicious |
 | Provider hangs or streams indefinitely | Abort timeout and byte-counted stream reads | Network resource use exists within the configured bounds |
 | Provider returns huge, malformed, or non-JSON data | Content-length and streaming limits, UTF-8 and JSON validation | Runtime/parser vulnerabilities remain possible |
-| Provider error becomes implicit success | Stable typed failure results | Policy response is implemented in a later milestone |
+| Provider error becomes implicit success | PG013 review; strict mode produces a non-approvable error | Provider availability can still interrupt evaluation |
 | Hostile body or exception leaks secrets | Fixed diagnostic messages; never include bodies, URLs, headers, or caught details | Host-level logs outside AgentHawk are not controlled |
 | Lifecycle script executes during inspection | Read script names only; never install or execute | Malicious code without lifecycle scripts is not detected |
 | Metadata claims a false repository or integrity value | Treat as registry evidence, not proof of benignness | Independent verification is deferred |
+| Strong finding is hidden by a weaker finding | Fixed error > block > review > warn > allow precedence | Policy actions can intentionally suppress approvable rules |
+| Similar-looking name is treated as proof | Label PG005 as a heuristic and require review | Conservative matching can still produce false positives or miss confusables |
 
 ## Unsupported claims
 
