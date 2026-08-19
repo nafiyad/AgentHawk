@@ -158,6 +158,8 @@ export async function checkNpmPackage(
         osvResult,
         npmResolution.stale,
         osvResolution.stale,
+        npmResolution.cached,
+        osvResolution.cached,
       ),
       policyDigest: digest(config),
       evidenceDigest: digest(normalizedEvidenceForDigest(providerResult, osvResult, spec.type)),
@@ -277,7 +279,7 @@ function requireLiveVerification(
   const message = "Cached provider evidence is not authenticated and requires live verification.";
   const strict = config.mode === "strict" || config.defaults.onProviderError === "error";
   const finding = {
-    approvable: !strict,
+    approvable: false,
     basis: "policy" as const,
     evidence: [],
     message,
@@ -375,6 +377,8 @@ function providerStatuses(
   osvResult: ResolvedOsvResult,
   npmStale?: string,
   osvStale?: string,
+  npmCached?: boolean,
+  osvCached?: boolean,
 ): ProviderStatus[] {
   const statuses: ProviderStatus[] = [];
   if (result) {
@@ -384,6 +388,13 @@ function providerStatuses(
         message: "npm cache evidence is stale",
         provider: "npm",
         status: "stale",
+      });
+    else if (npmCached)
+      statuses.push({
+        fetchedAt: result.fetchedAt,
+        message: "using unauthenticated cached evidence; live verification required",
+        provider: "npm",
+        status: "offline",
       });
     else if (result.ok)
       statuses.push({ fetchedAt: result.fetchedAt, provider: "npm", status: "ok" });
@@ -415,6 +426,13 @@ function providerStatuses(
         message: "osv cache evidence is stale",
         provider: "osv",
         status: "stale",
+      });
+    } else if (osvCached) {
+      statuses.push({
+        fetchedAt: osvResult.fetchedAt,
+        message: "using unauthenticated cached evidence; live verification required",
+        provider: "osv",
+        status: "offline",
       });
     } else if (osvResult.ok) {
       statuses.push({ fetchedAt: osvResult.fetchedAt, provider: "osv", status: "ok" });

@@ -310,7 +310,52 @@ describe("checkNpmPackage", () => {
       expect(JSON.parse(result.output)).toMatchObject({
         verdict: "error",
         findings: expect.arrayContaining([expect.objectContaining({ ruleId: "PG013" })]),
+        providerStatus: [
+          expect.objectContaining({ provider: "npm", status: "offline" }),
+          expect.objectContaining({ provider: "osv", status: "offline" }),
+        ],
       });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("never lets an approval resolve unauthenticated offline cache evidence", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: false },
+        {
+          cache,
+          getPackage: async () => success(),
+          now: () => now,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      const approvalsPath = join(directory, "approvals.yml");
+      await writeFile(approvalsPath, JSON.stringify(activeApproval));
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { approvalsPath, format: "json", offline: true, strict: false },
+        {
+          cache,
+          getPackage: async () => {
+            throw new Error("network must not run");
+          },
+          now: () => now,
+          queryOsv: async () => {
+            throw new Error("network must not run");
+          },
+        },
+      );
+      const report = JSON.parse(result.output);
+      expect(report.verdict).toBe("review");
+      expect(report.approval).toBeUndefined();
+      expect(report.findings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ approvable: false, ruleId: "PG013" })]),
+      );
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
