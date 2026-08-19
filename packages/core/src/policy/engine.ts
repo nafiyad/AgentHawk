@@ -133,6 +133,10 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
   const releaseIsFresh =
     releaseAge !== undefined && releaseAge < hours(input.config.rules.releaseAge.minHours);
   if (releaseIsFresh || prereleaseDisallowed) {
+    const releaseAction =
+      prereleaseDisallowed && verdictRank[input.config.rules.releaseAge.action] < verdictRank.review
+        ? "review"
+        : input.config.rules.releaseAge.action;
     const message = prereleaseDisallowed
       ? releaseIsFresh
         ? `Selected release is a prerelease and younger than the configured ${input.config.rules.releaseAge.minHours}-hour threshold.`
@@ -141,7 +145,7 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
     add(
       findings,
       createFinding({
-        action: input.config.rules.releaseAge.action,
+        action: releaseAction,
         approvable: true,
         basis: "heuristic",
         evidence: [evidence],
