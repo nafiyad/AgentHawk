@@ -45,6 +45,12 @@ The provider retrieves one package document, validates only the required shape, 
 
 It does not retain arbitrary scripts, maintainers, README content, or the raw registry response. It never downloads a tarball, invokes a package manager, imports package code, or executes lifecycle scripts.
 
-## Planned next boundary
+## Deterministic policy boundary
 
-The policy milestone will consume normalized metadata through structured rules. Provider availability will remain separate from findings so unavailable evidence cannot silently result in `allow`.
+The policy engine consumes a parsed npm spec, validated policy, normalized provider result, an explicit evaluation clock, and optional existing direct dependency names. Independent rules emit structured `PG` findings; they never perform network access, install dependencies, or execute lifecycle scripts.
+
+Implemented rules are PG001 through PG007, PG013, and PG015. Name-similarity checks are intentionally conservative: scope changes, separator-only changes, one edit, or one adjacent transposition are considered only for names of useful minimum length. A match is a review heuristic, not proof of maliciousness.
+
+Verdicts use stable precedence: `error` > `block` > `review` > `warn` > `allow`. Findings are sorted by rule identifier and message. Missing, disabled, failed, or incomplete required provider evidence produces PG013 rather than silently allowing the dependency. Strict mode promotes PG013 to a non-approvable `error`.
+
+The policy schema rejects unknown fields at every security-sensitive level. Known-malicious handling remains fixed to `block`; OSV-backed PG010/PG011 evaluation will be added in its dedicated provider milestone.
