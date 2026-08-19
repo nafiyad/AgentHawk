@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `agenthawk check npm`, exact expiring approvals, and a bounded public-metadata cache.
+AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, and `diff` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub reporting, advisory agent templates, and locked release-package verification.
 
 ```text
 untrusted package spec
@@ -97,3 +97,15 @@ Terminal rendering escapes control and ANSI characters. JSON output is validated
 ## Approval boundary
 
 Approvals are parsed as strict, bounded YAML and applied only after original policy evaluation. Matching uses the normalized resolved coordinate, never the requested selector. Reports preserve all findings and both verdicts. Only approvable review findings are resolved; errors, non-approvable reviews, and blocks remain effective.
+
+## GitHub reporting boundary
+
+The pull-request workflow runs with read-only repository permission on untrusted PR code, uses immutable action pins, disables credential persistence, and uploads a bounded JSON diagnostic. Optional PR comments are isolated in a `workflow_run` job that never checks out or executes PR code. It validates and labels the artifact as untrusted diagnostic data, escapes hostile rendering content, and performs a bounded idempotent bot-comment search. See [ADR 0006](adr/0006-github-action-security.md).
+
+## Agent-instruction boundary
+
+Codex, Claude Code, Cursor, and generic templates require strict JSON evaluation before dependency installation and fail closed on unavailable tooling, malformed reports, or non-allow decisions. These files guide model behavior; they are not an enforcement boundary. Host permissions and protected CI remain authoritative.
+
+## Release-package boundary
+
+Both packages remain private at the unreleased `0.0.0` version. The offline package gate validates exact canonical tarball manifests, every path component as regular and non-symlink, bounded positive size metadata, required consumer documentation/licenses, and core/CLI entrypoint startup. It cannot publish. Package ownership, versioning, and an OIDC trusted-publishing workflow require a separate maintainer-authorized change.

@@ -19,6 +19,16 @@ describe("AgentHawk workflow", () => {
     expect(source).not.toContain("npm publish");
   });
 
+  it("keeps the public threat model and alpha status aligned with shipped integrations", async () => {
+    const threatModel = await readFile(join(workspace, "docs/threat-model.md"), "utf8");
+    const acceptance = await readFile(join(workspace, "docs/alpha-acceptance.md"), "utf8");
+    expect(threatModel).not.toContain("GitHub reporting will extend it later");
+    expect(threatModel).toContain("Pull-request content gains privileged workflow authority");
+    expect(threatModel).toContain("Agent instruction text is mistaken for enforcement");
+    expect(acceptance).toContain("Both packages remain private and unpublished");
+    expect(acceptance).toContain("Explicitly deferred");
+  });
+
   it("uses a read-only unprivileged trigger and immutable third-party action pins", async () => {
     const source = await readFile(join(workspace, ".github/workflows/agenthawk.yml"), "utf8");
     const document = parseDocument(source, { uniqueKeys: true });

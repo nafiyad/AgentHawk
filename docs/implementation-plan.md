@@ -36,6 +36,7 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 11. **Agent templates — complete**: Codex/Claude/Cursor/generic fail-closed instructions with an explicit advisory trust boundary.
 12. **Alpha contract hardening — complete**: strict exported schemas for every JSON report family, one versioned failure envelope, compatibility documentation, and golden contract tests.
 13. **Release-readiness foundation — complete**: offline package-content validation, consumer-facing package documentation/licenses, changelog, metadata, and an explicit publication lock pending ownership decisions.
+14. **Alpha acceptance audit — complete**: implementation-to-test acceptance matrix, current architecture/threat boundaries, publication blockers, and explicit deferred scope.
 
 Every milestone updates docs, reviews its diff, runs focused tests and the full available quality gate, scans staged content for secrets, commits, pushes, and verifies the exact remote head.
 
