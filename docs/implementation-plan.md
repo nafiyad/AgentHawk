@@ -24,8 +24,8 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 ## Milestones and acceptance criteria
 
 1. **Research**: five research documents plus this plan; sources and claims reviewed; no core code.
-2. **Foundation**: strict workspace, CI, core/CLI packages, domain/report/config skeleton; lint/typecheck/test/coverage/build green.
-3. **npm input/provider**: safe spec parser, normalized metadata provider, bounded HTTP client, hostile/error fixtures.
+2. **Foundation — complete**: strict workspace, CI, core/CLI packages, domain/report/config skeleton; lint/typecheck/test/coverage/build green.
+3. **npm input/provider — in review**: safe spec parser, normalized metadata provider, bounded HTTP client, hostile/error fixtures.
 4. **Policy engine**: strict policy, precedence, PG001-007/013/015, complete positive/negative tests.
 5. **CLI check**: terminal/JSON, strict mode, policy path, stable errors/codes, smoke tests.
 6. **OSV evidence**: version-aware query and records, PG010/011, batch-ready contract.

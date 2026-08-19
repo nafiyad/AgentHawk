@@ -1,0 +1,16 @@
+{
+  "name": "@example/scoped",
+  "dist-tags": {
+    "latest": "1.2.3"
+  },
+  "time": {
+    "created": "2024-01-01T00:00:00.000Z",
+    "1.2.3": "2024-02-01T00:00:00.000Z"
+  },
+  "versions": {
+    "1.2.3": {
+      "name": "@example/scoped",
+      "version": "1.2.3"
+    }
+  }
+}

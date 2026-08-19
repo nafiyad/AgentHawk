@@ -1,0 +1,186 @@
+import { maxSatisfying, valid } from "semver";
+import { z } from "zod";
+import type { PackageCoordinate } from "../domain.js";
+import {
+  type HttpErrorKind,
+  type JsonHttpClient,
+  SafeHttpClient,
+  SafeHttpError,
+} from "../http/safe-http-client.js";
+
+const lifecycleNames = ["preinstall", "install", "postinstall", "prepack", "prepare"] as const;
+
+const versionDocumentSchema = z
+  .object({
+    name: z.string().min(1),
+    version: z.string().min(1),
+    deprecated: z.string().optional(),
+    repository: z
+      .union([
+        z.string(),
+        z.object({ type: z.string().optional(), url: z.string().optional() }).passthrough(),
+      ])
+      .optional(),
+    scripts: z.record(z.string(), z.unknown()).optional(),
+    dist: z
+      .object({
+        tarball: z.string().optional(),
+        integrity: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const packumentSchema = z
+  .object({
+    name: z.string().min(1),
+    "dist-tags": z.record(z.string(), z.string()),
+    versions: z.record(z.string(), versionDocumentSchema),
+    time: z.record(z.string(), z.string()).optional(),
+  })
+  .passthrough();
+
+export interface NpmPackageMetadata {
+  name: string;
+  requestedSpec: string;
+  resolvedVersion: string;
+  packagePublishedAt?: string;
+  releasePublishedAt?: string;
+  deprecated?: string;
+  repositoryUrl?: string;
+  lifecycleScripts: string[];
+  dist?: {
+    integrity?: string;
+    tarball?: string;
+  };
+}
+
+export type NpmProviderResult =
+  | { ok: true; status: "ok"; data: NpmPackageMetadata }
+  | { ok: false; status: HttpErrorKind; message: string };
+
+export interface NpmRegistryProviderOptions {
+  httpClient?: JsonHttpClient;
+  registryUrl?: string;
+}
+
+export class NpmRegistryProvider {
+  readonly id = "npm";
+  readonly #httpClient: JsonHttpClient;
+  readonly #registryUrl: URL;
+
+  constructor(options: NpmRegistryProviderOptions = {}) {
+    this.#httpClient = options.httpClient ?? new SafeHttpClient();
+    this.#registryUrl = normalizeRegistryUrl(options.registryUrl ?? "https://registry.npmjs.org/");
+  }
+
+  async getPackage(input: PackageCoordinate): Promise<NpmProviderResult> {
+    try {
+      const document = await this.#httpClient.getJson(packageUrl(this.#registryUrl, input.name));
+      const packument = packumentSchema.parse(document);
+      if (packument.name !== input.name) {
+        return failure("invalid_response", "Registry package name did not match the request.");
+      }
+
+      const resolvedVersion = resolveVersion(packument, input.requestedSpec);
+      if (!resolvedVersion) {
+        return failure("not_found", "Requested package version or selector was not found.");
+      }
+      const version = packument.versions[resolvedVersion];
+      if (!version || version.name !== input.name || version.version !== resolvedVersion) {
+        return failure("invalid_response", "Registry version metadata was inconsistent.");
+      }
+
+      const repositoryUrl = normalizeRepository(version.repository);
+      const lifecycleScripts = lifecycleNames.filter(
+        (name) => typeof version.scripts?.[name] === "string",
+      );
+      const dist = normalizeDist(version.dist);
+
+      return {
+        ok: true,
+        status: "ok",
+        data: {
+          name: input.name,
+          requestedSpec: input.requestedSpec,
+          resolvedVersion,
+          ...(packument.time?.created ? { packagePublishedAt: packument.time.created } : {}),
+          ...(packument.time?.[resolvedVersion]
+            ? { releasePublishedAt: packument.time[resolvedVersion] }
+            : {}),
+          ...(version.deprecated ? { deprecated: version.deprecated } : {}),
+          ...(repositoryUrl ? { repositoryUrl } : {}),
+          lifecycleScripts,
+          ...(dist ? { dist } : {}),
+        },
+      };
+    } catch (error) {
+      if (error instanceof SafeHttpError) {
+        return failure(error.kind, error.message);
+      }
+      if (error instanceof z.ZodError) {
+        return failure("invalid_response", "Registry returned metadata with an invalid shape.");
+      }
+      return failure("provider_error", "Registry evaluation failed.");
+    }
+  }
+}
+
+function normalizeRegistryUrl(value: string): URL {
+  const url = new URL(value);
+  if (url.username || url.password) {
+    throw new TypeError("Registry URL must not contain credentials.");
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback(url.hostname))) {
+    throw new TypeError("Registry URL must use HTTPS.");
+  }
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
+  return url;
+}
+
+function packageUrl(registry: URL, packageName: string): URL {
+  const encoded = packageName.startsWith("@")
+    ? `@${encodeURIComponent(packageName.slice(1))}`
+    : encodeURIComponent(packageName);
+  return new URL(encoded, registry);
+}
+
+function resolveVersion(
+  packument: z.infer<typeof packumentSchema>,
+  selector: string,
+): string | undefined {
+  if (selector === "" || selector === "*" || selector === "latest") {
+    return packument["dist-tags"].latest;
+  }
+  const exact = valid(selector);
+  if (exact) return packument.versions[exact] ? exact : undefined;
+  const tagged = packument["dist-tags"][selector];
+  if (tagged) return tagged;
+  return maxSatisfying(Object.keys(packument.versions), selector) ?? undefined;
+}
+
+function normalizeRepository(
+  repository: z.infer<typeof versionDocumentSchema>["repository"],
+): string | undefined {
+  if (typeof repository === "string") return repository;
+  return repository?.url;
+}
+
+function normalizeDist(
+  dist: z.infer<typeof versionDocumentSchema>["dist"],
+): NpmPackageMetadata["dist"] | undefined {
+  if (!dist?.integrity && !dist?.tarball) return undefined;
+  return {
+    ...(dist.integrity ? { integrity: dist.integrity } : {}),
+    ...(dist.tarball ? { tarball: dist.tarball } : {}),
+  };
+}
+
+function failure(status: HttpErrorKind, message: string): NpmProviderResult {
+  return { ok: false, status, message };
+}
+
+function isLoopback(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "::1" || hostname === "localhost";
+}
