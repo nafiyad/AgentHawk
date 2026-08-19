@@ -39,6 +39,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Offline fixtures and security regression tests
 
 See [approvals](docs/approvals.md) for the exact exception model.
+See [GitHub Actions integration](docs/github-action.md) for the read-only pull-request workflow and opt-in idempotent comments.
 
 ## Check a proposed dependency
 
