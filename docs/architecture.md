@@ -56,3 +56,9 @@ Verdicts use stable precedence: `error` > `block` > `review` > `warn` > `allow`.
 Provider results carry their own strictly validated retrieval timestamp. Policy evidence uses that provider-owned time rather than the caller's evaluation clock. Publication timestamps reject impossible calendar dates at the provider boundary and are revalidated by the policy engine before age calculations.
 
 The policy schema rejects unknown fields at every security-sensitive level. Known-malicious handling remains fixed to `block`; OSV-backed PG010/PG011 evaluation will be added in its dedicated provider milestone.
+
+## CLI check boundary
+
+`agenthawk check npm <package-spec>` is a thin orchestrator over the parser, npm provider, and policy engine. It supports terminal or JSON output, an optional strict YAML policy file, strict exit behavior, and a configurable registry URL. Policy files are bounded to 256 KiB, must be regular files, reject duplicate keys and unsupported aliases, and still pass the strict core schema.
+
+Terminal rendering escapes control and ANSI characters. JSON output is validated by the versioned evaluation-report schema and includes canonical SHA-256 policy/evidence digests plus a documented exit-code meaning. Provider failure diagnostics are normalized before rendering or digesting; raw upstream messages are excluded. The command never invokes npm, downloads a tarball, installs a package, or executes lifecycle scripts.
