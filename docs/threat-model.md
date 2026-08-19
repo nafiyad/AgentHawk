@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation, exact expiring approvals, the bounded public-metadata cache, and the `check npm` CLI. Diff scanning and GitHub reporting will extend it later.
+This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, and Git diff analysis. GitHub reporting will extend it later.
 
 ## Assets
 
@@ -45,6 +45,8 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 | Disabling OSV is confused with provider failure | Explicit `registries.osv.enabled: false` is digest-visible status `disabled` | Operators can disable a required evidence source |
 | Broad, stale, or forged approval weakens policy | Strict exact coordinates, required reason/times, maximum validity, and preserved findings | Repository writers can still authorize approvable review findings |
 | Cache poisoning, traversal, oversized data, or stale evidence creates false confidence | Provider-aware hashed keys, strict bounded schema, regular-file and timestamp checks, credential stripping, provider payload validation, live-only online admission, and mandatory PG013 for offline cache use | A local-account attacker can forge provisional findings or deny service, but cannot obtain a clean cached admission |
+| Hostile Git ref, environment, or repository config redirects analysis or causes execution | Resolve refs with `--end-of-options`; sanitize inherited `GIT_*` variables; use direct argument arrays, immutable commit IDs, fatal UTF-8, disabled external diff/text conversion, bounded execution, and no shell | The trusted local Git executable and operating system remain in the boundary |
+| Manifest changes without regenerated resolution data | PG014 correlates direct dependency changes with a recognized lockfile diff from the same base | A changed lockfile is not proof that its contents correctly resolve the manifest |
 | Approval overrides a hard security result | Resolve only approvable review findings; never resolve blocks, errors, or non-approvable reviews | Incorrect `approvable` classification in a future rule remains a code-review risk |
 
 ## Unsupported claims

@@ -88,6 +88,12 @@ Only successful normalized public provider results enter the cache, and credenti
 
 Terminal rendering escapes control and ANSI characters. JSON output is validated by the versioned evaluation-report schema and includes canonical SHA-256 policy/evidence digests plus a documented exit-code meaning. Provider failure diagnostics are normalized before rendering or digesting; raw upstream messages are excluded. The command never invokes npm, downloads a tarball, installs a package, or executes lifecycle scripts.
 
+## Scan and Git diff boundary
+
+`agenthawk scan` reads only the repository-root `package.json`, bounded to 1 MiB and requiring a regular non-symlink UTF-8 JSON file without duplicate keys. It accepts at most 64 direct entries with bounded names/specifiers, evaluates them as one bounded parallel set through the same npm/OSV/policy/approval pipeline as `check npm`, preserves the manifest section, combines verdicts by deterministic precedence, and caps serialized output at 2 MiB. It does not traverse installed packages or execute manifest scripts.
+
+`agenthawk diff --base <git-ref>` resolves the requested ref to an immutable commit before reading the base manifest. Git is invoked directly with argument arrays, a sanitized Git environment, fatal UTF-8 decoding, bounded output and time, disabled external diff/text conversion, no pager, no terminal prompts, and no shell. The comparison reports direct additions, requested-version changes, and section moves. PG014 requires at least one recognized root lockfile to be both updated and still present as a regular non-symlink file. This establishes correlation, not proof that a lockfile is semantically correct.
+
 ## Approval boundary
 
 Approvals are parsed as strict, bounded YAML and applied only after original policy evaluation. Matching uses the normalized resolved coordinate, never the requested selector. Reports preserve all findings and both verdicts. Only approvable review findings are resolved; errors, non-approvable reviews, and blocks remain effective.

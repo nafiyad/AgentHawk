@@ -1,5 +1,7 @@
 import { Command } from "commander";
 import { type CheckDependencies, checkNpmPackage, type OutputFormat } from "./check.js";
+import { diffDependencies } from "./diff.js";
+import { scanDependencies } from "./scan.js";
 import { escapeTerminal } from "./terminal.js";
 
 export interface ProgramDependencies extends CheckDependencies {
@@ -63,5 +65,72 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     (dependencies.setExitCode ?? ((code) => (process.exitCode = code)))(result.exitCode);
   });
 
+  const scan = program
+    .command("scan")
+    .description("Evaluate all direct dependencies without executing repository code.")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .option("--offline", "use cached provider evidence without network access", false)
+    .option("--no-cache", "bypass cache reads and writes", false)
+    .option("--approvals <path>", "path to a strict AgentHawk approvals YAML file")
+    .option("--policy <path>", "path to a strict AgentHawk YAML policy")
+    .option("--registry <url>", "npm registry base URL")
+    .option("--strict", "return a failing exit code for review or block findings", false)
+    .configureOutput(safeOutput);
+  scan.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    const result = await scanDependencies(
+      {
+        ...(typeof options.approvals === "string" ? { approvalsPath: options.approvals } : {}),
+        format,
+        noCache: options.cache === false,
+        offline: options.offline === true,
+        ...(typeof options.policy === "string" ? { policyPath: options.policy } : {}),
+        ...(typeof options.registry === "string" ? { registryUrl: options.registry } : {}),
+        strict: options.strict === true,
+      },
+      dependencies,
+    );
+    writeResult(result, dependencies);
+  });
+
+  const diff = program
+    .command("diff")
+    .description("Compare direct dependency changes against a Git base ref.")
+    .requiredOption("--base <git-ref>", "Git base ref to compare")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .option("--strict", "return a failing exit code for PG014 review findings", false)
+    .configureOutput(safeOutput);
+  diff.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    const result = await diffDependencies({
+      base: String(options.base),
+      format,
+      strict: options.strict === true,
+    });
+    writeResult(result, dependencies);
+  });
+
   return program;
+}
+
+function parseOutputFormat(
+  value: unknown,
+  dependencies: ProgramDependencies,
+): OutputFormat | undefined {
+  if (value === "terminal" || value === "json") return value;
+  (dependencies.write ?? process.stdout.write.bind(process.stdout))(
+    "AgentHawk: output format must be terminal or json.\n",
+  );
+  (dependencies.setExitCode ?? ((code) => (process.exitCode = code)))(2);
+  return undefined;
+}
+
+function writeResult(
+  result: { exitCode: number; output: string },
+  dependencies: ProgramDependencies,
+) {
+  (dependencies.write ?? process.stdout.write.bind(process.stdout))(result.output);
+  (dependencies.setExitCode ?? ((code) => (process.exitCode = code)))(result.exitCode);
 }

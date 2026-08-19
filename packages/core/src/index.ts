@@ -85,3 +85,14 @@ export {
   type PolicyEvaluationError,
   type PolicyEvaluationInput,
 } from "./policy/engine.js";
+export {
+  compareDirectDependencies,
+  type DependencyChange,
+  type DependencySection,
+  type DirectDependency,
+  dependencyChangeSchema,
+  dependencySectionSchema,
+  directDependencies,
+  type PackageManifest,
+  packageManifestSchema,
+} from "./scan/dependencies.js";

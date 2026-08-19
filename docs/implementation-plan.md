@@ -31,7 +31,7 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 6. **OSV evidence — complete**: version-aware query and records, PG010/011, batch-ready contract.
 7. **Approvals — complete**: exact match/expiry/reason, preserved findings, non-overridable malicious block.
 8. **Cache/offline — complete**: public metadata only, provider-specific TTLs, strict bounded schema, safe hashed keys, staleness/corruption handling, `--offline`, `--no-cache`.
-9. **Scan/diff**: direct dependency changes, lockfile correlation, argument-array Git tests.
+9. **Scan/diff — in progress**: bounded root direct dependency inventory, additions/version/section changes, PG014 lockfile correlation, argument-array Git, temporary-repository tests.
 10. **GitHub Action**: minimal permissions, safe summary/artifact, optional idempotent comment.
 11. **Agent templates**: Codex/Claude/Cursor/generic instructions after JSON stability.
 
