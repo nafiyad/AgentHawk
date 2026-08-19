@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-AgentHawk currently provides a reusable core for parsing npm dependency requests and gathering normalized npm registry metadata. It does not yet make policy decisions or expose `agenthawk check`.
+AgentHawk provides npm request parsing, normalized registry metadata, deterministic policy evaluation, `agenthawk check npm`, and exact expiring approvals.
 
 ```text
 untrusted package spec
@@ -62,3 +62,7 @@ The policy schema rejects unknown fields at every security-sensitive level. Know
 `agenthawk check npm <package-spec>` is a thin orchestrator over the parser, npm provider, and policy engine. It supports terminal or JSON output, an optional strict YAML policy file, strict exit behavior, and a configurable registry URL. Policy files are bounded to 256 KiB, must be regular files, reject duplicate keys and unsupported aliases, and still pass the strict core schema.
 
 Terminal rendering escapes control and ANSI characters. JSON output is validated by the versioned evaluation-report schema and includes canonical SHA-256 policy/evidence digests plus a documented exit-code meaning. Provider failure diagnostics are normalized before rendering or digesting; raw upstream messages are excluded. The command never invokes npm, downloads a tarball, installs a package, or executes lifecycle scripts.
+
+## Approval boundary
+
+Approvals are parsed as strict, bounded YAML and applied only after original policy evaluation. Matching uses the normalized resolved coordinate, never the requested selector. Reports preserve all findings and both verdicts. Only approvable review findings are resolved; errors, non-approvable reviews, and blocks remain effective.
