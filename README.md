@@ -1,10 +1,23 @@
-# AgentHawk
+<p align="center">
+  <img src="docs/assets/agenthawk-banner.png" alt="AgentHawk — an angular hawk guarding a software package" width="960">
+</p>
 
-**The security layer between AI coding agents and your codebase.**
+<h1 align="center">AgentHawk</h1>
+
+<p align="center"><strong>The security layer between AI coding agents and your codebase.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/nafiyad/AgentHawk/actions/workflows/quality.yml"><img src="https://github.com/nafiyad/AgentHawk/actions/workflows/quality.yml/badge.svg" alt="Quality status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache 2.0 license"></a>
+  <img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=nodedotjs&logoColor=white" alt="Node.js 20 or newer">
+  <img src="https://img.shields.io/badge/posture-local--first-9cff00" alt="Local-first posture">
+</p>
 
 AgentHawk is a local-first, deterministic security gate that checks dependencies proposed by AI coding agents before they enter a repository.
 
 > **Project status:** early development. npm request parsing and normalized registry metadata retrieval are implemented in the core; policy decisions and the `check` command are not. Do not use this release as a security control.
+
+[Why AgentHawk](#why-agenthawk) · [Current capabilities](#current-capabilities) · [Development](#development) · [Security](#security-and-privacy-posture) · [Contributing](#contributing)
 
 ## Why AgentHawk
 
@@ -12,7 +25,17 @@ Coding agents can propose or install plausible-looking dependencies without the 
 
 AgentHawk will not use an LLM as the authority for security decisions, execute package code during evaluation, require an AgentHawk account, or claim that a package is universally safe.
 
-## Current development commands
+## Current capabilities
+
+- Conservative parsing and classification of npm dependency requests
+- Bounded, redirect-aware npm registry metadata retrieval
+- Normalized package/version, provenance-adjacent, repository, deprecation, and lifecycle-script evidence
+- Stable redacted provider errors without package installation or execution
+- Offline fixtures and security regression tests
+
+Policy verdicts, OSV evidence, approvals, and the end-user `check` workflow remain planned work.
+
+## Development
 
 ```bash
 pnpm install
@@ -26,7 +49,7 @@ pnpm agenthawk --help
 
 Node.js 20 or newer and pnpm 10 are required.
 
-## Planned alpha scope
+## Alpha roadmap
 
 The first alpha focuses on npm dependency admission: package/version resolution, age and lifecycle-script signals, deprecation and repository metadata, OSV evidence, deterministic policy, exact expiring approvals, stable JSON, and strict CI exit codes.
 
