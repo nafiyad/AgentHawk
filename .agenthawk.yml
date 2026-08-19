@@ -9,6 +9,8 @@ defaults:
 registries:
   npm:
     enabled: true
+  osv:
+    enabled: true
 
 rules:
   knownMaliciousPackage:

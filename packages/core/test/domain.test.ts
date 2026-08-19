@@ -72,6 +72,7 @@ describe("configuration schema", () => {
 
   it("accepts the secure configuration skeleton", () => {
     expect(agentHawkConfigSchema.parse(config).rules.knownMaliciousPackage.action).toBe("block");
+    expect(agentHawkConfigSchema.parse(config).registries.osv.enabled).toBe(true);
   });
 
   it("rejects unknown security-sensitive fields", () => {

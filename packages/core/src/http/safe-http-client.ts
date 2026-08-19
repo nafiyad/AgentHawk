@@ -21,10 +21,15 @@ export interface JsonHttpClient {
   getJson(url: URL): Promise<unknown>;
 }
 
+export interface JsonRequestClient extends JsonHttpClient {
+  postJson(url: URL, body: unknown): Promise<unknown>;
+}
+
 export interface SafeHttpClientOptions {
   fetch?: typeof globalThis.fetch;
   maxBodyBytes?: number;
   maxRedirects?: number;
+  maxRequestBytes?: number;
   maxRetries?: number;
   retryDelayMs?: number;
   timeoutMs?: number;
@@ -34,10 +39,11 @@ export interface SafeHttpClientOptions {
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 const retryStatuses = new Set([502, 503, 504]);
 
-export class SafeHttpClient implements JsonHttpClient {
+export class SafeHttpClient implements JsonRequestClient {
   readonly #fetch: typeof globalThis.fetch;
   readonly #maxBodyBytes: number;
   readonly #maxRedirects: number;
+  readonly #maxRequestBytes: number;
   readonly #maxRetries: number;
   readonly #retryDelayMs: number;
   readonly #timeoutMs: number;
@@ -47,6 +53,7 @@ export class SafeHttpClient implements JsonHttpClient {
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#maxBodyBytes = options.maxBodyBytes ?? 1_048_576;
     this.#maxRedirects = options.maxRedirects ?? 3;
+    this.#maxRequestBytes = options.maxRequestBytes ?? 16_384;
     this.#maxRetries = options.maxRetries ?? 1;
     this.#retryDelayMs = options.retryDelayMs ?? 100;
     this.#timeoutMs = options.timeoutMs ?? 5_000;
@@ -55,6 +62,7 @@ export class SafeHttpClient implements JsonHttpClient {
     for (const [name, value] of [
       ["maxBodyBytes", this.#maxBodyBytes],
       ["maxRedirects", this.#maxRedirects],
+      ["maxRequestBytes", this.#maxRequestBytes],
       ["maxRetries", this.#maxRetries],
       ["retryDelayMs", this.#retryDelayMs],
       ["timeoutMs", this.#timeoutMs],
@@ -66,12 +74,24 @@ export class SafeHttpClient implements JsonHttpClient {
   }
 
   async getJson(url: URL): Promise<unknown> {
+    return await this.#jsonWithRetry(url, { method: "GET" });
+  }
+
+  async postJson(url: URL, body: unknown): Promise<unknown> {
+    return await this.#jsonWithRetry(url, {
+      body: encodeJsonBody(body, this.#maxRequestBytes),
+      followRedirects: false,
+      method: "POST",
+    });
+  }
+
+  async #jsonWithRetry(url: URL, request: JsonRequest): Promise<unknown> {
     assertAllowedUrl(url);
 
     let lastError: SafeHttpError | undefined;
     for (let attempt = 0; attempt <= this.#maxRetries; attempt += 1) {
       try {
-        return await this.#getJsonOnce(url);
+        return await this.#jsonOnce(url, request);
       } catch (error) {
         const mapped = mapUnknownError(error);
         lastError = mapped;
@@ -85,14 +105,18 @@ export class SafeHttpClient implements JsonHttpClient {
     throw lastError ?? new SafeHttpError("network_error", "HTTP request failed.");
   }
 
-  async #getJsonOnce(initialUrl: URL): Promise<unknown> {
+  async #jsonOnce(initialUrl: URL, request: JsonRequest): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.#timeoutMs);
     let current = new URL(initialUrl);
     try {
       for (let redirects = 0; redirects <= this.#maxRedirects; redirects += 1) {
-        const response = await this.#request(current, controller.signal);
+        const response = await this.#request(current, controller.signal, request);
         if (redirectStatuses.has(response.status)) {
+          if (request.followRedirects === false) {
+            await response.body?.cancel();
+            throw new SafeHttpError("provider_error", "Provider POST must not redirect.");
+          }
           if (redirects === this.#maxRedirects) {
             throw new SafeHttpError("provider_error", "Provider exceeded the redirect limit.");
           }
@@ -135,16 +159,25 @@ export class SafeHttpClient implements JsonHttpClient {
     }
   }
 
-  async #request(url: URL, signal: AbortSignal): Promise<Response> {
+  async #request(url: URL, signal: AbortSignal, request: JsonRequest): Promise<Response> {
     return await this.#fetch(url, {
       headers: {
         accept: "application/json",
         "user-agent": this.#userAgent,
+        ...(request.body ? { "content-type": "application/json" } : {}),
       },
+      method: request.method,
       redirect: "manual",
       signal,
+      ...(request.body ? { body: request.body } : {}),
     });
   }
+}
+
+interface JsonRequest {
+  body?: string;
+  followRedirects?: boolean;
+  method: "GET" | "POST";
 }
 
 function assertAllowedUrl(url: URL): void {
@@ -216,6 +249,22 @@ async function readWithAbort(
         signal.removeEventListener("abort", onAbort);
       });
   });
+}
+
+function encodeJsonBody(body: unknown, maximum: number): string {
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(body);
+  } catch {
+    throw new SafeHttpError("invalid_response", "Request body could not be encoded as JSON.");
+  }
+  if (typeof serialized !== "string") {
+    throw new SafeHttpError("invalid_response", "Request body could not be encoded as JSON.");
+  }
+  if (Buffer.byteLength(serialized, "utf8") > maximum) {
+    throw new SafeHttpError("invalid_response", "Request body exceeded the size limit.");
+  }
+  return serialized;
 }
 
 function parseJson(body: string): unknown {

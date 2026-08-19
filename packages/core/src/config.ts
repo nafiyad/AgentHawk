@@ -95,9 +95,18 @@ export const agentHawkConfigSchema = z
       allowPrerelease: false,
     }),
     registries: z
-      .object({ npm: z.object({ enabled: z.boolean().default(true) }).strict() })
+      .object({
+        npm: z
+          .object({ enabled: z.boolean().default(true) })
+          .strict()
+          .default({ enabled: true }),
+        osv: z
+          .object({ enabled: z.boolean().default(true) })
+          .strict()
+          .default({ enabled: true }),
+      })
       .strict()
-      .default({ npm: { enabled: true } }),
+      .default({ npm: { enabled: true }, osv: { enabled: true } }),
     rules: rulesSchema.default(defaultRules),
     approvals: z
       .object({
