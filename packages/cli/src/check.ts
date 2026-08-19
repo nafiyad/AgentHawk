@@ -8,11 +8,14 @@ import {
   type EvaluationReport,
   evaluatePolicy,
   evaluationReportSchema,
+  MetadataCache,
   type NpmProviderResult,
   NpmRegistryProvider,
   OsvProvider,
   type OsvProviderResult,
   type ProviderStatus,
+  parseCachedNpmResult,
+  parseCachedOsvResult,
   parseNpmSpec,
   type Verdict,
 } from "@agenthawk/core";
@@ -20,12 +23,16 @@ import { parseDocument } from "yaml";
 import { escapeTerminal } from "./terminal.js";
 
 const maximumPolicyBytes = 256 * 1_024;
+const npmCacheTtl = 60 * 60 * 1_000;
+const osvCacheTtl = 15 * 60 * 1_000;
 
 export type OutputFormat = "json" | "terminal";
 
 export interface CheckOptions {
   approvalsPath?: string;
   format: OutputFormat;
+  noCache?: boolean;
+  offline?: boolean;
   policyPath?: string;
   registryUrl?: string;
   strict: boolean;
@@ -37,6 +44,7 @@ export interface CheckResult {
 }
 
 export interface CheckDependencies {
+  cache?: MetadataCache;
   getPackage?: (name: string, requestedSpec: string) => Promise<NpmProviderResult>;
   now?: () => Date;
   queryOsv?: (name: string, version: string) => Promise<OsvProviderResult>;
@@ -50,6 +58,9 @@ export async function checkNpmPackage(
   dependencies: CheckDependencies = {},
 ): Promise<CheckResult> {
   try {
+    if (options.offline && options.noCache) {
+      throw new PolicyInputError("--offline and --no-cache cannot be used together.");
+    }
     const spec = parseNpmSpec(rawSpec);
     const now = (dependencies.now ?? (() => new Date()))();
     const baseConfig = options.policyPath
@@ -69,18 +80,34 @@ export async function checkNpmPackage(
       ? approvalFileSchema.parse(approvalDocument)
       : approvalFileSchema.parse({ version: 1, approvals: [] });
 
-    const providerResult =
+    const cache =
+      dependencies.cache ??
+      new MetadataCache({ ...(dependencies.now ? { now: dependencies.now } : {}) });
+    const providerOptions: CheckOptions =
+      !dependencies.cache && (dependencies.getPackage || dependencies.queryOsv)
+        ? { ...options, noCache: true }
+        : options;
+    const npmResolution =
       spec.type === "registry"
-        ? await (dependencies.getPackage ?? defaultGetPackage(options.registryUrl))(
+        ? await resolveNpmResult(
             spec.name,
             spec.requestedSpec,
+            providerOptions,
+            dependencies,
+            cache,
+            now,
           )
-        : undefined;
-    const osvResult = await resolveOsvResult(
+        : {};
+    const providerResult = npmResolution.result;
+    const osvResolution = await resolveOsvResult(
       config.registries.osv.enabled,
       providerResult,
+      providerOptions,
       dependencies,
+      cache,
+      now,
     );
+    const osvResult = osvResolution.result;
     const evaluation = evaluatePolicy({
       config,
       now,
@@ -121,7 +148,12 @@ export async function checkNpmPackage(
       verdict: approvalApplication.verdict,
       originalVerdict: approvalApplication.originalVerdict,
       findings: evaluation.findings,
-      providerStatus: providerStatuses(providerResult, osvResult),
+      providerStatus: providerStatuses(
+        providerResult,
+        osvResult,
+        npmResolution.stale,
+        osvResolution.stale,
+      ),
       policyDigest: digest(config),
       evidenceDigest: digest(normalizedEvidenceForDigest(providerResult, osvResult, spec.type)),
       ...(approvalApplication.approval ? { approval: approvalApplication.approval } : {}),
@@ -163,17 +195,73 @@ function defaultQueryOsv() {
 
 type ResolvedOsvResult = OsvProviderResult | { status: "disabled" } | undefined;
 
+interface CacheResolution<T> {
+  result?: T;
+  stale?: string;
+}
+
+async function resolveNpmResult(
+  name: string,
+  requestedSpec: string,
+  options: CheckOptions,
+  dependencies: CheckDependencies,
+  cache: MetadataCache,
+  now: Date,
+): Promise<CacheResolution<NpmProviderResult>> {
+  const live = dependencies.getPackage ?? defaultGetPackage(options.registryUrl);
+  if (options.noCache) return { result: await live(name, requestedSpec) };
+  const key = JSON.stringify({ name, registry: options.registryUrl ?? "public", requestedSpec });
+  const cached = await cache.read("npm", key, parseCachedNpmResult);
+  if (cached.status === "fresh") return { result: cached.value };
+  if (options.offline) {
+    return {
+      result: offlineFailure(
+        now,
+        cached.status === "stale" ? "Stale npm cache evidence." : "npm cache evidence unavailable.",
+      ),
+      ...(cached.status === "stale" ? { stale: cached.storedAt } : {}),
+    };
+  }
+  const result = await live(name, requestedSpec);
+  if (result.ok) await cache.write("npm", key, result, npmCacheTtl);
+  return { result };
+}
+
 async function resolveOsvResult(
   enabled: boolean,
   providerResult: NpmProviderResult | undefined,
+  options: CheckOptions,
   dependencies: CheckDependencies,
-): Promise<ResolvedOsvResult> {
-  if (!enabled) return { status: "disabled" };
-  if (!providerResult?.ok) return undefined;
-  return await (dependencies.queryOsv ?? defaultQueryOsv())(
-    providerResult.data.name,
-    providerResult.data.resolvedVersion,
-  );
+  cache: MetadataCache,
+  now: Date,
+): Promise<CacheResolution<ResolvedOsvResult>> {
+  if (!enabled) return { result: { status: "disabled" } };
+  if (!providerResult?.ok) return {};
+  const live = dependencies.queryOsv ?? defaultQueryOsv();
+  if (options.noCache)
+    return { result: await live(providerResult.data.name, providerResult.data.resolvedVersion) };
+  const key = JSON.stringify({
+    name: providerResult.data.name,
+    version: providerResult.data.resolvedVersion,
+  });
+  const cached = await cache.read("osv", key, parseCachedOsvResult);
+  if (cached.status === "fresh") return { result: cached.value };
+  if (options.offline) {
+    return {
+      result: offlineFailure(
+        now,
+        cached.status === "stale" ? "Stale OSV cache evidence." : "OSV cache evidence unavailable.",
+      ),
+      ...(cached.status === "stale" ? { stale: cached.storedAt } : {}),
+    };
+  }
+  const result = await live(providerResult.data.name, providerResult.data.resolvedVersion);
+  if (result.ok) await cache.write("osv", key, result, osvCacheTtl);
+  return { result };
+}
+
+function offlineFailure(now: Date, message: string): Extract<NpmProviderResult, { ok: false }> {
+  return { fetchedAt: now.toISOString(), message, ok: false, status: "network_error" };
 }
 
 function isOsvProviderResult(value: ResolvedOsvResult): value is OsvProviderResult {
@@ -247,10 +335,20 @@ async function readYamlFile(
 function providerStatuses(
   result: NpmProviderResult | undefined,
   osvResult: ResolvedOsvResult,
+  npmStale?: string,
+  osvStale?: string,
 ): ProviderStatus[] {
   const statuses: ProviderStatus[] = [];
   if (result) {
-    if (result.ok) statuses.push({ fetchedAt: result.fetchedAt, provider: "npm", status: "ok" });
+    if (npmStale)
+      statuses.push({
+        fetchedAt: npmStale,
+        message: "npm cache evidence is stale",
+        provider: "npm",
+        status: "stale",
+      });
+    else if (result.ok)
+      statuses.push({ fetchedAt: result.fetchedAt, provider: "npm", status: "ok" });
     else {
       const status =
         result.status === "timeout" || result.status === "rate_limited"
@@ -273,7 +371,14 @@ function providerStatuses(
       status: "disabled",
     });
   } else if (osvResult && isOsvProviderResult(osvResult)) {
-    if (osvResult.ok) {
+    if (osvStale) {
+      statuses.push({
+        fetchedAt: osvStale,
+        message: "osv cache evidence is stale",
+        provider: "osv",
+        status: "stale",
+      });
+    } else if (osvResult.ok) {
       statuses.push({ fetchedAt: osvResult.fetchedAt, provider: "osv", status: "ok" });
     } else {
       const status =

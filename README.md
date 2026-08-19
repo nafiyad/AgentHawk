@@ -15,7 +15,7 @@
 
 AgentHawk is a local-first, deterministic security gate that checks dependencies proposed by AI coding agents before they enter a repository.
 
-> **Project status:** early development. npm request parsing, normalized registry and OSV evidence, deterministic PG010/PG011 policy evaluation, `check npm`, and exact expiring approvals are implemented. Do not use this alpha as a complete security control.
+> **Project status:** early development. npm request parsing, normalized registry and OSV evidence, deterministic PG010/PG011 policy evaluation, `check npm`, exact expiring approvals, and a bounded public-metadata cache with offline mode are implemented. Do not use this alpha as a complete security control.
 
 [Why AgentHawk](#why-agenthawk) · [Current capabilities](#current-capabilities) · [Development](#development) · [Security](#security-and-privacy-posture) · [Contributing](#contributing)
 
@@ -31,7 +31,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Bounded, redirect-aware npm registry metadata retrieval
 - Normalized package/version, registry-provided distribution integrity, repository, deprecation, and lifecycle-script metadata
 - Strict deterministic PG001–PG007, PG010, PG011, PG013, and PG015 policy findings with stable verdict precedence
-- `agenthawk check npm <package-spec>` with terminal/JSON output, strict mode, policy and approval files, and stable exit codes
+- `agenthawk check npm <package-spec>` with terminal/JSON output, strict mode, policy and approval files, bounded caching/offline operation, and stable exit codes
 - Bounded OSV query, pagination, and batch-match hydration without executing package code
 - Stable redacted provider errors without package installation or execution
 - Offline fixtures and security regression tests
@@ -46,6 +46,8 @@ AgentHawk evaluates metadata only; it does not install the package.
 pnpm agenthawk check npm example-package@1.0.0
 pnpm agenthawk check npm example-package@1.0.0 --strict --format json
 pnpm agenthawk check npm example-package@1.0.0 --policy .agenthawk/policy.yml
+pnpm agenthawk check npm example-package@1.0.0 --offline
+pnpm agenthawk check npm example-package@1.0.0 --no-cache
 ```
 
 Exit codes are `0` for allowed/non-strict results, `1` for strict review or block findings, `2` for invalid input or policy, `3` for required provider/evaluation failure, and `4` for unexpected internal failure.

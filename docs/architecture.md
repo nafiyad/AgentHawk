@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `agenthawk check npm`, and exact expiring approvals.
+AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `agenthawk check npm`, exact expiring approvals, and a bounded public-metadata cache.
 
 ```text
 untrusted package spec
@@ -82,7 +82,9 @@ Pagination follows `next_page_token` until it is absent. A first page that conta
 
 ## CLI check boundary
 
-`agenthawk check npm <package-spec>` is a thin orchestrator over the parser, npm provider, OSV provider, and policy engine. It supports terminal or JSON output, an optional strict YAML policy file, strict exit behavior, and a configurable registry URL. Policy files are bounded to 256 KiB, must be regular files, reject duplicate keys and unsupported aliases, and still pass the strict core schema.
+`agenthawk check npm <package-spec>` is a thin orchestrator over the parser, npm provider, OSV provider, cache, and policy engine. It supports terminal or JSON output, an optional strict YAML policy file, strict exit behavior, a configurable registry URL, `--offline`, and `--no-cache`. Policy files are bounded to 256 KiB, must be regular files, reject duplicate keys and unsupported aliases, and still pass the strict core schema.
+
+Only successful normalized public provider results enter the cache. npm entries expire after one hour and OSV entries after 15 minutes. Fresh entries may replace a network lookup. Offline cache misses, corruption, and staleness perform no network request and become visible provider failures; stale evidence is never treated as clean. See [ADR 0004](adr/0004-cache-location.md).
 
 Terminal rendering escapes control and ANSI characters. JSON output is validated by the versioned evaluation-report schema and includes canonical SHA-256 policy/evidence digests plus a documented exit-code meaning. Provider failure diagnostics are normalized before rendering or digesting; raw upstream messages are excluded. The command never invokes npm, downloads a tarball, installs a package, or executes lifecycle scripts.
 

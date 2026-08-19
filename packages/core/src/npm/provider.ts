@@ -67,6 +67,34 @@ export type NpmProviderResult =
   | { ok: true; status: "ok"; fetchedAt: string; data: NpmPackageMetadata }
   | { ok: false; status: HttpErrorKind; fetchedAt: string; message: string };
 
+const cachedNpmResultSchema = z
+  .object({
+    ok: z.literal(true),
+    status: z.literal("ok"),
+    fetchedAt: registryTimestampSchema,
+    data: z
+      .object({
+        name: z.string().min(1),
+        requestedSpec: z.string(),
+        resolvedVersion: z.string().min(1),
+        packagePublishedAt: registryTimestampSchema.optional(),
+        releasePublishedAt: registryTimestampSchema.optional(),
+        deprecated: z.string().optional(),
+        repositoryUrl: z.string().optional(),
+        lifecycleScripts: z.array(z.enum(lifecycleNames)),
+        dist: z
+          .object({ integrity: z.string().optional(), tarball: z.string().optional() })
+          .strict()
+          .optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export function parseCachedNpmResult(value: unknown): NpmProviderResult {
+  return cachedNpmResultSchema.parse(value) as NpmProviderResult;
+}
+
 export interface NpmRegistryProviderOptions {
   httpClient?: JsonHttpClient;
   now?: () => Date;

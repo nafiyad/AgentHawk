@@ -28,9 +28,9 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 3. **npm input/provider — complete**: safe spec parser, normalized metadata provider, bounded HTTP client, hostile/error fixtures.
 4. **Policy engine — complete**: strict policy, precedence, PG001-007/013/015, complete positive/negative tests.
 5. **CLI check — complete**: terminal/JSON, strict mode, policy path, stable errors/codes, smoke tests.
-6. **OSV evidence — in review**: version-aware query and records, PG010/011, batch-ready contract.
+6. **OSV evidence — complete**: version-aware query and records, PG010/011, batch-ready contract.
 7. **Approvals — complete**: exact match/expiry/reason, preserved findings, non-overridable malicious block.
-8. **Cache/offline**: public metadata only, TTL/schema/staleness/corruption, `--offline`, `--no-cache`.
+8. **Cache/offline — complete**: public metadata only, provider-specific TTLs, strict bounded schema, safe hashed keys, staleness/corruption handling, `--offline`, `--no-cache`.
 9. **Scan/diff**: direct dependency changes, lockfile correlation, argument-array Git tests.
 10. **GitHub Action**: minimal permissions, safe summary/artifact, optional idempotent comment.
 11. **Agent templates**: Codex/Claude/Cursor/generic instructions after JSON stability.
@@ -65,5 +65,4 @@ Milestones are isolated commits. A defective unreleased milestone can be reverte
 - Calibrate 30-day package and 72-hour release defaults using real-project fixtures before alpha.
 - Define the exact OSV malicious-record classification from current source records during Milestone 5.
 - Decide whether provenance can be verified without artifact download; otherwise defer.
-- Validate Windows/macOS/Linux cache locations and terminal escaping before cache/CLI completion.
 - Confirm the final npm package names and publishing ownership before release work.
