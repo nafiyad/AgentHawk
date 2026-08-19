@@ -28,6 +28,12 @@ describe("CLI program", () => {
         status: "ok",
       }),
       now: () => new Date("2026-08-19T18:00:00.000Z"),
+      queryOsv: async () => ({
+        fetchedAt: "2026-08-19T17:58:00.000Z",
+        ok: true,
+        records: [],
+        status: "ok",
+      }),
       setExitCode: (value) => {
         exitCode = value;
       },

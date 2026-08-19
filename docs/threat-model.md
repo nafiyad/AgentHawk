@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing, registry metadata retrieval, and deterministic policy evaluation. Approvals, cache, diff scanning, and GitHub reporting will extend it in later milestones.
+This threat model covers npm request parsing, registry metadata retrieval, OSV evidence retrieval, deterministic policy evaluation, and the `check npm` CLI. Approvals, cache, diff scanning, and GitHub reporting will extend it in later milestones.
 
 ## Assets
 
@@ -38,6 +38,11 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 | Policy YAML exhausts memory or expands aliases | Require a regular file, enforce a 256 KiB bound, reject duplicate keys and aliases | Local filesystem races remain possible within the bounded read |
 | Provider diagnostics leak through reports or digests | Fixed rendered messages and normalized failure digest inputs | Timing and provider status remain observable by design |
 | Hostile text injects terminal controls | Escape C0/C1 control characters before terminal output | Terminal behavior outside standard control ranges is platform-dependent |
+| OSV POST is redirected or oversized | Bound request bodies; reject POST redirects; reuse HTTPS/credential/timeout limits | The OSV endpoint itself may return hostile JSON within the body limit |
+| A partial OSV page is treated as complete | Follow `next_page_token`; truncated pagination is PG013 | OSV may still omit records that exist outside the query window |
+| Abbreviated batch matches are used as findings | Hydrate `/v1/vulns/{id}` and validate before PG010/PG011 | Hydration failure fail-closes the evaluation |
+| CVSS vectors are converted into guessed ratings | Use documented qualitative labels only; unknown severity does not match PG011 | Advisories that publish only vectors are not severity-matched |
+| Disabling OSV is confused with provider failure | Explicit `registries.osv.enabled: false` is digest-visible status `disabled` | Operators can disable a required evidence source |
 
 ## Unsupported claims
 

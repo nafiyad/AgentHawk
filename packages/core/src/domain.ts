@@ -49,7 +49,7 @@ export type Finding = z.infer<typeof findingSchema>;
 export const providerStatusSchema = z
   .object({
     provider: z.string().min(1),
-    status: z.enum(["ok", "error", "timeout", "rate_limited", "offline", "stale"]),
+    status: z.enum(["ok", "error", "timeout", "rate_limited", "offline", "stale", "disabled"]),
     fetchedAt: z.iso.datetime().optional(),
     message: z.string().min(1).optional(),
   })

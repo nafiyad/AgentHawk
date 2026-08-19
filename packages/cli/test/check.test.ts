@@ -28,12 +28,21 @@ function success(
   };
 }
 
+function emptyOsv() {
+  return {
+    fetchedAt: "2026-08-19T17:58:00.000Z",
+    ok: true as const,
+    records: [],
+    status: "ok" as const,
+  };
+}
+
 describe("checkNpmPackage", () => {
   it("renders a schema-stable allow report as JSON", async () => {
     const result = await checkNpmPackage(
       "example-package@1.0.0",
       { format: "json", strict: false },
-      { getPackage: async () => success(), now: () => now },
+      { getPackage: async () => success(), now: () => now, queryOsv: async () => emptyOsv() },
     );
     const report = JSON.parse(result.output) as Record<string, unknown>;
 
@@ -60,6 +69,7 @@ describe("checkNpmPackage", () => {
           return value;
         },
         now: () => now,
+        queryOsv: async () => emptyOsv(),
       },
     );
 
@@ -80,6 +90,7 @@ describe("checkNpmPackage", () => {
           status: "timeout",
         }),
         now: () => now,
+        queryOsv: async () => emptyOsv(),
       },
     );
 
@@ -103,6 +114,7 @@ describe("checkNpmPackage", () => {
                 status: "provider_error",
               }),
               now: () => now,
+              queryOsv: async () => emptyOsv(),
             },
           )
         ).output,
@@ -119,7 +131,11 @@ describe("checkNpmPackage", () => {
     const invalidPolicy = await checkNpmPackage(
       "example-package",
       { format: "json", policyPath: "policy.yml", strict: false },
-      { now: () => now, readPolicy: async () => ({ bypass: true, version: 1 }) },
+      {
+        now: () => now,
+        queryOsv: async () => emptyOsv(),
+        readPolicy: async () => ({ bypass: true, version: 1 }),
+      },
     );
 
     expect(invalidSpec.exitCode).toBe(2);
@@ -147,6 +163,7 @@ describe("checkNpmPackage", () => {
           throw new Error("token=internal-secret");
         },
         now: () => now,
+        queryOsv: async () => emptyOsv(),
       },
     );
 
@@ -164,6 +181,7 @@ describe("checkNpmPackage", () => {
           return success();
         },
         now: () => now,
+        queryOsv: async () => emptyOsv(),
       },
     );
 
@@ -174,7 +192,11 @@ describe("checkNpmPackage", () => {
 
   it("produces deterministic digests for identical normalized inputs", async () => {
     const options = { format: "json" as const, strict: false };
-    const dependencies = { getPackage: async () => success(), now: () => now };
+    const dependencies = {
+      getPackage: async () => success(),
+      now: () => now,
+      queryOsv: async () => emptyOsv(),
+    };
     const first = JSON.parse(
       (await checkNpmPackage("example-package@1.0.0", options, dependencies)).output,
     );
@@ -194,7 +216,7 @@ describe("checkNpmPackage", () => {
       const result = await checkNpmPackage(
         "example-package@1.0.0",
         { format: "json", policyPath: path, strict: false },
-        { getPackage: async () => success(), now: () => now },
+        { getPackage: async () => success(), now: () => now, queryOsv: async () => emptyOsv() },
       );
       expect(result.exitCode).toBe(0);
     } finally {
@@ -256,5 +278,93 @@ describe("checkNpmPackage", () => {
       version: 1,
     });
     expect(closed).toBe(true);
+  });
+
+  it("does not query OSV when the provider is explicitly disabled", async () => {
+    let queried = false;
+    const result = await checkNpmPackage(
+      "example-package@1.0.0",
+      { format: "json", policyPath: "policy.yml", strict: false },
+      {
+        getPackage: async () => success(),
+        now: () => now,
+        queryOsv: async () => {
+          queried = true;
+          return emptyOsv();
+        },
+        readPolicy: async () => ({ registries: { osv: { enabled: false } }, version: 1 }),
+      },
+    );
+    const report = JSON.parse(result.output);
+    expect(queried).toBe(false);
+    expect(result.exitCode).toBe(0);
+    expect(report.verdict).toBe("allow");
+    expect(report.providerStatus).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "OSV evidence provider is disabled by policy",
+          provider: "osv",
+          status: "disabled",
+        }),
+      ]),
+    );
+  });
+
+  it("does not query OSV for non-registry input", async () => {
+    let queried = false;
+    await checkNpmPackage(
+      "owner/repository#main",
+      { format: "json", strict: false },
+      {
+        now: () => now,
+        queryOsv: async () => {
+          queried = true;
+          return emptyOsv();
+        },
+      },
+    );
+    expect(queried).toBe(false);
+  });
+
+  it("blocks known malicious OSV records from check npm", async () => {
+    const result = await checkNpmPackage(
+      "example-package@1.0.0",
+      { format: "json", strict: true },
+      {
+        getPackage: async () => success(),
+        now: () => now,
+        queryOsv: async () => ({
+          fetchedAt: "2026-08-19T17:58:00.000Z",
+          ok: true,
+          records: [{ id: "MAL-2024-1234", malicious: true }],
+          status: "ok",
+        }),
+      },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.output).findings[0]).toMatchObject({
+      ruleId: "PG010",
+      verdict: "block",
+    });
+  });
+
+  it("returns exit 3 when enabled OSV evidence is unavailable", async () => {
+    const result = await checkNpmPackage(
+      "example-package@1.0.0",
+      { format: "json", strict: true },
+      {
+        getPackage: async () => success(),
+        now: () => now,
+        queryOsv: async () => ({
+          fetchedAt: "2026-08-19T17:58:00.000Z",
+          message: "osv-secret",
+          ok: false,
+          status: "timeout",
+        }),
+      },
+    );
+    expect(result.exitCode).toBe(3);
+    expect(result.output).not.toContain("osv-secret");
+    expect(JSON.parse(result.output)).toMatchObject({ verdict: "error" });
   });
 });
