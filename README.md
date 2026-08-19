@@ -29,7 +29,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 
 - Conservative parsing and classification of npm dependency requests
 - Bounded, redirect-aware npm registry metadata retrieval
-- Normalized package/version, provenance-adjacent, repository, deprecation, and lifecycle-script evidence
+- Normalized package/version, registry-provided distribution integrity, repository, deprecation, and lifecycle-script metadata
 - Stable redacted provider errors without package installation or execution
 - Offline fixtures and security regression tests
 
