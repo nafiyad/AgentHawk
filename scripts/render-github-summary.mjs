@@ -17,6 +17,10 @@ const escapeMarkdown = (value) =>
     .map((character) => {
       const code = character.codePointAt(0);
       return (code < 32 && code !== 9) ||
+        (code >= 127 && code <= 159) ||
+        code === 0x061c ||
+        code === 0x200e ||
+        code === 0x200f ||
         (code >= 0x202a && code <= 0x202e) ||
         (code >= 0x2066 && code <= 0x2069)
         ? `\\u${code.toString(16).padStart(4, "0")}`
@@ -26,7 +30,8 @@ const escapeMarkdown = (value) =>
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll("|", "\\|")
+    .replaceAll("\\", "\\\\")
+    .replaceAll(/([`*_{}[\]()#+.!|~>-])/gu, "\\$1")
     .replaceAll("\r", " ")
     .replaceAll("\n", " ");
 const lines = [
@@ -39,7 +44,7 @@ const lines = [
 ];
 for (const change of report.changes.slice(0, 64))
   lines.push(
-    `| ${escapeMarkdown(change.kind)} | \`${escapeMarkdown(change.name)}@${escapeMarkdown(change.requestedSpec)}\` | ${escapeMarkdown(change.section)} |`,
+    `| ${escapeMarkdown(change.kind)} | <code>${escapeMarkdown(change.name)}@${escapeMarkdown(change.requestedSpec)}</code> | ${escapeMarkdown(change.section)} |`,
   );
 for (const finding of report.findings.slice(0, 32))
   lines.push("", `- **${escapeMarkdown(finding.ruleId)}:** ${escapeMarkdown(finding.message)}`);

@@ -6,6 +6,6 @@ The evaluation job declares only `contents: read`, persists no checkout credenti
 
 ## Optional pull request comment
 
-Comments are disabled by default. A maintainer may create the repository Actions variable `AGENTHAWK_PR_COMMENT` with the exact value `true`. The separate `workflow_run` job then receives `pull-requests: write`, downloads the normalized report as untrusted data, and updates one comment containing the marker `agenthawk-dependency-diff:v1` from `github-actions[bot]`.
+Comments are disabled by default. A maintainer may create the repository Actions variable `AGENTHAWK_PR_COMMENT` with the exact value `true`. The separate `workflow_run` job then receives `pull-requests: write`, downloads the normalized report as untrusted data, labels it as a pull-request-controlled diagnostic rather than an independently verified verdict, and updates one comment containing the marker `agenthawk-dependency-diff:v1` from `github-actions[bot]`.
 
 The privileged commenter does not check out, build, import, or execute pull-request content. Do not combine it with a pull-request checkout or add secrets to the evaluation workflow.

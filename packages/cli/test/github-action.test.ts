@@ -41,6 +41,9 @@ describe("AgentHawk workflow", () => {
     expect(source).not.toMatch(/^\s+run:/mu);
     expect(source).toContain("github-actions[bot]");
     expect(source).toContain("issues.updateComment");
+    expect(source).toContain("Untrusted diagnostic:");
+    expect(source).not.toContain("github.paginate");
+    expect(source).toContain("page <= 5");
   });
 });
 
@@ -57,7 +60,10 @@ describe("GitHub summary renderer", () => {
         changes: Array.from({ length: 64 }, (_, index) => ({
           kind: "added|row",
           name: `bad<script>${index}\u001b[31m`,
-          requestedSpec: "x".repeat(2_048),
+          requestedSpec:
+            index === 0
+              ? "` [injected](https://attacker.invalid)\u0085\u061c\u200e"
+              : "x".repeat(2_048),
           section: "dependencies\nheading",
         })),
         findings: [{ ruleId: "PG014", message: "bad </details>|row\nnext" }],
@@ -69,8 +75,11 @@ describe("GitHub summary renderer", () => {
     expect(output).toContain("&lt;script&gt;");
     expect(output).toContain("\\|row");
     expect(output).not.toContain("<script>");
-    expect(output).toContain("\\u001b[31m");
+    expect(output).toContain("\\\\u001b\\[31m");
     expect(output).not.toContain("\u001b");
+    expect(output).not.toContain("[injected](https://attacker.invalid)");
+    expect(output).toContain("\\\\u0085\\\\u061c\\\\u200e");
+    expect(output).not.toContain("\u0085");
     expect(output).not.toContain("\nnext");
   });
 
