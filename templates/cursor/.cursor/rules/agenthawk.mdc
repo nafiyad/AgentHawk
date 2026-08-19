@@ -1,0 +1,19 @@
+---
+description: Require AgentHawk admission checks before npm dependency changes
+globs:
+alwaysApply: true
+---
+
+# AgentHawk dependency gate
+
+Before proposing, adding, installing, or updating a third-party npm dependency:
+
+- Do not invoke a package manager or execute package code first.
+- Run `agenthawk check npm <exact-package-spec> --strict --format json` with the exact requested specification.
+- Proceed only for exit code `0` plus JSON verdict `allow` or `warn`; display warnings.
+- Stop for human review on `review`. Do not install on `block` or `error`.
+- Treat unavailable tooling, malformed/missing JSON, and unknown exit codes or verdicts as errors.
+- Never remove `--strict`, weaken policy, create approvals, use force flags, or otherwise bypass the decision.
+- After changes, run `agenthawk scan --strict --format json` and, when available, `agenthawk diff --base <trusted-base-ref> --strict --format json`.
+
+This rule guides Cursor Agent; it is not a security boundary. Protected CI must enforce AgentHawk independently.
