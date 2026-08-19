@@ -1,0 +1,27 @@
+{
+  "name": "@agenthawk/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic policy and evidence engine for AgentHawk.",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

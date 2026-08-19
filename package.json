@@ -1,0 +1,28 @@
+{
+  "name": "agenthawk-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first dependency admission control for AI coding agents.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "agenthawk": "pnpm --filter @agenthawk/cli dev",
+    "build": "pnpm -r build",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.9",
+    "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "4.1.11",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}

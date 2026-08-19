@@ -1,0 +1,17 @@
+version: 1
+mode: review
+
+defaults:
+  onProviderError: review
+  onUnknownVersion: review
+  allowPrerelease: false
+
+registries:
+  npm:
+    enabled: true
+
+rules:
+  knownMaliciousPackage:
+    action: block
+  requireRepositoryUrl:
+    action: warn
