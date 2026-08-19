@@ -6,7 +6,7 @@ Status: accepted
 
 The default AgentHawk workflow uses `pull_request`, never `pull_request_target`, and declares only `contents: read`. Fork pull requests receive no secrets or write token. Checkout disables persisted credentials. Third-party actions are pinned to immutable commit SHAs.
 
-The pull-request checkout is untrusted and may execute during dependency installation, build, and AgentHawk evaluation. It therefore runs only on an ephemeral GitHub-hosted runner with a read-only token and no secrets. AgentHawk never promotes artifacts or data from this job into a privileged follow-up workflow.
+The pull-request checkout is untrusted and may execute during dependency installation, build, and AgentHawk evaluation. It therefore runs only on an ephemeral GitHub-hosted runner with a read-only token and no secrets. A privileged follow-up may render its artifact only after strict validation, bounding, escaping, and a prominent untrusted-data warning; it never executes the artifact or treats its claimed verdict as authoritative.
 
 The workflow writes a normalized JSON report to `.agenthawk/reports/`, uploads only that file with short retention, and writes a bounded escaped summary. Raw provider bodies and environment data are excluded. PR commenting is disabled unless a maintainer sets the repository variable `AGENTHAWK_PR_COMMENT` to `true`. The separate `workflow_run` commenter never checks out or executes pull-request content. It downloads only the normalized artifact, validates and bounds it as untrusted data, labels it as a pull-request-controlled diagnostic rather than an authoritative verdict, receives explicit `pull-requests: write`, and updates one bot-authored marker comment idempotently with a five-page lookup bound.
 
