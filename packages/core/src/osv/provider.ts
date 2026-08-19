@@ -5,7 +5,7 @@ import {
   SafeHttpClient,
   SafeHttpError,
 } from "../http/safe-http-client.js";
-import { validClockValue } from "../time.js";
+import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
 export const osvSeveritySchema = z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
 export type OsvSeverity = z.infer<typeof osvSeveritySchema>;
@@ -26,6 +26,29 @@ type OsvProviderFailure = {
 export type OsvProviderResult =
   | { ok: true; status: "ok"; fetchedAt: string; records: OsvRecord[] }
   | OsvProviderFailure;
+
+const cachedOsvResultSchema = z
+  .object({
+    ok: z.literal(true),
+    status: z.literal("ok"),
+    fetchedAt: z.string().refine((value) => parseStrictIsoTimestamp(value) !== undefined),
+    records: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            malicious: z.boolean(),
+            severity: osvSeveritySchema.optional(),
+          })
+          .strict(),
+      )
+      .max(100),
+  })
+  .strict();
+
+export function parseCachedOsvResult(value: unknown): OsvProviderResult {
+  return cachedOsvResultSchema.parse(value) as OsvProviderResult;
+}
 
 export interface OsvPackageQuery {
   name: string;

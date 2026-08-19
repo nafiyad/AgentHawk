@@ -1,8 +1,8 @@
 import type { FileHandle } from "node:fs/promises";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NpmProviderResult } from "@agenthawk/core";
+import { MetadataCache, type NpmProviderResult } from "@agenthawk/core";
 import { describe, expect, it } from "vitest";
 import { checkNpmPackage, readApprovalFile, readPolicyFile } from "../src/check.js";
 
@@ -272,6 +272,290 @@ describe("checkNpmPackage", () => {
     );
     expect(first.policyDigest).toBe(second.policyDigest);
     expect(first.evidenceDigest).toBe(second.evidenceDigest);
+  });
+
+  it("reuses fresh npm and OSV cache entries offline without network access", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () => success(),
+          now: () => now,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      let contacted = false;
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", offline: true, strict: true },
+        {
+          cache,
+          getPackage: async () => {
+            contacted = true;
+            return success();
+          },
+          now: () => now,
+          queryOsv: async () => {
+            contacted = true;
+            return emptyOsv();
+          },
+        },
+      );
+      expect(contacted).toBe(false);
+      expect(result.exitCode).toBe(3);
+      expect(JSON.parse(result.output)).toMatchObject({
+        verdict: "error",
+        findings: expect.arrayContaining([expect.objectContaining({ ruleId: "PG013" })]),
+        providerStatus: [
+          expect.objectContaining({ provider: "npm", status: "offline" }),
+          expect.objectContaining({ provider: "osv", status: "offline" }),
+        ],
+      });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("never lets an approval resolve unauthenticated offline cache evidence", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: false },
+        {
+          cache,
+          getPackage: async () => success(),
+          now: () => now,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      const approvalsPath = join(directory, "approvals.yml");
+      await writeFile(approvalsPath, JSON.stringify(activeApproval));
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { approvalsPath, format: "json", offline: true, strict: false },
+        {
+          cache,
+          getPackage: async () => {
+            throw new Error("network must not run");
+          },
+          now: () => now,
+          queryOsv: async () => {
+            throw new Error("network must not run");
+          },
+        },
+      );
+      const report = JSON.parse(result.output);
+      expect(report.verdict).toBe("review");
+      expect(report.approval).toBeUndefined();
+      expect(report.findings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ approvable: false, ruleId: "PG013" })]),
+      );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("never persists credential-bearing metadata URLs", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () =>
+            success({
+              repositoryUrl: "https://user:repository-secret@example.com/project.git",
+              dist: {
+                integrity: "sha512-public",
+                tarball: "https://token:tarball-secret@example.com/package.tgz",
+              },
+            }),
+          now: () => now,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      const contents = await Promise.all(
+        (await readdir(directory)).map((name) => readFile(join(directory, name), "utf8")),
+      );
+      expect(contents.join("\n")).not.toContain("secret");
+      expect(contents.join("\n")).not.toContain("token:");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores even schema-valid cached evidence during online evaluation", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () => success(),
+          now: () => now,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      let contacted = false;
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () => {
+            contacted = true;
+            return {
+              fetchedAt: now.toISOString(),
+              message: "Live provider unavailable.",
+              ok: false,
+              status: "network_error",
+            };
+          },
+          now: () => now,
+        },
+      );
+      expect(contacted).toBe(true);
+      expect(result.exitCode).toBe(3);
+      expect(JSON.parse(result.output).findings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ ruleId: "PG013" })]),
+      );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("fail-closes stale offline evidence and reports the provider as stale", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    let clock = now;
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => clock });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () => success(),
+          now: () => clock,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      clock = new Date("2026-08-19T20:00:00.000Z");
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", offline: true, strict: true },
+        {
+          cache,
+          getPackage: async () => {
+            throw new Error("network must not run");
+          },
+          now: () => clock,
+        },
+      );
+      const report = JSON.parse(result.output);
+      expect(result.exitCode).toBe(3);
+      expect(report.findings[0]).toMatchObject({ ruleId: "PG013" });
+      expect(report.providerStatus[0]).toMatchObject({ provider: "npm", status: "stale" });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("fail-closes stale OSV evidence while npm cache remains fresh", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    let clock = now;
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => clock });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () => success(),
+          now: () => clock,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      clock = new Date("2026-08-19T18:16:00.000Z");
+      let contacted = false;
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", offline: true, strict: true },
+        {
+          cache,
+          getPackage: async () => {
+            contacted = true;
+            return success();
+          },
+          now: () => clock,
+          queryOsv: async () => {
+            contacted = true;
+            return emptyOsv();
+          },
+        },
+      );
+      const report = JSON.parse(result.output);
+      expect(contacted).toBe(false);
+      expect(result.exitCode).toBe(3);
+      expect(report.providerStatus).toEqual(
+        expect.arrayContaining([expect.objectContaining({ provider: "osv", status: "stale" })]),
+      );
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("--no-cache performs live checks without reading or writing cache files", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", noCache: true, strict: true },
+        {
+          cache,
+          getPackage: async () => success(),
+          now: () => now,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("fail-closes an offline cache miss and rejects offline with no-cache", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      const missing = await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", offline: true, strict: true },
+        { cache, now: () => now },
+      );
+      const conflicting = await checkNpmPackage("example-package", {
+        format: "json",
+        noCache: true,
+        offline: true,
+        strict: false,
+      });
+      expect(missing.exitCode).toBe(3);
+      expect(JSON.parse(missing.output).providerStatus[0]).toMatchObject({ status: "offline" });
+      expect(conflicting.exitCode).toBe(2);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it("loads valid policy files at the exact size limit", async () => {

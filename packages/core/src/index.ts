@@ -7,6 +7,14 @@ export {
   approvalRecordSchema,
 } from "./approvals/index.js";
 export {
+  type CacheProvider,
+  type CacheReadResult,
+  cacheKeyDigest,
+  defaultCacheRoot,
+  MetadataCache,
+  type MetadataCacheOptions,
+} from "./cache/metadata-cache.js";
+export {
   type AgentHawkConfig,
   agentHawkConfigSchema,
   type PolicyAction,
@@ -45,6 +53,8 @@ export {
   type NpmProviderResult,
   NpmRegistryProvider,
   type NpmRegistryProviderOptions,
+  npmResultForCache,
+  parseCachedNpmResult,
 } from "./npm/provider.js";
 export {
   type NonRegistryKind,
@@ -66,6 +76,7 @@ export {
   type OsvRecord,
   type OsvSeverity,
   osvSeveritySchema,
+  parseCachedOsvResult,
 } from "./osv/provider.js";
 export {
   combineVerdicts,
