@@ -22,6 +22,7 @@ describe("NpmRegistryProvider", () => {
   it("normalizes latest metadata without retaining arbitrary scripts", async () => {
     const provider = new NpmRegistryProvider({
       httpClient: client(await fixture("mature-package.json")),
+      now: () => new Date("2026-08-19T17:59:00.000Z"),
     });
     const result = await provider.getPackage({
       ecosystem: "npm",
@@ -30,6 +31,7 @@ describe("NpmRegistryProvider", () => {
     });
 
     expect(result).toEqual({
+      fetchedAt: "2026-08-19T17:59:00.000Z",
       ok: true,
       status: "ok",
       data: {
@@ -153,7 +155,7 @@ describe("NpmRegistryProvider", () => {
     });
     await expect(
       unavailable.getPackage({ ecosystem: "npm", name: "example", requestedSpec: "latest" }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       ok: false,
       status: "rate_limited",
       message: "Provider rate limit was reached.",
@@ -167,12 +169,29 @@ describe("NpmRegistryProvider", () => {
       name: "example",
       requestedSpec: "latest",
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: false,
       status: "invalid_response",
       message: "Registry returned metadata with an invalid shape.",
     });
     expect(JSON.stringify(result)).not.toContain("TEST_ONLY_PUBLIC_VALUE");
+  });
+
+  it("rejects impossible registry timestamps at the provider boundary", async () => {
+    const base = (await fixture("mature-package.json")) as Record<string, unknown>;
+    const provider = new NpmRegistryProvider({
+      httpClient: client({
+        ...base,
+        time: { ...(base.time as Record<string, string>), created: "2026-02-30T00:00:00.000Z" },
+      }),
+    });
+    await expect(
+      provider.getPackage({
+        ecosystem: "npm",
+        name: "example-package",
+        requestedSpec: "latest",
+      }),
+    ).resolves.toMatchObject({ ok: false, status: "invalid_response" });
   });
 
   it("rejects insecure or credential-bearing registry URLs", () => {
@@ -195,7 +214,7 @@ describe("NpmRegistryProvider", () => {
       name: "example",
       requestedSpec: "latest",
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: false,
       status: "provider_error",
       message: "Registry evaluation failed.",

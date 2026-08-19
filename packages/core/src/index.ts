@@ -50,5 +50,6 @@ export {
   combineVerdicts,
   evaluatePolicy,
   type PolicyEvaluation,
+  type PolicyEvaluationError,
   type PolicyEvaluationInput,
 } from "./policy/engine.js";
