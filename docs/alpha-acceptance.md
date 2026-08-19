@@ -34,8 +34,12 @@ These are owner decisions, not missing alpha admission features:
 4. configure protected release approvers and npm trusted publishing;
 5. authorize a separate release-workflow PR and release candidate.
 
-Until then, `private: true`, version `0.0.0`, and the CLI's `workspace:*` dependency deliberately prevent publication.
+Until then, `private: true` is the npm publication guard. Version `0.0.0` and the CLI's `workspace:*` dependency are additional readiness sentinels that the package gate requires; they are not npm publication controls by themselves.
 
 ## Explicitly deferred
 
-PyPI/Cargo/Maven/NuGet support, command or secret interception, network sandboxing, MCP server, hosted services, accounts, telemetry, full malware analysis, artifact/provenance verification, and LLM security scoring are outside this alpha. They require separate threat models and milestones.
+PyPI/Cargo/Maven/NuGet support, command or secret interception, network sandboxing, MCP server, hosted services, accounts, full malware analysis, and artifact/provenance verification are outside this alpha. They require separate threat models and milestones.
+
+## Permanent product exclusions
+
+AgentHawk will not add telemetry and will not use an LLM as the authority for security verdicts. Those are product principles, not deferred features. Future optional analysis may supply non-authoritative evidence only if a separate design preserves deterministic policy authority and the no-telemetry boundary.

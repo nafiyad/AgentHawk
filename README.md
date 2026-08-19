@@ -36,7 +36,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - `agenthawk diff --base <git-ref>` for direct dependency additions/version changes and PG014 lockfile correlation
 - Bounded OSV query, pagination, and batch-match hydration without executing package code
 - Stable redacted provider errors without package installation or execution
-- Read-only GitHub pull-request reporting with an isolated opt-in commenter
+- Read-only GitHub pull-request evaluation with an isolated opt-in write commenter
 - Fail-closed advisory templates for Codex, Claude Code, Cursor, and generic agents
 - Exact offline release-package manifests with publication locks and entrypoint smoke tests
 - Offline fixtures and security regression tests

@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, and `diff` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub reporting, advisory agent templates, and locked release-package verification.
+AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, and `diff` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub evaluation with an isolated opt-in write commenter, advisory agent templates, and locked release-package verification.
 
 ```text
 untrusted package spec
@@ -104,8 +104,8 @@ The pull-request workflow runs with read-only repository permission on untrusted
 
 ## Agent-instruction boundary
 
-Codex, Claude Code, Cursor, and generic templates require strict JSON evaluation before dependency installation and fail closed on unavailable tooling, malformed reports, or non-allow decisions. These files guide model behavior; they are not an enforcement boundary. Host permissions and protected CI remain authoritative.
+Codex, Claude Code, Cursor, and generic templates require strict JSON evaluation before dependency installation and fail closed on unavailable tooling, malformed reports, or review/block/error decisions. An allow may proceed and a warning must be surfaced. These files guide model behavior; they are not an enforcement boundary. Host permissions and protected CI remain authoritative.
 
 ## Release-package boundary
 
-Both packages remain private at the unreleased `0.0.0` version. The offline package gate validates exact canonical tarball manifests, every path component as regular and non-symlink, bounded positive size metadata, required consumer documentation/licenses, and core/CLI entrypoint startup. It cannot publish. Package ownership, versioning, and an OIDC trusted-publishing workflow require a separate maintainer-authorized change.
+Both packages remain private at the unreleased `0.0.0` version. The offline package gate validates exact canonical tarball manifests, intermediate path components as non-symlink directories, final entries as regular non-symlink files, bounded positive size metadata, required consumer documentation/licenses, and core/CLI entrypoint startup. It cannot publish. Package ownership, versioning, and an OIDC trusted-publishing workflow require a separate maintainer-authorized change.

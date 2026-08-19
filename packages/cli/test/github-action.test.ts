@@ -27,6 +27,11 @@ describe("AgentHawk workflow", () => {
     expect(threatModel).toContain("Agent instruction text is mistaken for enforcement");
     expect(acceptance).toContain("Both packages remain private and unpublished");
     expect(acceptance).toContain("Explicitly deferred");
+    expect(acceptance).toContain("`private: true` is the npm publication guard");
+    expect(acceptance).toContain("Permanent product exclusions");
+    const deferred = acceptance.split("## Explicitly deferred")[1]?.split("## Permanent")[0];
+    expect(deferred).toBeDefined();
+    expect(deferred).not.toMatch(/telemetry|LLM security scoring/iu);
   });
 
   it("uses a read-only unprivileged trigger and immutable third-party action pins", async () => {
