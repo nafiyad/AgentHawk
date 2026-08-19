@@ -53,6 +53,7 @@ export {
   type NpmProviderResult,
   NpmRegistryProvider,
   type NpmRegistryProviderOptions,
+  npmResultForCache,
   parseCachedNpmResult,
 } from "./npm/provider.js";
 export {

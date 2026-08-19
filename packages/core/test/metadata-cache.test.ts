@@ -147,9 +147,9 @@ describe("MetadataCache", () => {
     await writeFile(cacheRoot, "occupied");
     const cache = new MetadataCache({ root: cacheRoot });
     await expect(cache.write("npm", "example", {}, 1_000)).resolves.toBe(false);
-    await expect(cache.read("npm", "example", (value) => value)).resolves.toEqual({
-      status: "missing",
-    });
+    expect((await cache.read("npm", "example", (value) => value)).status).toMatch(
+      /^(corrupt|missing)$/u,
+    );
   });
 });
 

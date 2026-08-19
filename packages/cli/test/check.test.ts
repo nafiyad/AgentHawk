@@ -1,5 +1,5 @@
 import type { FileHandle } from "node:fs/promises";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MetadataCache, type NpmProviderResult } from "@agenthawk/core";
@@ -306,8 +306,84 @@ describe("checkNpmPackage", () => {
         },
       );
       expect(contacted).toBe(false);
-      expect(result.exitCode).toBe(0);
-      expect(JSON.parse(result.output).verdict).toBe("allow");
+      expect(result.exitCode).toBe(3);
+      expect(JSON.parse(result.output)).toMatchObject({
+        verdict: "error",
+        findings: expect.arrayContaining([expect.objectContaining({ ruleId: "PG013" })]),
+      });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("never persists credential-bearing metadata URLs", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () =>
+            success({
+              repositoryUrl: "https://user:repository-secret@example.com/project.git",
+              dist: {
+                integrity: "sha512-public",
+                tarball: "https://token:tarball-secret@example.com/package.tgz",
+              },
+            }),
+          now: () => now,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      const contents = await Promise.all(
+        (await readdir(directory)).map((name) => readFile(join(directory, name), "utf8")),
+      );
+      expect(contents.join("\n")).not.toContain("secret");
+      expect(contents.join("\n")).not.toContain("token:");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores even schema-valid cached evidence during online evaluation", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    try {
+      const cache = new MetadataCache({ root: directory, now: () => now });
+      await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () => success(),
+          now: () => now,
+          queryOsv: async () => emptyOsv(),
+        },
+      );
+      let contacted = false;
+      const result = await checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", strict: true },
+        {
+          cache,
+          getPackage: async () => {
+            contacted = true;
+            return {
+              fetchedAt: now.toISOString(),
+              message: "Live provider unavailable.",
+              ok: false,
+              status: "network_error",
+            };
+          },
+          now: () => now,
+        },
+      );
+      expect(contacted).toBe(true);
+      expect(result.exitCode).toBe(3);
+      expect(JSON.parse(result.output).findings).toEqual(
+        expect.arrayContaining([expect.objectContaining({ ruleId: "PG013" })]),
+      );
     } finally {
       await rm(directory, { force: true, recursive: true });
     }

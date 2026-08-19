@@ -80,10 +80,19 @@ const cachedNpmResultSchema = z
         packagePublishedAt: registryTimestampSchema.optional(),
         releasePublishedAt: registryTimestampSchema.optional(),
         deprecated: z.string().optional(),
-        repositoryUrl: z.string().optional(),
+        repositoryUrl: z
+          .string()
+          .refine((value) => !hasUrlCredentials(value))
+          .optional(),
         lifecycleScripts: z.array(z.enum(lifecycleNames)),
         dist: z
-          .object({ integrity: z.string().optional(), tarball: z.string().optional() })
+          .object({
+            integrity: z.string().optional(),
+            tarball: z
+              .string()
+              .refine((value) => !hasUrlCredentials(value))
+              .optional(),
+          })
           .strict()
           .optional(),
       })
@@ -93,6 +102,41 @@ const cachedNpmResultSchema = z
 
 export function parseCachedNpmResult(value: unknown): NpmProviderResult {
   return cachedNpmResultSchema.parse(value) as NpmProviderResult;
+}
+
+export function npmResultForCache(
+  result: Extract<NpmProviderResult, { ok: true }>,
+): Extract<NpmProviderResult, { ok: true }> {
+  const { dist, repositoryUrl: _repositoryUrl, ...publicData } = result.data;
+  const repositoryUrl = safePublicUrl(result.data.repositoryUrl);
+  const tarball = safePublicUrl(dist?.tarball);
+  const publicDist = dist
+    ? {
+        ...(dist.integrity ? { integrity: dist.integrity } : {}),
+        ...(tarball ? { tarball } : {}),
+      }
+    : undefined;
+  return {
+    ...result,
+    data: {
+      ...publicData,
+      ...(repositoryUrl ? { repositoryUrl } : {}),
+      ...(publicDist ? { dist: publicDist } : {}),
+    },
+  };
+}
+
+function safePublicUrl(value: string | undefined): string | undefined {
+  return value && !hasUrlCredentials(value) ? value : undefined;
+}
+
+function hasUrlCredentials(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.username.length > 0 || parsed.password.length > 0;
+  } catch {
+    return /^[a-z][a-z0-9+.-]*:\/\/[^/]*@/iu.test(value);
+  }
 }
 
 export interface NpmRegistryProviderOptions {

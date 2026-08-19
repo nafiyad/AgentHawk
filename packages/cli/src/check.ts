@@ -11,6 +11,7 @@ import {
   MetadataCache,
   type NpmProviderResult,
   NpmRegistryProvider,
+  npmResultForCache,
   OsvProvider,
   type OsvProviderResult,
   type ProviderStatus,
@@ -108,13 +109,17 @@ export async function checkNpmPackage(
       now,
     );
     const osvResult = osvResolution.result;
-    const evaluation = evaluatePolicy({
+    const evaluation = requireLiveVerification(
+      evaluatePolicy({
+        config,
+        now,
+        ...(isOsvProviderResult(osvResult) ? { osvResult } : {}),
+        ...(providerResult ? { providerResult } : {}),
+        spec,
+      }),
       config,
-      now,
-      ...(isOsvProviderResult(osvResult) ? { osvResult } : {}),
-      ...(providerResult ? { providerResult } : {}),
-      spec,
-    });
+      npmResolution.cached === true || osvResolution.cached === true,
+    );
     const target =
       spec.type === "registry"
         ? {
@@ -196,6 +201,7 @@ function defaultQueryOsv() {
 type ResolvedOsvResult = OsvProviderResult | { status: "disabled" } | undefined;
 
 interface CacheResolution<T> {
+  cached?: boolean;
   result?: T;
   stale?: string;
 }
@@ -211,9 +217,9 @@ async function resolveNpmResult(
   const live = dependencies.getPackage ?? defaultGetPackage(options.registryUrl);
   if (options.noCache) return { result: await live(name, requestedSpec) };
   const key = JSON.stringify({ name, registry: options.registryUrl ?? "public", requestedSpec });
-  const cached = await cache.read("npm", key, parseCachedNpmResult);
-  if (cached.status === "fresh") return { result: cached.value };
   if (options.offline) {
+    const cached = await cache.read("npm", key, parseCachedNpmResult);
+    if (cached.status === "fresh") return { cached: true, result: cached.value };
     return {
       result: offlineFailure(
         now,
@@ -223,7 +229,7 @@ async function resolveNpmResult(
     };
   }
   const result = await live(name, requestedSpec);
-  if (result.ok) await cache.write("npm", key, result, npmCacheTtl);
+  if (result.ok) await cache.write("npm", key, npmResultForCache(result), npmCacheTtl);
   return { result };
 }
 
@@ -244,9 +250,9 @@ async function resolveOsvResult(
     name: providerResult.data.name,
     version: providerResult.data.resolvedVersion,
   });
-  const cached = await cache.read("osv", key, parseCachedOsvResult);
-  if (cached.status === "fresh") return { result: cached.value };
   if (options.offline) {
+    const cached = await cache.read("osv", key, parseCachedOsvResult);
+    if (cached.status === "fresh") return { cached: true, result: cached.value };
     return {
       result: offlineFailure(
         now,
@@ -258,6 +264,38 @@ async function resolveOsvResult(
   const result = await live(providerResult.data.name, providerResult.data.resolvedVersion);
   if (result.ok) await cache.write("osv", key, result, osvCacheTtl);
   return { result };
+}
+
+function requireLiveVerification(
+  evaluation: ReturnType<typeof evaluatePolicy>,
+  config: ReturnType<typeof agentHawkConfigSchema.parse>,
+  usedCache: boolean,
+): ReturnType<typeof evaluatePolicy> {
+  if (!usedCache || evaluation.findings.some((finding) => finding.ruleId === "PG013")) {
+    return evaluation;
+  }
+  const message = "Cached provider evidence is not authenticated and requires live verification.";
+  const strict = config.mode === "strict" || config.defaults.onProviderError === "error";
+  const finding = {
+    approvable: !strict,
+    basis: "policy" as const,
+    evidence: [],
+    message,
+    remediation: "Reconnect and rerun AgentHawk before admitting the dependency.",
+    ruleId: "PG013",
+    severity: strict ? ("high" as const) : ("medium" as const),
+    title: "Live provider verification required",
+    verdict: "review" as const,
+  };
+  return {
+    errors: strict
+      ? [...evaluation.errors, { code: "required_provider_unavailable", message }]
+      : evaluation.errors,
+    findings: [...evaluation.findings, finding].sort((left, right) =>
+      left.ruleId.localeCompare(right.ruleId),
+    ),
+    verdict: strict ? "error" : evaluation.verdict === "allow" ? "review" : evaluation.verdict,
+  };
 }
 
 function offlineFailure(now: Date, message: string): Extract<NpmProviderResult, { ok: false }> {

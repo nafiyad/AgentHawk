@@ -14,8 +14,8 @@ The default root follows the operating system cache convention:
 
 Entries use a schema version and a SHA-256 filename derived from the provider identifier and canonical query key. User-controlled package names never become path components. Reads require a regular file, valid UTF-8, strict bounded JSON, the expected provider/key digest, and valid timestamps.
 
-Fresh entries may satisfy evaluation. Stale or corrupt entries never silently become clean evidence. Offline stale/missing evidence produces visible provider status and PG013. `--no-cache` bypasses both reads and writes. `--offline` and `--no-cache` are mutually exclusive.
+Online checks always obtain live evidence and refresh successful results; the cache never replaces an available live check. Offline mode may use fresh entries to produce provisional findings, but cached evidence is unauthenticated and therefore always adds PG013: it can strengthen a decision but can never produce a clean `ALLOW`. Stale or corrupt entries are not evaluated. Offline stale/missing evidence produces visible provider status and PG013. `--no-cache` bypasses both reads and writes. `--offline` and `--no-cache` are mutually exclusive.
 
 ## Consequences
 
-The cache improves availability without becoming an authority. Deleting it only removes reusable public evidence. Cache poisoning is constrained by schema, key, size, and timestamp checks, while users with write access to the local account can still tamper with local state; corrupted or mismatched entries therefore fail closed.
+The cache improves diagnostic availability without becoming an authority. Deleting it only removes reusable public evidence. Cache poisoning is constrained by schema, key, size, timestamp, and provider-payload checks. Users with write access to the local account can still forge a schema-valid entry, so cached evidence is never sufficient for admission and always requires live verification.

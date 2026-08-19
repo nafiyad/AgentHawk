@@ -2,7 +2,11 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import type { JsonHttpClient } from "../src/http/safe-http-client.js";
 import { SafeHttpError } from "../src/http/safe-http-client.js";
-import { NpmRegistryProvider } from "../src/npm/provider.js";
+import {
+  NpmRegistryProvider,
+  npmResultForCache,
+  parseCachedNpmResult,
+} from "../src/npm/provider.js";
 
 async function fixture(name: string): Promise<unknown> {
   const value = await readFile(new URL(`./fixtures/npm/${name}`, import.meta.url), "utf8");
@@ -219,5 +223,63 @@ describe("NpmRegistryProvider", () => {
       status: "provider_error",
       message: "Registry evaluation failed.",
     });
+  });
+});
+
+describe("npm cache normalization", () => {
+  const credentialed = {
+    ok: true as const,
+    status: "ok" as const,
+    fetchedAt: "2026-08-19T18:00:00.000Z",
+    data: {
+      name: "example",
+      requestedSpec: "1.0.0",
+      resolvedVersion: "1.0.0",
+      repositoryUrl: "https://user:repository-secret@example.com/project.git",
+      lifecycleScripts: [],
+      dist: {
+        integrity: "sha512-public",
+        tarball: "https://token:tarball-secret@registry.example.com/example.tgz",
+      },
+    },
+  };
+
+  it("removes credential-bearing URLs before persistence", () => {
+    const normalized = npmResultForCache(credentialed);
+    expect(normalized.data.repositoryUrl).toBeUndefined();
+    expect(normalized.data.dist).toEqual({ integrity: "sha512-public" });
+    expect(JSON.stringify(normalized)).not.toContain("secret");
+  });
+
+  it("rejects forged cached payloads containing URL credentials", () => {
+    expect(() => parseCachedNpmResult(credentialed)).toThrow();
+  });
+
+  it("preserves credential-free optional metadata and accepts non-URL repository notation", () => {
+    const normalized = npmResultForCache({
+      ...credentialed,
+      data: {
+        ...credentialed.data,
+        repositoryUrl: "https://example.com/project.git",
+        dist: { tarball: "https://registry.example.com/example.tgz" },
+      },
+    });
+    expect(normalized.data).toMatchObject({
+      repositoryUrl: "https://example.com/project.git",
+      dist: { tarball: "https://registry.example.com/example.tgz" },
+    });
+    expect(
+      parseCachedNpmResult({
+        ...normalized,
+        data: { ...normalized.data, repositoryUrl: "github:owner/project" },
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("handles absent optional URL metadata without inventing fields", () => {
+    const { dist: _dist, repositoryUrl: _repositoryUrl, ...data } = credentialed.data;
+    const normalized = npmResultForCache({ ...credentialed, data });
+    expect(normalized.data).not.toHaveProperty("repositoryUrl");
+    expect(normalized.data).not.toHaveProperty("dist");
   });
 });
