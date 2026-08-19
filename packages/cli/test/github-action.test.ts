@@ -13,6 +13,12 @@ afterEach(async () => {
 });
 
 describe("AgentHawk workflow", () => {
+  it("keeps offline package verification in the required quality gate", async () => {
+    const source = await readFile(join(workspace, ".github/workflows/quality.yml"), "utf8");
+    expect(source).toContain("run: pnpm package:check");
+    expect(source).not.toContain("npm publish");
+  });
+
   it("uses a read-only unprivileged trigger and immutable third-party action pins", async () => {
     const source = await readFile(join(workspace, ".github/workflows/agenthawk.yml"), "utf8");
     const document = parseDocument(source, { uniqueKeys: true });

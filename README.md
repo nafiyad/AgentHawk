@@ -42,6 +42,7 @@ See [approvals](docs/approvals.md) for the exact exception model.
 See [GitHub Actions integration](docs/github-action.md) for the read-only pull-request workflow and opt-in idempotent comments.
 See [AI agent integrations](docs/agent-integrations.md) for copyable Codex, Claude Code, Cursor, and generic fail-closed instruction templates.
 See the [CLI JSON contract](docs/json-contract.md) for versioning, report families, failure envelopes, and stable exit codes.
+See [release readiness](docs/releasing.md) for the offline package gate and the decisions required before any publication.
 
 ## Check a proposed dependency
 

@@ -35,6 +35,7 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 10. **GitHub Action — complete**: read-only pull-request evaluation, safe bounded summary/artifact, isolated opt-in idempotent comment.
 11. **Agent templates — complete**: Codex/Claude/Cursor/generic fail-closed instructions with an explicit advisory trust boundary.
 12. **Alpha contract hardening — complete**: strict exported schemas for every JSON report family, one versioned failure envelope, compatibility documentation, and golden contract tests.
+13. **Release-readiness foundation — complete**: offline package-content validation, consumer-facing package documentation/licenses, changelog, metadata, and an explicit publication lock pending ownership decisions.
 
 Every milestone updates docs, reviews its diff, runs focused tests and the full available quality gate, scans staged content for secrets, commits, pushes, and verifies the exact remote head.
 
