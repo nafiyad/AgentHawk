@@ -32,6 +32,7 @@ export type OutputFormat = "json" | "terminal";
 
 export interface CheckOptions {
   approvalsPath?: string;
+  existingDependencies?: readonly string[];
   format: OutputFormat;
   noCache?: boolean;
   offline?: boolean;
@@ -113,6 +114,9 @@ export async function checkNpmPackage(
     const evaluation = requireLiveVerification(
       evaluatePolicy({
         config,
+        ...(options.existingDependencies
+          ? { existingDependencies: options.existingDependencies }
+          : {}),
         now,
         ...(isOsvProviderResult(osvResult) ? { osvResult } : {}),
         ...(providerResult ? { providerResult } : {}),

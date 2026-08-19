@@ -71,6 +71,23 @@ describe("checkNpmPackage", () => {
     expect(report.evidenceDigest).toMatch(/^sha256:[a-f0-9]{64}$/u);
   });
 
+  it("emits PG005 when existing dependency context contains a confusable name", async () => {
+    const result = await checkNpmPackage(
+      "example-package@1.0.0",
+      { existingDependencies: ["example-packagee"], format: "json", strict: true },
+      { getPackage: async () => success(), now: () => now, queryOsv: async () => emptyOsv() },
+    );
+    const report = JSON.parse(result.output);
+
+    expect(result.exitCode).toBe(1);
+    expect(report.verdict).toBe("review");
+    expect(report.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ basis: "heuristic", ruleId: "PG005", verdict: "review" }),
+      ]),
+    );
+  });
+
   it("returns exit 1 for review findings in strict mode", async () => {
     const result = await checkNpmPackage(
       "example-package@1.0.0",

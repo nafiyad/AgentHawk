@@ -30,7 +30,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Conservative parsing and classification of npm dependency requests
 - Bounded, redirect-aware npm registry metadata retrieval
 - Normalized package/version, registry-provided distribution integrity, repository, deprecation, and lifecycle-script metadata
-- Strict deterministic PG001–PG007, PG010, PG011, PG013, and PG015 policy findings with stable verdict precedence
+- Strict deterministic PG001–PG007, PG010, PG011, PG013, and PG015 policy findings with stable verdict precedence (PG005 name-similarity runs during `scan` against the manifest's other direct dependencies)
 - `agenthawk check npm <package-spec>` with terminal/JSON output, strict mode, policy and approval files, bounded caching/offline operation, and stable exit codes
 - `agenthawk scan` for aggregate policy evaluation of every bounded root-manifest direct dependency without executing repository code
 - `agenthawk diff --base <git-ref>` for direct dependency additions/version changes and PG014 lockfile correlation

@@ -4,7 +4,7 @@ Date: 2026-08-19
 
 ## Current state
 
-The repository began empty except for Git metadata. `AGENTS.md` and Milestone 0 research are the first tracked material. The public remote is `https://github.com/nafiyad/AgentHawk`. There is no legacy API, user data, or compatibility constraint.
+The repository began empty except for Git metadata; `AGENTS.md` and Milestone 0 research were the first tracked material. All fourteen alpha milestones below are now complete: the pre-publication alpha implements `check npm`, `scan`, and `diff` with npm/OSV evidence, deterministic policy, approvals, cache/offline behavior, GitHub Action integration, agent templates, hardened JSON contracts, and an offline package-content gate. The public remote is `https://github.com/nafiyad/AgentHawk`. Packages remain `private: true` at version `0.0.0` pending explicit publication authorization.
 
 ## Assumptions and constraints
 
@@ -65,7 +65,8 @@ Milestones are isolated commits. A defective unreleased milestone can be reverte
 
 ## Open questions
 
-- Calibrate 30-day package and 72-hour release defaults using real-project fixtures before alpha.
-- Define the exact OSV malicious-record classification from current source records during Milestone 5.
+- Recalibrate the 30-day package and 72-hour release defaults against real-project fixtures before publication (current values are the researched initial candidates).
 - Decide whether provenance can be verified without artifact download; otherwise defer.
-- Confirm the final npm package names and publishing ownership before release work.
+- Confirm the final npm package names and publishing ownership before release work (see `docs/releasing.md`).
+
+Resolved: OSV malicious-record classification is defined in `docs/architecture.md` (PG010 matches non-withdrawn `MAL-YYYY-N` identifiers or aliases).

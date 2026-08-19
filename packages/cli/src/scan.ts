@@ -47,11 +47,16 @@ async function scanDependenciesUnsafe(
   });
   if (inventory.exitCode !== 0) return inventory;
   const direct = inventoryReportSchema.parse(JSON.parse(inventory.output)).dependencies;
+  const directNames = [...new Set(direct.map((item) => item.name))];
   const results = await Promise.all(
     direct.map(async (item) => {
       const checked = await (dependencies.checkPackage ?? checkNpmPackage)(
         `${item.name}@${item.requestedSpec}`,
-        { ...options, format: "json" },
+        {
+          ...options,
+          existingDependencies: directNames.filter((name) => name !== item.name),
+          format: "json",
+        },
         dependencies,
       );
       const parsed = evaluationReportSchema.safeParse(JSON.parse(checked.output));

@@ -66,6 +66,54 @@ describe("scanDependencies", () => {
     }
   });
 
+  it("flags confusable sibling dependency names with PG005 during a scan", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
+    try {
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({
+          dependencies: { "mature-package": "1.0.0", "mature-packagee": "1.0.0" },
+        }),
+      );
+      const result = await scanDependencies(
+        { cwd: root, format: "json", noCache: true, strict: true },
+        {
+          getPackage: async (name, requestedSpec) => ({
+            data: {
+              lifecycleScripts: [],
+              name,
+              packagePublishedAt: "2020-01-01T00:00:00.000Z",
+              releasePublishedAt: "2025-01-01T00:00:00.000Z",
+              repositoryUrl: "https://github.com/example/project",
+              requestedSpec,
+              resolvedVersion: requestedSpec,
+            },
+            fetchedAt: "2026-08-19T17:59:00.000Z",
+            ok: true,
+            status: "ok",
+          }),
+          now: () => new Date("2026-08-19T18:00:00.000Z"),
+          queryOsv: async () => ({
+            fetchedAt: "2026-08-19T17:59:00.000Z",
+            ok: true,
+            records: [],
+            status: "ok",
+          }),
+        },
+      );
+      const report = JSON.parse(result.output);
+      expect(result.exitCode).toBe(1);
+      expect(report.verdict).toBe("review");
+      for (const entry of report.results) {
+        expect(entry.report.findings).toEqual(
+          expect.arrayContaining([expect.objectContaining({ ruleId: "PG005" })]),
+        );
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("renders terminal findings and propagates provider errors", async () => {
     const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
     try {
