@@ -109,7 +109,12 @@ describe("scanDependencies", () => {
       const result = await scanDependencies({ cwd: root, format: "json", strict: true });
       expect(result.exitCode).toBe(2);
       expect(JSON.parse(result.output)).toMatchObject({
-        error: "Package specification contains whitespace or control characters.",
+        schemaVersion: "1.0",
+        error: {
+          code: "invalid_input",
+          message: "Package specification contains whitespace or control characters.",
+        },
+        exitCode: 2,
       });
     } finally {
       await rm(root, { force: true, recursive: true });

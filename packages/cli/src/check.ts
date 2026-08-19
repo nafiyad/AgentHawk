@@ -5,6 +5,7 @@ import {
   agentHawkConfigSchema,
   applyApprovals,
   approvalFileSchema,
+  cliErrorReportSchema,
   type EvaluationReport,
   evaluatePolicy,
   evaluationReportSchema,
@@ -178,7 +179,13 @@ export async function checkNpmPackage(
       exitCode,
       output:
         options.format === "json"
-          ? `${JSON.stringify({ error: message, exitCodeMeaning: exitMeaning(exitCode) })}\n`
+          ? `${JSON.stringify(
+              cliErrorReportSchema.parse({
+                schemaVersion: "1.0",
+                error: { code: invalid ? "invalid_input" : "internal_error", message },
+                exitCode,
+              }),
+            )}\n`
           : `AgentHawk: ${escapeTerminal(message)}\n`,
     };
   }
