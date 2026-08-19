@@ -27,8 +27,8 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 2. **Foundation — complete**: strict workspace, CI, core/CLI packages, domain/report/config skeleton; lint/typecheck/test/coverage/build green.
 3. **npm input/provider — complete**: safe spec parser, normalized metadata provider, bounded HTTP client, hostile/error fixtures.
 4. **Policy engine — complete**: strict policy, precedence, PG001-007/013/015, complete positive/negative tests.
-5. **CLI check — in review**: terminal/JSON, strict mode, policy path, stable errors/codes, smoke tests.
-6. **OSV evidence**: version-aware query and records, PG010/011, batch-ready contract.
+5. **CLI check — complete**: terminal/JSON, strict mode, policy path, stable errors/codes, smoke tests.
+6. **OSV evidence — in review**: version-aware query and records, PG010/011, batch-ready contract.
 7. **Approvals**: exact match/expiry/reason, preserved findings, non-overridable malicious block.
 8. **Cache/offline**: public metadata only, TTL/schema/staleness/corruption, `--offline`, `--no-cache`.
 9. **Scan/diff**: direct dependency changes, lockfile correlation, argument-array Git tests.

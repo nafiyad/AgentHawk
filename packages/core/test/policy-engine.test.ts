@@ -5,6 +5,7 @@ import {
   evaluatePolicy,
   type NpmPackageMetadata,
   type NpmProviderResult,
+  type OsvProviderResult,
   parseNpmSpec,
 } from "../src/index.js";
 
@@ -40,10 +41,22 @@ function failure(
   return { fetchedAt: "2026-08-19T17:59:00.000Z", message, ok: false, status };
 }
 
+function osvSuccess(
+  records: Extract<OsvProviderResult, { ok: true }>["records"] = [],
+): OsvProviderResult {
+  return {
+    fetchedAt: "2026-08-19T17:58:00.000Z",
+    ok: true,
+    records,
+    status: "ok",
+  };
+}
+
 function evaluate(providerResult: NpmProviderResult = success()) {
   return evaluatePolicy({
     config,
     now,
+    osvResult: osvSuccess(),
     providerResult,
     spec: parseNpmSpec("mature-package@1.0.0"),
   });
@@ -54,6 +67,7 @@ describe("policy configuration", () => {
     expect(config.rules.packageAge).toEqual({ action: "review", minDays: 30 });
     expect(config.rules.releaseAge).toEqual({ action: "review", minHours: 72 });
     expect(config.rules.knownMaliciousPackage.action).toBe("block");
+    expect(config.registries.osv.enabled).toBe(true);
     expect(config.ci.failOn).toEqual(["review", "block", "error"]);
   });
 
@@ -131,6 +145,7 @@ describe("deterministic policy rules", () => {
     const result = evaluatePolicy({
       config: permissive,
       now,
+      osvResult: osvSuccess(),
       providerResult: success({
         releasePublishedAt: "2026-01-01T00:00:00.000Z",
         resolvedVersion: "2.0.0-beta.1",
@@ -148,6 +163,7 @@ describe("deterministic policy rules", () => {
     const result = evaluatePolicy({
       config: releaseAgeDisabled,
       now,
+      osvResult: osvSuccess(),
       providerResult: success({
         releasePublishedAt: "2026-01-01T00:00:00.000Z",
         resolvedVersion: "2.0.0-beta.1",
@@ -186,6 +202,7 @@ describe("deterministic policy rules", () => {
       config,
       existingDependencies: [existing],
       now,
+      osvResult: osvSuccess(),
       providerResult: success({ name }),
       spec: parseNpmSpec(`${name}@1.0.0`),
     });
@@ -197,6 +214,7 @@ describe("deterministic policy rules", () => {
       config,
       existingDependencies: ["mature-package", "different-package"],
       now,
+      osvResult: osvSuccess(),
       providerResult: success(),
       spec: parseNpmSpec("mature-package@1.0.0"),
     });
@@ -213,6 +231,7 @@ describe("deterministic policy rules", () => {
       config,
       existingDependencies: [existing],
       now,
+      osvResult: osvSuccess(),
       providerResult: success({ name }),
       spec: parseNpmSpec(`${name}@1.0.0`),
     });
@@ -246,6 +265,7 @@ describe("deterministic policy rules", () => {
     const result = evaluatePolicy({
       config: custom,
       now,
+      osvResult: osvSuccess(),
       providerResult: success({ lifecycleScripts: ["prepare"] }),
       spec: parseNpmSpec("mature-package@1.0.0"),
     });
@@ -262,6 +282,7 @@ describe("deterministic policy rules", () => {
     const result = evaluatePolicy({
       config: custom,
       now,
+      osvResult: osvSuccess(),
       providerResult: {
         data,
         fetchedAt: "2026-08-19T17:59:00.000Z",
@@ -394,6 +415,7 @@ describe("provider failure and precedence", () => {
     const result = evaluatePolicy({
       config: strict,
       now,
+      osvResult: osvSuccess(),
       providerResult: {
         data,
         fetchedAt: "2026-08-19T17:59:00.000Z",
@@ -415,6 +437,7 @@ describe("provider failure and precedence", () => {
     const errorResult = evaluatePolicy({
       config: errorConfig,
       now,
+      osvResult: osvSuccess(),
       providerResult: success({ resolvedVersion: "not-semver" }),
       spec: parseNpmSpec("mature-package"),
     });
@@ -462,5 +485,93 @@ describe("provider failure and precedence", () => {
         spec: parseNpmSpec("mature-package"),
       }),
     ).toThrow(TypeError);
+  });
+});
+
+describe("OSV policy evidence", () => {
+  it("PG010 blocks MAL-prefixed records and cites the record id", () => {
+    const result = evaluatePolicy({
+      config,
+      now,
+      osvResult: osvSuccess([{ id: "MAL-2024-1234", malicious: true }]),
+      providerResult: success(),
+      spec: parseNpmSpec("mature-package@1.0.0"),
+    });
+    expect(result).toMatchObject({ verdict: "block" });
+    expect(result.findings[0]).toMatchObject({
+      approvable: false,
+      ruleId: "PG010",
+      verdict: "block",
+    });
+    expect(result.findings[0]?.message).toContain("MAL-2024-1234");
+  });
+
+  it("PG011 reviews configured severities and ignores unknown severity", () => {
+    const result = evaluatePolicy({
+      config,
+      now,
+      osvResult: osvSuccess([
+        { id: "GHSA-high-0001", malicious: false, severity: "HIGH" },
+        { id: "GHSA-unknown-0002", malicious: false },
+        { id: "GHSA-low-0003", malicious: false, severity: "LOW" },
+      ]),
+      providerResult: success(),
+      spec: parseNpmSpec("mature-package@1.0.0"),
+    });
+    expect(result.findings.map((finding) => finding.ruleId)).toEqual(["PG011"]);
+    expect(result.findings[0]?.message).toContain("GHSA-high-0001 (HIGH)");
+    expect(result.findings[0]?.message).not.toContain("GHSA-unknown-0002");
+    expect(result.findings[0]?.message).not.toContain("GHSA-low-0003");
+  });
+
+  it("does not treat an explicit OSV disable as provider failure", () => {
+    const disabled = agentHawkConfigSchema.parse({
+      version: 1,
+      registries: { osv: { enabled: false } },
+    });
+    const result = evaluatePolicy({
+      config: disabled,
+      now,
+      providerResult: success(),
+      spec: parseNpmSpec("mature-package@1.0.0"),
+    });
+    expect(result).toEqual({ errors: [], findings: [], verdict: "allow" });
+  });
+
+  it("PG013 fail-closes when OSV is enabled but unavailable", () => {
+    const omitted = evaluatePolicy({
+      config,
+      now,
+      providerResult: success(),
+      spec: parseNpmSpec("mature-package@1.0.0"),
+    });
+    const failed = evaluatePolicy({
+      config,
+      now,
+      osvResult: {
+        fetchedAt: "2026-08-19T17:58:00.000Z",
+        message: "sensitive osv token",
+        ok: false,
+        status: "timeout",
+      },
+      providerResult: success(),
+      spec: parseNpmSpec("mature-package@1.0.0"),
+    });
+    const invalidTime = evaluatePolicy({
+      config,
+      now,
+      osvResult: {
+        fetchedAt: "2026-02-30T00:00:00.000Z",
+        ok: true,
+        records: [],
+        status: "ok",
+      },
+      providerResult: success(),
+      spec: parseNpmSpec("mature-package@1.0.0"),
+    });
+    expect(omitted.findings[0]).toMatchObject({ ruleId: "PG013" });
+    expect(failed.findings[0]).toMatchObject({ ruleId: "PG013" });
+    expect(failed.findings[0]?.message).not.toContain("sensitive osv token");
+    expect(invalidTime.findings[0]).toMatchObject({ ruleId: "PG013" });
   });
 });

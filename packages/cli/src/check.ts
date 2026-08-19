@@ -7,6 +7,8 @@ import {
   evaluationReportSchema,
   type NpmProviderResult,
   NpmRegistryProvider,
+  OsvProvider,
+  type OsvProviderResult,
   type ProviderStatus,
   parseNpmSpec,
   type Verdict,
@@ -33,6 +35,7 @@ export interface CheckResult {
 export interface CheckDependencies {
   getPackage?: (name: string, requestedSpec: string) => Promise<NpmProviderResult>;
   now?: () => Date;
+  queryOsv?: (name: string, version: string) => Promise<OsvProviderResult>;
   readPolicy?: (path: string) => Promise<unknown>;
 }
 
@@ -60,9 +63,15 @@ export async function checkNpmPackage(
             spec.requestedSpec,
           )
         : undefined;
+    const osvResult = await resolveOsvResult(
+      config.registries.osv.enabled,
+      providerResult,
+      dependencies,
+    );
     const evaluation = evaluatePolicy({
       config,
       now,
+      ...(isOsvProviderResult(osvResult) ? { osvResult } : {}),
       ...(providerResult ? { providerResult } : {}),
       spec,
     });
@@ -89,9 +98,9 @@ export async function checkNpmPackage(
       verdict: evaluation.verdict,
       originalVerdict: evaluation.verdict,
       findings: evaluation.findings,
-      providerStatus: providerStatuses(providerResult),
+      providerStatus: providerStatuses(providerResult, osvResult),
       policyDigest: digest(config),
-      evidenceDigest: digest(normalizedEvidenceForDigest(providerResult, spec.type)),
+      evidenceDigest: digest(normalizedEvidenceForDigest(providerResult, osvResult, spec.type)),
       exitCodeMeaning: exitMeaning(exitCode),
     });
     return {
@@ -121,6 +130,30 @@ function defaultGetPackage(registryUrl?: string) {
   }
   return async (name: string, requestedSpec: string) =>
     provider.getPackage({ ecosystem: "npm", name, requestedSpec });
+}
+
+function defaultQueryOsv() {
+  const provider = new OsvProvider();
+  return async (name: string, version: string) => provider.query({ name, version });
+}
+
+type ResolvedOsvResult = OsvProviderResult | { status: "disabled" } | undefined;
+
+async function resolveOsvResult(
+  enabled: boolean,
+  providerResult: NpmProviderResult | undefined,
+  dependencies: CheckDependencies,
+): Promise<ResolvedOsvResult> {
+  if (!enabled) return { status: "disabled" };
+  if (!providerResult?.ok) return undefined;
+  return await (dependencies.queryOsv ?? defaultQueryOsv())(
+    providerResult.data.name,
+    providerResult.data.resolvedVersion,
+  );
+}
+
+function isOsvProviderResult(value: ResolvedOsvResult): value is OsvProviderResult {
+  return Boolean(value && value.status !== "disabled");
 }
 
 export async function readPolicyFile(path: string, openFile: typeof open = open): Promise<unknown> {
@@ -167,18 +200,53 @@ export async function readPolicyFile(path: string, openFile: typeof open = open)
   }
 }
 
-function providerStatuses(result: NpmProviderResult | undefined): ProviderStatus[] {
-  if (!result) return [];
-  if (result.ok) return [{ fetchedAt: result.fetchedAt, provider: "npm", status: "ok" }];
-  const status =
-    result.status === "timeout" || result.status === "rate_limited"
-      ? result.status
-      : result.status === "network_error"
-        ? "offline"
-        : "error";
-  return [
-    { fetchedAt: result.fetchedAt, message: "npm provider unavailable", provider: "npm", status },
-  ];
+function providerStatuses(
+  result: NpmProviderResult | undefined,
+  osvResult: ResolvedOsvResult,
+): ProviderStatus[] {
+  const statuses: ProviderStatus[] = [];
+  if (result) {
+    if (result.ok) statuses.push({ fetchedAt: result.fetchedAt, provider: "npm", status: "ok" });
+    else {
+      const status =
+        result.status === "timeout" || result.status === "rate_limited"
+          ? result.status
+          : result.status === "network_error"
+            ? "offline"
+            : "error";
+      statuses.push({
+        fetchedAt: result.fetchedAt,
+        message: "npm provider unavailable",
+        provider: "npm",
+        status,
+      });
+    }
+  }
+  if (osvResult?.status === "disabled") {
+    statuses.push({
+      message: "OSV evidence provider is disabled by policy",
+      provider: "osv",
+      status: "disabled",
+    });
+  } else if (osvResult && isOsvProviderResult(osvResult)) {
+    if (osvResult.ok) {
+      statuses.push({ fetchedAt: osvResult.fetchedAt, provider: "osv", status: "ok" });
+    } else {
+      const status =
+        osvResult.status === "timeout" || osvResult.status === "rate_limited"
+          ? osvResult.status
+          : osvResult.status === "network_error"
+            ? "offline"
+            : "error";
+      statuses.push({
+        fetchedAt: osvResult.fetchedAt,
+        message: "osv provider unavailable",
+        provider: "osv",
+        status,
+      });
+    }
+  }
+  return statuses;
 }
 
 function strictExitCode(verdict: Verdict, strict: boolean): 0 | 1 {
@@ -230,12 +298,30 @@ function digest(value: unknown): string {
 
 function normalizedEvidenceForDigest(
   result: NpmProviderResult | undefined,
+  osvResult: ResolvedOsvResult,
   specType: "non_registry" | "registry",
 ): unknown {
-  if (!result) return { specType };
-  return result.ok
-    ? { data: result.data, fetchedAt: result.fetchedAt, status: result.status }
-    : { fetchedAt: result.fetchedAt, status: result.status };
+  return {
+    npm: result
+      ? result.ok
+        ? { data: result.data, fetchedAt: result.fetchedAt, status: result.status }
+        : { fetchedAt: result.fetchedAt, status: result.status }
+      : { specType },
+    osv: osvEvidenceForDigest(osvResult),
+  };
+}
+
+function osvEvidenceForDigest(osvResult: ResolvedOsvResult): unknown {
+  if (!osvResult) return { status: "skipped" };
+  if (osvResult.status === "disabled") return { status: "disabled" };
+  if (osvResult.ok) {
+    return {
+      fetchedAt: osvResult.fetchedAt,
+      records: osvResult.records,
+      status: osvResult.status,
+    };
+  }
+  return { fetchedAt: osvResult.fetchedAt, status: osvResult.status };
 }
 
 function canonicalJson(value: unknown): string {

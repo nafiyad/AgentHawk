@@ -15,7 +15,7 @@
 
 AgentHawk is a local-first, deterministic security gate that checks dependencies proposed by AI coding agents before they enter a repository.
 
-> **Project status:** early development. npm request parsing, normalized registry metadata retrieval, deterministic policy evaluation, and the initial `check npm` CLI workflow are implemented. OSV and approval evidence are not. Do not use this release as a complete security control.
+> **Project status:** early development. npm request parsing, normalized registry metadata retrieval, OSV evidence (PG010/PG011), deterministic policy evaluation, and the initial `check npm` CLI workflow are implemented. Approvals are not. Do not use this release as a complete security control.
 
 [Why AgentHawk](#why-agenthawk) · [Current capabilities](#current-capabilities) · [Development](#development) · [Security](#security-and-privacy-posture) · [Contributing](#contributing)
 
@@ -30,12 +30,13 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Conservative parsing and classification of npm dependency requests
 - Bounded, redirect-aware npm registry metadata retrieval
 - Normalized package/version, registry-provided distribution integrity, repository, deprecation, and lifecycle-script metadata
-- Strict deterministic PG001–PG007, PG013, and PG015 policy findings with stable verdict precedence
+- Strict deterministic PG001–PG007, PG010, PG011, PG013, and PG015 policy findings with stable verdict precedence
 - `agenthawk check npm <package-spec>` with terminal/JSON output, strict mode, policy files, and stable exit codes
+- Bounded OSV query, pagination, and batch-match hydration without executing package code
 - Stable redacted provider errors without package installation or execution
 - Offline fixtures and security regression tests
 
-OSV evidence and approvals remain planned work.
+Approvals remain planned work.
 
 ## Check a proposed dependency
 

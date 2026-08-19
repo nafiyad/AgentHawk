@@ -215,4 +215,70 @@ describe("SafeHttpClient", () => {
     expect(headers?.has("authorization")).toBe(false);
     expect(headers?.get("user-agent")).toBe("AgentHawk/0.0.0");
   });
+
+  it("posts bounded JSON without following redirects", async () => {
+    const url = await listen((_request, response) => {
+      response.statusCode = 302;
+      response.setHeader("location", "/next");
+      response.end();
+    });
+    await expect(
+      new SafeHttpClient().postJson(url, { package: { name: "example" } }),
+    ).rejects.toMatchObject({
+      kind: "provider_error",
+      message: "Provider POST must not redirect.",
+    });
+  });
+
+  it("rejects oversized JSON request bodies before sending", async () => {
+    let sent = false;
+    const fetch: typeof globalThis.fetch = async () => {
+      sent = true;
+      return new Response("{}", { headers: { "content-type": "application/json" } });
+    };
+    await expect(
+      new SafeHttpClient({ fetch, maxRequestBytes: 8 }).postJson(
+        new URL("https://api.example.test"),
+        {
+          payload: "oversized-request",
+        },
+      ),
+    ).rejects.toMatchObject({
+      kind: "invalid_response",
+      message: "Request body exceeded the size limit.",
+    });
+    expect(sent).toBe(false);
+  });
+
+  it("posts JSON with content-type and without authorization", async () => {
+    let method: string | undefined;
+    let headers: Headers | undefined;
+    let body: string | undefined;
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
+      method = init?.method;
+      headers = new Headers(init?.headers);
+      body = String(init?.body);
+      return new Response('{"ok":true}', { headers: { "content-type": "application/json" } });
+    };
+    await expect(
+      new SafeHttpClient({ fetch }).postJson(new URL("https://api.example.test/v1/query"), {
+        version: "1.0.0",
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(method).toBe("POST");
+    expect(headers?.get("content-type")).toBe("application/json");
+    expect(headers?.has("authorization")).toBe(false);
+    expect(body).toBe('{"version":"1.0.0"}');
+  });
+
+  it("rejects request bodies that cannot be encoded as JSON", async () => {
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    await expect(
+      new SafeHttpClient().postJson(new URL("https://api.example.test"), circular),
+    ).rejects.toMatchObject({
+      kind: "invalid_response",
+      message: "Request body could not be encoded as JSON.",
+    });
+  });
 });

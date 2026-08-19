@@ -3,6 +3,7 @@ import type { AgentHawkConfig, PolicyAction } from "../config.js";
 import type { Evidence, Finding, Verdict } from "../domain.js";
 import type { NpmPackageMetadata, NpmProviderResult } from "../npm/provider.js";
 import type { ParsedNpmSpec } from "../npm/spec.js";
+import type { OsvProviderResult, OsvRecord } from "../osv/provider.js";
 import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
 const verdictRank: Record<Verdict, number> = {
@@ -17,6 +18,7 @@ export interface PolicyEvaluationInput {
   config: AgentHawkConfig;
   existingDependencies?: readonly string[];
   now: Date;
+  osvResult?: OsvProviderResult;
   providerResult?: NpmProviderResult;
   spec: ParsedNpmSpec;
 }
@@ -235,6 +237,8 @@ export function evaluatePolicy(input: PolicyEvaluationInput): PolicyEvaluation {
     );
   }
 
+  applyOsvFindings(input, metadata, findings, errors);
+
   return finalize(findings, errors);
 }
 
@@ -243,6 +247,81 @@ export function combineVerdicts(verdicts: readonly Verdict[]): Verdict {
     (highest, verdict) => (verdictRank[verdict] > verdictRank[highest] ? verdict : highest),
     "allow",
   );
+}
+
+function applyOsvFindings(
+  input: PolicyEvaluationInput,
+  metadata: NpmPackageMetadata,
+  findings: Finding[],
+  errors: PolicyEvaluationError[],
+): void {
+  if (!input.config.registries.osv.enabled) return;
+
+  if (!input.osvResult) {
+    const unavailable = providerUnavailable(input, "Required OSV evidence was not provided.");
+    findings.push(unavailable.finding);
+    errors.push(...unavailable.errors);
+    return;
+  }
+
+  if (parseStrictIsoTimestamp(input.osvResult.fetchedAt) === undefined) {
+    const unavailable = providerUnavailable(
+      input,
+      "The OSV evidence retrieval timestamp was invalid.",
+    );
+    findings.push(unavailable.finding);
+    errors.push(...unavailable.errors);
+    return;
+  }
+
+  if (!input.osvResult.ok) {
+    const unavailable = providerUnavailable(input, osvFailureMessage(input.osvResult.status));
+    findings.push(unavailable.finding);
+    errors.push(...unavailable.errors);
+    return;
+  }
+
+  const records = input.osvResult.records;
+  const malicious = records.filter((record) => record.malicious);
+  if (malicious.length > 0) {
+    add(
+      findings,
+      createFinding({
+        action: input.config.rules.knownMaliciousPackage.action,
+        approvable: false,
+        basis: "evidence",
+        evidence: [osvEvidence(input.osvResult.fetchedAt, metadata, malicious)],
+        message: `Known malicious package records: ${malicious.map((record) => record.id).join(", ")}.`,
+        remediation: "Do not install this package; choose a known-good alternative.",
+        ruleId: "PG010",
+        severity: "critical",
+        title: "Known malicious package",
+      }),
+    );
+  }
+
+  const allowedSeverities = new Set(input.config.rules.vulnerabilities.severities);
+  const vulnerabilities = records.filter(
+    (record) => !record.malicious && record.severity && allowedSeverities.has(record.severity),
+  );
+  if (vulnerabilities.length > 0) {
+    add(
+      findings,
+      createFinding({
+        action: input.config.rules.vulnerabilities.action,
+        approvable: true,
+        basis: "evidence",
+        evidence: [osvEvidence(input.osvResult.fetchedAt, metadata, vulnerabilities)],
+        message: `Known vulnerabilities affect the resolved version: ${vulnerabilities
+          .map((record) => `${record.id} (${record.severity})`)
+          .join(", ")}.`,
+        remediation: "Upgrade to a non-affected version or review the advisory before use.",
+        ruleId: "PG011",
+        severity: highestFindingSeverity(vulnerabilities),
+        title: "Known vulnerability affecting resolved version",
+      }),
+    );
+  }
 }
 
 function providerUnavailable(
@@ -352,6 +431,50 @@ function npmEvidence(
     fetchedAt,
     provider: "npm",
   };
+}
+
+function osvEvidence(
+  fetchedAt: string,
+  metadata: NpmPackageMetadata,
+  records: readonly OsvRecord[],
+): Evidence {
+  return {
+    data: {
+      name: metadata.name,
+      records: records.map((record) => ({
+        id: record.id,
+        malicious: record.malicious,
+        ...(record.severity ? { severity: record.severity } : {}),
+      })),
+      resolvedVersion: metadata.resolvedVersion,
+    },
+    fetchedAt,
+    provider: "osv",
+  };
+}
+
+function highestFindingSeverity(records: readonly OsvRecord[]): Finding["severity"] {
+  const rank: Record<string, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
+  const highest = records.reduce<"LOW" | "HIGH" | "MEDIUM" | "CRITICAL">(
+    (current, record) =>
+      record.severity && (rank[record.severity] ?? -1) > (rank[current] ?? -1)
+        ? record.severity
+        : current,
+    "LOW",
+  );
+  return highest.toLowerCase() as Finding["severity"];
+}
+
+function osvFailureMessage(status: Exclude<OsvProviderResult, { ok: true }>["status"]): string {
+  const messages = {
+    invalid_response: "The OSV provider returned an invalid or incomplete response.",
+    network_error: "The OSV provider could not be reached.",
+    not_found: "The requested OSV resource was not found.",
+    provider_error: "The OSV provider failed.",
+    rate_limited: "The OSV provider rate limit was reached.",
+    timeout: "The OSV provider request timed out.",
+  } as const;
+  return messages[status];
 }
 
 function providerFailureMessage(

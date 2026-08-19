@@ -27,6 +27,7 @@ export {
 export {
   type HttpErrorKind,
   type JsonHttpClient,
+  type JsonRequestClient,
   SafeHttpClient,
   type SafeHttpClientOptions,
   SafeHttpError,
@@ -46,6 +47,16 @@ export {
   type ParsedNpmSpec,
   parseNpmSpec,
 } from "./npm/spec.js";
+export {
+  classifyOsvRecord,
+  type OsvPackageQuery,
+  OsvProvider,
+  type OsvProviderOptions,
+  type OsvProviderResult,
+  type OsvRecord,
+  type OsvSeverity,
+  osvSeveritySchema,
+} from "./osv/provider.js";
 export {
   combineVerdicts,
   evaluatePolicy,
