@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing, registry metadata retrieval, OSV evidence retrieval, deterministic policy evaluation, and the `check npm` CLI. Approvals, cache, diff scanning, and GitHub reporting will extend it in later milestones.
+This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation, exact expiring approvals, and the `check npm` CLI. Cache, diff scanning, and GitHub reporting will extend it later.
 
 ## Assets
 
@@ -43,6 +43,8 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 | Abbreviated batch matches are used as findings | Hydrate `/v1/vulns/{id}` and validate before PG010/PG011 | Hydration failure fail-closes the evaluation |
 | CVSS vectors are converted into guessed ratings | Use documented qualitative labels only; unknown severity does not match PG011 | Advisories that publish only vectors are not severity-matched |
 | Disabling OSV is confused with provider failure | Explicit `registries.osv.enabled: false` is digest-visible status `disabled` | Operators can disable a required evidence source |
+| Broad, stale, or forged approval weakens policy | Strict exact coordinates, required reason/times, maximum validity, and preserved findings | Repository writers can still authorize approvable review findings |
+| Approval overrides a hard security result | Resolve only approvable review findings; never resolve blocks, errors, or non-approvable reviews | Incorrect `approvable` classification in a future rule remains a code-review risk |
 
 ## Unsupported claims
 

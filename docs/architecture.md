@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-AgentHawk currently provides a reusable core and CLI for parsing npm dependency requests, gathering normalized npm registry and OSV evidence, applying deterministic policy, and emitting `agenthawk check npm` reports.
+AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `agenthawk check npm`, and exact expiring approvals.
 
 ```text
 untrusted package spec
@@ -70,9 +70,13 @@ The policy schema rejects unknown fields at every security-sensitive level. Know
 
 OSV is queried only after npm successfully resolves a package version. The provider uses bounded JSON `POST` for `/v1/query` and `/v1/querybatch`, and bounded `GET` for `/v1/vulns/{id}` hydration of abbreviated batch matches. POST responses must not redirect. Request bodies are size-limited before they are sent.
 
+Batch results preserve input order and associate each hydrated record set with its exact package query. Hydrated record identifiers must equal the abbreviated identifier requested; mismatches fail closed.
+
 Pagination follows `next_page_token` until it is absent. A first page that contains only a token is not treated as empty evidence. A configured page or record limit that is hit while a token remains is incomplete evidence (PG013), not a clean result.
 
-**PG010** treats OpenSSF Malicious Packages records as malicious when the OSV `id` or an alias matches `MAL-YYYY-N` and the record is not withdrawn. **PG011** uses qualitative severity from `database_specific.severity` (GitHub Advisory vocabulary). `MODERATE` maps to `MEDIUM`. CVSS vector strings in `severity[].score` are not converted into qualitative ratings; records without a supported label have unknown severity and do not match PG011.
+**PG010** treats OpenSSF Malicious Packages records as malicious when the OSV `id` or an alias matches `MAL-YYYY-N` and the record is not withdrawn. This signal is grounded in the [OpenSSF malicious-package OSV records](https://github.com/ossf/malicious-packages/tree/main/osv/malicious/npm), whose canonical record identifiers use that namespace. It does not infer malware from advisory prose.
+
+**PG011** accepts only explicit qualitative `CRITICAL`, `HIGH`, `MEDIUM`, `MODERATE`, or `LOW` labels present in normalized OSV database or affected-package severity fields. `MODERATE` maps to `MEDIUM`. CVSS vectors described by the [OSV severity schema](https://ossf.github.io/osv-schema/#severity-field) are not converted into qualitative ratings; records without a supported label have unknown severity and do not match PG011. Version filtering is delegated to the documented [OSV package-and-version query](https://google.github.io/osv.dev/post-v1-query/) rather than reimplemented from advisory ranges.
 
 `registries.osv.enabled` defaults to `true`. An explicit `enabled: false` is a deliberate policy opt-out: it is included in the policy digest, reported as provider status `disabled`, and does not produce PG013. An enabled OSV provider that is missing, truncated, or unavailable produces PG013 and the existing evaluation-error channel.
 
@@ -81,3 +85,7 @@ Pagination follows `next_page_token` until it is absent. A first page that conta
 `agenthawk check npm <package-spec>` is a thin orchestrator over the parser, npm provider, OSV provider, and policy engine. It supports terminal or JSON output, an optional strict YAML policy file, strict exit behavior, and a configurable registry URL. Policy files are bounded to 256 KiB, must be regular files, reject duplicate keys and unsupported aliases, and still pass the strict core schema.
 
 Terminal rendering escapes control and ANSI characters. JSON output is validated by the versioned evaluation-report schema and includes canonical SHA-256 policy/evidence digests plus a documented exit-code meaning. Provider failure diagnostics are normalized before rendering or digesting; raw upstream messages are excluded. The command never invokes npm, downloads a tarball, installs a package, or executes lifecycle scripts.
+
+## Approval boundary
+
+Approvals are parsed as strict, bounded YAML and applied only after original policy evaluation. Matching uses the normalized resolved coordinate, never the requested selector. Reports preserve all findings and both verdicts. Only approvable review findings are resolved; errors, non-approvable reviews, and blocks remain effective.

@@ -152,8 +152,11 @@ describe("OsvProvider.queryBatch", () => {
     });
 
     const result = await provider.queryBatch([{ name: "example-package", version: "1.0.0" }]);
-    expect(result.ok && result.records).toEqual([
-      { id: "GHSA-hydrated", malicious: false, severity: "CRITICAL" },
+    expect(result.ok && result.results).toEqual([
+      {
+        query: { name: "example-package", version: "1.0.0" },
+        records: [{ id: "GHSA-hydrated", malicious: false, severity: "CRITICAL" }],
+      },
     ]);
     expect(captured.map((route) => `${route.method} ${route.path}`)).toEqual([
       "POST /v1/querybatch",
@@ -203,11 +206,9 @@ describe("OsvProvider.queryBatch", () => {
       { name: "left", version: "1.0.0" },
       { name: "right", version: "2.0.0" },
     ]);
-    expect(result.ok && result.records.map((record) => record.id)).toEqual([
-      "GHSA-one",
-      "GHSA-one-b",
-      "GHSA-two",
-    ]);
+    expect(
+      result.ok && result.results.map((item) => item.records.map((record) => record.id)),
+    ).toEqual([["GHSA-one", "GHSA-one-b"], ["GHSA-two"]]);
     const second = captured[1]?.body as { queries: unknown[] };
     expect(second.queries).toHaveLength(1);
   });
@@ -219,7 +220,21 @@ describe("OsvProvider.queryBatch", () => {
       }),
       now,
     });
-    await expect(provider.queryBatch([])).resolves.toMatchObject({ ok: true, records: [] });
+    await expect(provider.queryBatch([])).resolves.toMatchObject({ ok: true, results: [] });
+  });
+
+  it("fail-closes when hydration returns a different advisory id", async () => {
+    const provider = new OsvProvider({
+      httpClient: client((route) =>
+        route.method === "POST"
+          ? { results: [{ vulns: [{ id: "GHSA-requested" }] }] }
+          : { id: "GHSA-different", database_specific: { severity: "HIGH" } },
+      ),
+      now,
+    });
+    await expect(
+      provider.queryBatch([{ name: "example-package", version: "1.0.0" }]),
+    ).resolves.toMatchObject({ ok: false, status: "invalid_response" });
   });
 
   it("rejects oversized batches and mismatched result counts", async () => {

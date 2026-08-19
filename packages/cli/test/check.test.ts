@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NpmProviderResult } from "@agenthawk/core";
 import { describe, expect, it } from "vitest";
-import { checkNpmPackage, readPolicyFile } from "../src/check.js";
+import { checkNpmPackage, readApprovalFile, readPolicyFile } from "../src/check.js";
 
 const now = new Date("2026-08-19T18:00:00.000Z");
 
@@ -38,6 +38,21 @@ function emptyOsv() {
 }
 
 describe("checkNpmPackage", () => {
+  const activeApproval = {
+    version: 1,
+    approvals: [
+      {
+        ecosystem: "npm",
+        name: "example-package",
+        version: "1.0.0",
+        approvedBy: "github:maintainer",
+        approvedAt: "2026-08-01T00:00:00.000Z",
+        expiresAt: "2026-09-01T00:00:00.000Z",
+        reason: "Source and release reviewed.",
+      },
+    ],
+  };
+
   it("renders a schema-stable allow report as JSON", async () => {
     const result = await checkNpmPackage(
       "example-package@1.0.0",
@@ -76,6 +91,58 @@ describe("checkNpmPackage", () => {
     expect(result.exitCode).toBe(1);
     expect(result.output).toContain("REVIEW PG007");
     expect(result.output).toContain("No package was installed.");
+  });
+
+  it("applies an exact approval after evaluation and reports both verdicts", async () => {
+    const result = await checkNpmPackage(
+      "example-package@1.0.0",
+      { approvalsPath: "approvals.yml", format: "json", strict: true },
+      {
+        getPackage: async () => success({ lifecycleScripts: ["postinstall"] }),
+        now: () => now,
+        readApprovals: async () => activeApproval,
+      },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.output)).toMatchObject({
+      approval: { approvedBy: "github:maintainer" },
+      originalVerdict: "review",
+      verdict: "allow",
+    });
+  });
+
+  it("keeps findings visible and renders matched approval in terminal output", async () => {
+    const hostile = structuredClone(activeApproval);
+    const record = hostile.approvals[0];
+    if (!record) throw new Error("test fixture omitted approval");
+    record.approvedBy = "github:maintainer";
+    const result = await checkNpmPackage(
+      "example-package@1.0.0",
+      { approvalsPath: "approvals.yml", format: "terminal", strict: true },
+      {
+        getPackage: async () => success({ lifecycleScripts: ["postinstall"] }),
+        now: () => now,
+        readApprovals: async () => hostile,
+      },
+    );
+    expect(result.output).toContain("REVIEW PG007");
+    expect(result.output).toContain("github:maintainer");
+    expect(result.output).not.toContain("\u001b");
+  });
+
+  it("fails closed on malformed or explicitly missing approval files", async () => {
+    const malformed = await checkNpmPackage(
+      "example-package@1.0.0",
+      { approvalsPath: "approvals.yml", format: "json", strict: false },
+      { readApprovals: async () => ({ version: 1, approvals: [{ name: "*" }] }) },
+    );
+    const missing = await checkNpmPackage("example-package@1.0.0", {
+      approvalsPath: "missing-approvals.yml",
+      format: "json",
+      strict: false,
+    });
+    expect(malformed.exitCode).toBe(2);
+    expect(missing.exitCode).toBe(2);
   });
 
   it("returns exit 3 for a required provider error in strict mode", async () => {
@@ -348,6 +415,30 @@ describe("checkNpmPackage", () => {
     });
   });
 
+  it("never lets an exact approval override a PG010 malicious block", async () => {
+    const result = await checkNpmPackage(
+      "example-package@1.0.0",
+      { approvalsPath: "approvals.yml", format: "json", strict: true },
+      {
+        getPackage: async () => success(),
+        now: () => now,
+        queryOsv: async () => ({
+          fetchedAt: "2026-08-19T17:58:00.000Z",
+          ok: true,
+          records: [{ id: "MAL-2026-42", malicious: true }],
+          status: "ok",
+        }),
+        readApprovals: async () => activeApproval,
+      },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.output)).toMatchObject({
+      originalVerdict: "block",
+      verdict: "block",
+    });
+    expect(JSON.parse(result.output).approval).toBeUndefined();
+  });
+
   it("returns exit 3 when enabled OSV evidence is unavailable", async () => {
     const result = await checkNpmPackage(
       "example-package@1.0.0",
@@ -366,5 +457,30 @@ describe("checkNpmPackage", () => {
     expect(result.exitCode).toBe(3);
     expect(result.output).not.toContain("osv-secret");
     expect(JSON.parse(result.output)).toMatchObject({ verdict: "error" });
+  });
+
+  it("treats only a missing conventional approval file as optional", async () => {
+    const missing = Object.assign(new Error("missing"), { code: "ENOENT" });
+    const opener = async () => {
+      throw missing;
+    };
+    await expect(readApprovalFile("default.yml", false, opener)).resolves.toBeUndefined();
+    await expect(readApprovalFile("explicit.yml", true, opener)).rejects.toThrow(
+      "Approval file could not be read.",
+    );
+  });
+
+  it.each([
+    ["duplicate keys", "version: 1\napprovals: []\napprovals: []\n"],
+    ["aliases", "version: 1\napprovals: &items []\ncopy: *items\n"],
+  ])("rejects hostile approval YAML: %s", async (_label, source) => {
+    const directory = await mkdtemp(join(tmpdir(), "agenthawk-approval-"));
+    try {
+      const path = join(directory, "approvals.yml");
+      await writeFile(path, source, "utf8");
+      await expect(readApprovalFile(path, true)).rejects.toThrow();
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 });

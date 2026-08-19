@@ -16,14 +16,30 @@ export interface OsvRecord {
   severity?: OsvSeverity;
 }
 
+type OsvProviderFailure = {
+  ok: false;
+  status: HttpErrorKind;
+  fetchedAt: string;
+  message: string;
+};
+
 export type OsvProviderResult =
   | { ok: true; status: "ok"; fetchedAt: string; records: OsvRecord[] }
-  | { ok: false; status: HttpErrorKind; fetchedAt: string; message: string };
+  | OsvProviderFailure;
 
 export interface OsvPackageQuery {
   name: string;
   version: string;
 }
+
+export interface OsvBatchItem {
+  query: OsvPackageQuery;
+  records: OsvRecord[];
+}
+
+export type OsvBatchProviderResult =
+  | { ok: true; status: "ok"; fetchedAt: string; results: OsvBatchItem[] }
+  | OsvProviderFailure;
 
 export interface OsvProviderOptions {
   apiUrl?: string;
@@ -134,9 +150,9 @@ export class OsvProvider {
     }
   }
 
-  async queryBatch(queries: readonly OsvPackageQuery[]): Promise<OsvProviderResult> {
+  async queryBatch(queries: readonly OsvPackageQuery[]): Promise<OsvBatchProviderResult> {
     try {
-      if (queries.length === 0) return success([], this.#now());
+      if (queries.length === 0) return batchSuccess([], this.#now());
       if (queries.length > maximumBatchQueries) {
         return failure(
           "invalid_response",
@@ -145,8 +161,10 @@ export class OsvProvider {
         );
       }
 
-      const ids = new Set<string>();
-      let remaining = queries.map((query) => ({
+      const allIds = new Set<string>();
+      const idsByIndex = queries.map(() => new Set<string>());
+      let remaining = queries.map((query, index) => ({
+        index,
         query,
         pageToken: undefined as string | undefined,
       }));
@@ -177,11 +195,18 @@ export class OsvProvider {
             );
           }
           for (const vuln of result.vulns ?? []) {
-            if (ids.size >= this.#maxRecords && !ids.has(vuln.id)) return truncated(this.#now());
-            ids.add(vuln.id);
+            if (allIds.size >= this.#maxRecords && !allIds.has(vuln.id)) {
+              return truncated(this.#now());
+            }
+            allIds.add(vuln.id);
+            idsByIndex[current.index]?.add(vuln.id);
           }
           if (result.next_page_token) {
-            nextRemaining.push({ query: current.query, pageToken: result.next_page_token });
+            nextRemaining.push({
+              index: current.index,
+              query: current.query,
+              pageToken: result.next_page_token,
+            });
           }
         }
         if (nextRemaining.length === 0) break;
@@ -189,15 +214,30 @@ export class OsvProvider {
         remaining = nextRemaining;
       }
 
-      const records: OsvRecord[] = [];
-      for (const id of [...ids].sort()) {
+      const hydrated = new Map<string, OsvRecord>();
+      for (const id of [...allIds].sort()) {
         const document = await this.#httpClient.getJson(
           new URL(`v1/vulns/${encodeURIComponent(id)}`, this.#apiUrl),
         );
         const record = normalizeRecord(document);
-        if (record) records.push(record);
+        if (!record || record.id !== id) {
+          return failure(
+            "invalid_response",
+            "OSV hydrated record did not match the requested identifier.",
+            validClockValue(this.#now(), "Provider clock"),
+          );
+        }
+        hydrated.set(id, record);
       }
-      return success(records, this.#now());
+      return batchSuccess(
+        queries.map((query, index) => ({
+          query,
+          records: [...(idsByIndex[index] ?? [])]
+            .sort()
+            .flatMap((id) => (hydrated.get(id) ? [hydrated.get(id) as OsvRecord] : [])),
+        })),
+        this.#now(),
+      );
     } catch (error) {
       return mapFailure(error, this.#now());
     }
@@ -291,7 +331,16 @@ function success(records: OsvRecord[], now: Date): OsvProviderResult {
   };
 }
 
-function truncated(now: Date): OsvProviderResult {
+function batchSuccess(results: OsvBatchItem[], now: Date): OsvBatchProviderResult {
+  return {
+    fetchedAt: validClockValue(now, "Provider clock"),
+    ok: true,
+    results,
+    status: "ok",
+  };
+}
+
+function truncated(now: Date): OsvProviderFailure {
   return failure(
     "invalid_response",
     "OSV results were truncated before pagination completed.",
@@ -299,7 +348,7 @@ function truncated(now: Date): OsvProviderResult {
   );
 }
 
-function mapFailure(error: unknown, now: Date): OsvProviderResult {
+function mapFailure(error: unknown, now: Date): OsvProviderFailure {
   const fetchedAt = validClockValue(now, "Provider clock");
   if (error instanceof SafeHttpError) return failure(error.kind, error.message, fetchedAt);
   if (error instanceof z.ZodError) {
@@ -308,7 +357,7 @@ function mapFailure(error: unknown, now: Date): OsvProviderResult {
   return failure("provider_error", "OSV evaluation failed.", fetchedAt);
 }
 
-function failure(status: HttpErrorKind, message: string, fetchedAt: string): OsvProviderResult {
+function failure(status: HttpErrorKind, message: string, fetchedAt: string): OsvProviderFailure {
   return { fetchedAt, message, ok: false, status };
 }
 
