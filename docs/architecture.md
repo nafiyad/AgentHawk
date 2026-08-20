@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, and `diff` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub evaluation with an isolated opt-in write commenter, advisory agent templates, and trust-separated release-package verification and staging.
+AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, `diff`, and `policy validate` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub evaluation with an isolated opt-in write commenter, advisory agent templates, and trust-separated release-package verification and staging.
 
 ```text
 untrusted package spec
@@ -87,6 +87,8 @@ Pagination follows `next_page_token` until it is absent. A first page that conta
 ## CLI check boundary
 
 `agenthawk check npm <package-spec>` is a thin orchestrator over the parser, npm provider, OSV provider, cache, and policy engine. It supports terminal or JSON output, an optional strict YAML policy file, strict exit behavior, a configurable registry URL, `--offline`, and `--no-cache`. Policy files are bounded to 256 KiB, must be regular files, reject duplicate keys and unsupported aliases, and still pass the strict core schema.
+
+`agenthawk policy validate --file <path>` uses that same production file reader and strict core schema without resolving a package, opening the metadata cache, or contacting npm/OSV. Success reports only the normalized policy version/mode and deterministic digest; invalid policy uses the shared bounded CLI error envelope and exit `2`.
 
 Only successful normalized public provider results enter the cache, and credential-bearing URL fields are removed first. npm entries expire after one hour and OSV entries after 15 minutes. Online checks always use live providers. Offline fresh entries can supply provisional findings but always add PG013 because local cache data is unauthenticated; they can never produce a clean admission. Offline cache misses, corruption, and staleness perform no network request and become visible provider failures. See [ADR 0004](adr/0004-cache-location.md).
 

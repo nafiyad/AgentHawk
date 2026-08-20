@@ -1,6 +1,6 @@
 # CLI JSON contract
 
-AgentHawk JSON output is intended for automation and coding-agent integrations. Successful `check`, `scan`, and `diff` reports and CLI failures use schema version `1.0`. Consumers must parse the process exit code and JSON together and fail closed on malformed output, unsupported schema versions, or unknown values.
+AgentHawk JSON output is intended for automation and coding-agent integrations. Successful `check`, `scan`, `diff`, and `policy validate` reports and CLI failures use schema version `1.0`. Consumers must parse the process exit code and JSON together and fail closed on malformed output, unsupported schema versions, or unknown values.
 
 ## Compatibility policy
 
@@ -27,18 +27,19 @@ Stable error codes are `invalid_input`, `output_limit`, and `internal_error`. Me
 
 | Code | Meaning |
 | ---: | --- |
-| `0` | Allowed, or a non-strict invocation whose report may still contain warnings/review findings |
+| `0` | Command completed successfully; an admission report may still contain non-strict warnings/review findings |
 | `1` | Strict mode stopped on review or block |
 | `2` | Invalid input, configuration, policy, or bounded-output failure |
 | `3` | Required evidence/evaluation failure represented by an `error` verdict |
 | `4` | Unexpected internal failure |
 
-Only exit `0` plus an explicitly acceptable parsed verdict permits an automated agent to proceed. Strict mode is required for admission workflows.
+Only exit `0` plus an explicitly acceptable parsed verdict permits an automated agent to proceed with dependency admission. Strict mode is required for admission workflows. For `policy validate`, exit `0` plus a schema-valid report with `valid: true` means only that the policy file passed the current file and configuration schemas; it is not a package verdict.
 
 ## Report families
 
 - `check npm` returns a package target, verdict and original verdict, findings, provider status, policy/evidence digests, optional approval metadata, and a human-readable exit-code meaning.
 - `scan` returns a bounded array of complete `check` reports and their manifest sections, plus the aggregate verdict.
 - `diff` binds dependency changes to the requested base and resolved base commit, reports lockfile correlation and findings, and returns `allow` or `review`.
+- `policy validate` returns command identity, tool version, normalized policy version/mode, and a deterministic policy digest. It does not return the requested path or policy contents and makes no provider request.
 
-Runtime schemas are exported by `@agenthawk/core` as `evaluationReportSchema`, `scanReportSchema`, `diffReportSchema`, `inventoryReportSchema`, and `cliErrorReportSchema`.
+Runtime schemas are exported by `@agenthawk/core` as `evaluationReportSchema`, `scanReportSchema`, `diffReportSchema`, `inventoryReportSchema`, `policyValidationReportSchema`, and `cliErrorReportSchema`.

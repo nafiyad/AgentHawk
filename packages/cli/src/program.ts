@@ -2,6 +2,7 @@ import { AGENTHAWK_VERSION } from "@agenthawk/core";
 import { Command } from "commander";
 import { type CheckDependencies, checkNpmPackage, type OutputFormat } from "./check.js";
 import { diffDependencies } from "./diff.js";
+import { validatePolicyFile } from "./policy.js";
 import { scanDependencies } from "./scan.js";
 import { escapeTerminal } from "./terminal.js";
 
@@ -92,6 +93,23 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
       },
       dependencies,
     );
+    writeResult(result, dependencies);
+  });
+
+  const policy = program
+    .command("policy")
+    .description("Inspect AgentHawk policy configuration.")
+    .configureOutput(safeOutput);
+  const policyValidate = policy
+    .command("validate")
+    .description("Validate a strict AgentHawk policy file without contacting providers.")
+    .requiredOption("--file <path>", "path to a strict AgentHawk YAML policy")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  policyValidate.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    const result = await validatePolicyFile(String(options.file), { format }, dependencies);
     writeResult(result, dependencies);
   });
 

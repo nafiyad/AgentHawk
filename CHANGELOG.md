@@ -4,7 +4,9 @@ All notable changes are documented in this file. AgentHawk follows semantic vers
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- `agenthawk policy validate --file <path>` reuses the production bounded YAML and strict policy schema, returns terminal or strict JSON output, and contacts no evidence provider.
 
 ## 0.1.0-alpha.1 - 2026-08-20
 

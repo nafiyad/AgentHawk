@@ -398,4 +398,4 @@ The following are not promised phases: hosted dashboards, user accounts, organiz
 
 ## Immediate next action
 
-Begin Milestone 16 with a focused PR for `agenthawk policy validate`, its strict JSON contract, hostile file-boundary tests, and public documentation. Follow with `approvals verify`, `doctor`, and finally collision-safe `init`. That sequence exercises existing production parsers first and establishes the diagnostics needed before Milestone 17 installs native hooks.
+Milestone 16 is active. The first focused slice is `agenthawk policy validate`, its strict JSON contract, hostile file-boundary tests, and public documentation. Follow with `approvals verify`, `doctor`, and finally collision-safe `init`. That sequence exercises existing production parsers first and establishes the diagnostics needed before Milestone 17 installs native hooks.

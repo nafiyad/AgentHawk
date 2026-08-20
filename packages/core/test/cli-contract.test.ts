@@ -3,6 +3,7 @@ import {
   cliErrorReportSchema,
   diffReportSchema,
   inventoryReportSchema,
+  policyValidationReportSchema,
   scanReportSchema,
 } from "../src/index.js";
 
@@ -43,6 +44,29 @@ describe("CLI JSON contract", () => {
         ...report,
         dependencies: Array(65).fill(report.dependencies[0]),
       }).success,
+    ).toBe(false);
+  });
+
+  it("strictly validates policy-validation reports", () => {
+    const report = {
+      schemaVersion: "1.0",
+      toolVersion: "0.1.0-alpha.1",
+      command: "policy_validate",
+      valid: true,
+      policyVersion: 1,
+      mode: "strict",
+      policyDigest: `sha256:${"a".repeat(64)}`,
+    };
+    expect(policyValidationReportSchema.parse(report)).toEqual(report);
+    expect(
+      policyValidationReportSchema.safeParse({ ...report, path: "C:/private/policy.yml" }).success,
+    ).toBe(false);
+    expect(policyValidationReportSchema.safeParse({ ...report, valid: false }).success).toBe(false);
+    expect(policyValidationReportSchema.safeParse({ ...report, mode: "audit" }).success).toBe(
+      false,
+    );
+    expect(
+      policyValidationReportSchema.safeParse({ ...report, toolVersion: "x".repeat(129) }).success,
     ).toBe(false);
   });
 
