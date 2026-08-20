@@ -1,8 +1,8 @@
 # Alpha acceptance status
 
-Date: 2026-08-19
+Date: 2026-08-20
 
-AgentHawk's npm admission-control implementation is feature-complete for the repository's pre-publication alpha scope. This does not mean the software is published or that an `ALLOW` verdict proves a dependency benign.
+AgentHawk's npm admission-control implementation is feature-complete for the first public alpha scope. Both packages are public; this does not mean that an `ALLOW` verdict proves a dependency benign or that the alpha is a complete security control.
 
 ## Acceptance matrix
 
@@ -18,24 +18,26 @@ AgentHawk's npm admission-control implementation is feature-complete for the rep
 | Repository scan and diff | Complete | Root regular-file constraints, 64-dependency bound, deterministic reports, hostile Git environment/ref handling, immutable base resolution, and PG014 lockfile correlation are tested. |
 | GitHub pull-request reporting | Complete | Read-only unprivileged evaluation, bounded artifact/summary, isolated opt-in commenter, hostile rendering tests, and immutable pins are documented and CI-tested. |
 | Agent templates | Complete | Copyable Codex, Claude Code, Cursor, and generic instructions are fail-closed and explicitly advisory. |
-| Package readiness | Complete, unpublished | Exact offline manifests, tarball parsing, metadata, README/license/disclosure inclusion, path/symlink/size checks, workspace-dependency rewrite, runtime version, and entrypoint smoke tests run in Quality. Both packages remain unpublished. |
-| Release control | Complete, not executed | A credential-free job builds checksummed artifacts; only an exact version tag can reach the protected `npm-release` environment, whose isolated OIDC job can stage but cannot promote packages. |
+| Package readiness | Complete, published | Exact offline manifests, tarball parsing, metadata, README/license/disclosure inclusion, path/symlink/size checks, workspace-dependency rewrite, runtime version, and entrypoint smoke tests run in Quality. Both packages are public at `0.1.0-alpha.1`, and their registry tarballs match the approved CI artifacts. |
+| Release control | Complete, configured | A credential-free job builds checksummed artifacts; only matching alpha tags can reach the protected `npm-release` environment, whose isolated OIDC job can stage but cannot promote packages. Both npm trusted publishers are stage-only and bypass-2FA token publication is disabled. |
 
 ## Quality evidence
 
 The required Quality workflow runs lint, typecheck, the full offline test suite, core coverage thresholds, build, package verification, and CLI smoke testing. Security-sensitive core coverage thresholds are 90% for statements, branches, functions, and lines. Exact results belong to each commit's workflow run; this document intentionally does not freeze a test count that will become stale.
 
-## Remaining operations before publication
+## Bootstrap completion
 
-The package names, `0.1.0-alpha.1` version, paired release, `npm-release` environment, trusted-publishing posture, persistent dual-use declaration, and one-time interactive 2FA bootstrap are approved. Publication still requires operational evidence and a separate exact-artifact approval:
+The approved one-time bootstrap completed on 2026-08-20 UTC:
 
-1. merge the exact-head green release-workflow PR after independent review;
-2. run its manual credential-free artifact preparation from the exact current `main` commit;
-3. inspect the resulting manifest, checksums, and two package tarballs;
-4. explicitly approve publication of those exact hashes;
-5. perform the one-time interactive 2FA bootstrap, then configure each package's stage-only trusted publisher and the protected GitHub environment.
+1. exact-head release workflow and post-merge Quality checks passed;
+2. the credential-free manual run built a five-file bundle from exact `main` commit `a2eccf130055bf14062a209452f77c24265b7f8f`;
+3. the two approved tarball hashes were verified before and after publication;
+4. core was published before CLI with interactive 2FA and no automation token;
+5. the public CLI installation resolved the exact matching core version and started successfully;
+6. both packages now use stage-only trusted publishing bound to `nafiyad/AgentHawk`, `release.yml`, and `npm-release`;
+7. `npm-release` requires maintainer approval, accepts only `v0.*-alpha.*` tags, contains no secrets, and disallows administrator bypass.
 
-The source workspace keeps `workspace:*` so local package relationships cannot drift. `pnpm pack` must rewrite it to the exact shared release version, and the package gate inspects the packed manifest to enforce that invariant. Public metadata in a source manifest is not publication by itself; no workflow path uses direct `npm publish`.
+The first version has no provenance attestation because the approved local bootstrap had no GitHub OIDC identity. npm also requires every package to have a `latest` tag, so `alpha` and `latest` both resolve to `0.1.0-alpha.1`; this registry invariant is not a stability claim. The source workspace keeps `workspace:*` so local package relationships cannot drift. `pnpm pack` rewrites it to the exact shared release version, and the package gate inspects the packed manifest to enforce that invariant. No workflow path uses direct `npm publish`.
 
 ## Explicitly deferred
 

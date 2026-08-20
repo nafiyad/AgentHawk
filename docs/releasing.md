@@ -1,6 +1,6 @@
 # Release operations
 
-AgentHawk is not yet published. The reviewed first candidate is `0.1.0-alpha.1` for `@agenthawk/core` and `@agenthawk/cli`; the packages publish together, core first, under npm's `alpha` distribution tag. Preparing this machinery does not publish either package and does not authorize a GitHub Release.
+AgentHawk's reviewed first alpha, `0.1.0-alpha.1`, is public as `@agenthawk/core` and `@agenthawk/cli`. The packages were published together, core first, from the exact approved CI artifacts. No Git tag or GitHub Release was created for the bootstrap because an exact version tag would invoke the stage workflow for an already-published version.
 
 ## Recorded maintainer decisions
 
@@ -12,7 +12,24 @@ AgentHawk is not yet published. The reviewed first candidate is `0.1.0-alpha.1` 
 - Dual-use handling: persistent `contentPolicy.class: dual-use` metadata and a packaged `DISCLOSURE` file.
 - Initial bootstrap: one-time interactive publication of the exact CI-built tarballs with npm 2FA.
 
-The bootstrap-process approval is not an instruction to publish immediately. Actual publication still requires an explicit release approval after the exact workflow run and artifacts are available for inspection.
+The bootstrap-process approval was separate from the exact-artifact publication approval. That one-time operation is complete; future versions must use the protected stage-only path below.
+
+## Bootstrap completion record
+
+- Date: 2026-08-20 UTC.
+- Source: exact `main` commit `a2eccf130055bf14062a209452f77c24265b7f8f`.
+- Artifact run: [Release candidate run 32319267651](https://github.com/nafiyad/AgentHawk/actions/runs/32319267651), whose manual dispatch ran only the credential-free `prepare` job.
+- Core artifact SHA-256: `fa3f906bcd4ad4337c25c01da379bacd033214807c6269f91b31a3d20221aaa0`.
+- CLI artifact SHA-256: `343c6ea56cc4c0e115a6ff0501d31d889775f7721c4d642614f7238c348650eb`.
+- Registry verification: names, versions, SHA-1 shasums, SHA-512 integrity values, file counts, public access, dual-use declarations, downloaded tarball SHA-256 values, and the CLI's exact core dependency all matched.
+- Consumer verification: a clean public-registry installation selected CLI and core `0.1.0-alpha.1`, and the installed CLI returned help successfully.
+- Authentication: interactive npm 2FA with no automation token; the first version intentionally has no provenance attestation.
+- Permanent npm controls: both trusted publishers bind to `nafiyad/AgentHawk`, `release.yml`, and `npm-release`, permit only `npm stage publish`, and use the restrictive package setting that disallows bypass-2FA tokens.
+- Permanent GitHub controls: `npm-release` requires reviewer `nafiyad`, permits only `v0.*-alpha.*` tags, has no environment secrets, and disallows administrator bypass. Self-review remains permitted because the repository currently has one maintainer.
+
+npm's [registry metadata format](https://github.com/npm/registry/blob/master/docs/responses/package-metadata.md) requires every package document to define `latest`. The first publication therefore created `latest` alongside the requested `alpha` tag, and npm rejected removing it. Both tags currently resolve to `0.1.0-alpha.1`; this does not make the version stable. Users and automation should request `@alpha` or the exact version. Any later retargeting of `latest` requires a reviewed release decision.
+
+The published `0.1.0-alpha.1` tarballs were correctly immutable after verification, so their bundled READMEs still contain the pre-publication sentence that called them unpublished candidates. Repository READMEs correct that wording for future artifacts; the stale sentence in the first registry version is a known documentation limitation, not grounds to rebuild or overwrite the release.
 
 ## Package and artifact gate
 
@@ -73,8 +90,8 @@ npm requires a package to exist before a trusted publisher can be configured and
    ```
 
    `--provenance=false` is an explicit bootstrap exception: local interactive publication has no GitHub OIDC identity. Record that the first version lacks an npm provenance attestation. Never substitute a rebuilt tarball.
-9. Verify both public registry versions, their `alpha` tags, integrity values, packaged `DISCLOSURE` files, and the CLI's exact core dependency before changing any distribution tag.
-10. Configure each npm package's trusted publisher to this repository, the exact workflow filename `release.yml`, and environment `npm-release`. Restrict the allowed action to `npm stage publish` and disallow token-based publishing.
+9. Verify both public registry versions, their `alpha` tags, integrity values, packaged `DISCLOSURE` files, and the CLI's exact core dependency. Record any registry-created `latest` mapping rather than assuming it can be absent.
+10. Configure each npm package's trusted publisher to this repository, the exact workflow filename `release.yml`, and environment `npm-release`. Restrict the allowed action to `npm stage publish` and disallow bypass-2FA token publishing.
 11. Configure the GitHub `npm-release` environment with required reviewers, restricted release tags, and no administrator bypass where repository ownership permits.
 
 If either publish fails, stop. Do not rebuild, overwrite, unpublish, change tags, or publish the CLI without a verified compatible core version. Diagnose and obtain a new explicit approval for any changed artifact or procedure.
@@ -86,7 +103,7 @@ If either publish fails, stop. Do not rebuild, overwrite, unpublish, change tags
 3. Create the exact `v<version>` tag on the then-current `main` commit without moving or recreating it.
 4. The release workflow reruns every quality gate, builds the exact bundle, and uses OIDC only to stage core and then CLI.
 5. Inspect the staged packages and provenance, then approve each with npm 2FA. Do not promote a partially staged pair.
-6. Verify npm registry identity, integrity, provenance, dependency linkage, and the `alpha` tag. A later decision to move `latest` requires its own reviewed release change.
+6. Verify npm registry identity, integrity, provenance, dependency linkage, and the `alpha` tag. `latest` currently points to the first alpha because npm requires it; retargeting it requires its own reviewed release change.
 
 Never publish from a source checkout, reuse an artifact from another run, attach a long-lived npm token, bypass the protected environment, move a release tag, run lifecycle scripts, or claim provenance proves the package benign.
 

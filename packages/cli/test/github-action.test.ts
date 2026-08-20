@@ -25,9 +25,12 @@ describe("AgentHawk workflow", () => {
     expect(threatModel).not.toContain("GitHub reporting will extend it later");
     expect(threatModel).toContain("Pull-request content gains privileged workflow authority");
     expect(threatModel).toContain("Agent instruction text is mistaken for enforcement");
-    expect(acceptance).toContain("Both packages remain unpublished");
+    expect(acceptance).toContain("Both packages are public");
+    expect(acceptance).toContain("Bootstrap completion");
+    expect(acceptance).toContain("stage-only trusted publishing");
+    expect(acceptance).toContain("npm also requires every package to have a `latest` tag");
     expect(acceptance).toContain("Explicitly deferred");
-    expect(acceptance).toContain("one-time interactive 2FA bootstrap");
+    expect(acceptance).toContain("approved one-time bootstrap completed");
     expect(acceptance).toContain("Permanent product exclusions");
     const deferred = acceptance.split("## Explicitly deferred")[1]?.split("## Permanent")[0];
     expect(deferred).toBeDefined();

@@ -2,7 +2,12 @@
 
 Local-first dependency admission control for AI coding agents, from [AgentHawk](https://github.com/nafiyad/AgentHawk).
 
-This package is an unpublished `0.1.0-alpha.1` release candidate. Its dual-use declaration and disclosure are packaging policy. It inspects metadata and policy without installing or executing the proposed package.
+`0.1.0-alpha.1` is the first public alpha. Its dual-use declaration and disclosure are packaging policy. It inspects metadata and policy without installing or executing the proposed package.
+
+```bash
+npm install --global @agenthawk/cli@alpha
+agenthawk --version
+```
 
 ```bash
 agenthawk check npm example-package@1.0.0 --strict --format json
