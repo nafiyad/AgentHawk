@@ -29,7 +29,7 @@ Only after those decisions may a separate PR remove `private`, replace `workspac
 
 ## Required release security
 
-The eventual workflow must use npm trusted publishing with GitHub OIDC, a GitHub-hosted runner, least privilege, a protected release environment, immutable action pins, and a repository URL that exactly matches the public source repository. It must not store a long-lived npm token. Trusted publishing can produce provenance for a public package from a public repository, but provenance proves the source/build relationship—not that the package is benign.
+The eventual workflow must use npm trusted publishing with GitHub OIDC, a GitHub-hosted runner, least privilege, a protected release environment, immutable action pins, and a repository URL that exactly matches the public source repository. It must not store a long-lived npm token. Trusted publishing can produce provenance for a public package from a public repository, but provenance proves the source/build relationship—not that the package is benign. Producing AgentHawk's release provenance is distinct from verifying third-party dependency provenance; [ADR 0008](adr/0008-provenance-verification-boundary.md) defines that consumer boundary.
 
 Before a release candidate is authorized:
 

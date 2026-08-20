@@ -32,7 +32,7 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 | Invalid or impossible provider timestamps influence age rules | Strict calendar validation at provider and policy boundaries | A valid timestamp remains registry-supplied evidence, not independent proof |
 | Hostile body or exception leaks secrets | Fixed diagnostic messages; never include bodies, URLs, headers, or caught details | Host-level logs outside AgentHawk are not controlled |
 | Lifecycle script executes during inspection | Read script names only; never install or execute | Malicious code without lifecycle scripts is not detected |
-| Metadata claims a false repository or integrity value | Treat as registry evidence, not proof of benignness | Independent verification is deferred |
+| Metadata claims a false repository, integrity value, or provenance advertisement | Treat it as registry evidence, not proof of benignness; do not label attestation presence as verified provenance | Metadata-only cryptographic binding and artifact-byte verification remain deferred under [ADR 0008](adr/0008-provenance-verification-boundary.md) |
 | Strong finding is hidden by a weaker finding | Fixed error > block > review > warn > allow precedence | Policy actions can intentionally suppress approvable rules |
 | Similar-looking name is treated as proof | Label PG005 as a heuristic and require review | Conservative matching can still produce false positives or miss confusables |
 | Policy YAML exhausts memory or expands aliases | Require a regular file, enforce a 256 KiB bound, reject duplicate keys and aliases | Local filesystem races remain possible within the bounded read |
