@@ -1,10 +1,10 @@
 # Implementation plan
 
-Date: 2026-08-19
+Date: 2026-08-20
 
 ## Current state
 
-The repository began empty except for Git metadata; `AGENTS.md` and Milestone 0 research were the first tracked material. All fifteen alpha milestones below are now complete: the pre-publication alpha implements `check npm`, `scan`, and `diff` with npm/OSV evidence, deterministic policy, approvals, cache/offline behavior, GitHub Action integration, agent templates, hardened JSON contracts, exact package artifacts, and trust-separated staged publishing. The public remote is `https://github.com/nafiyad/AgentHawk`. Both `0.1.0-alpha.1` packages remain unpublished; release-workflow readiness is not publication authorization.
+The repository began empty except for Git metadata; `AGENTS.md` and Milestone 0 research were the first tracked material. All fifteen alpha milestones below are complete: the public alpha implements `check npm`, `scan`, and `diff` with npm/OSV evidence, deterministic policy, approvals, cache/offline behavior, GitHub Action integration, agent templates, hardened JSON contracts, exact package artifacts, and trust-separated staged publishing. The public remote is `https://github.com/nafiyad/AgentHawk`. Both `0.1.0-alpha.1` packages were published from the exact approved CI artifacts and are protected by stage-only trusted publishing for subsequent versions.
 
 ## Assumptions and constraints
 
@@ -37,7 +37,7 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 12. **Alpha contract hardening — complete**: strict exported schemas for every JSON report family, one versioned failure envelope, compatibility documentation, and golden contract tests.
 13. **Release-readiness foundation — complete**: offline package-content validation, consumer-facing package documentation/licenses, changelog, metadata, and an explicit publication lock pending ownership decisions.
 14. **Alpha acceptance audit — complete**: implementation-to-test acceptance matrix, current architecture/threat boundaries, publication blockers, and explicit deferred scope.
-15. **Release workflow — complete, unpublished**: paired alpha metadata, shared runtime version, persistent dual-use disclosure, exact real-tarball verification, checksummed CI artifacts, one-time interactive bootstrap procedure, and an isolated protected OIDC job limited to npm staging.
+15. **Release workflow — complete and bootstrapped**: paired public alpha packages, shared runtime version, persistent dual-use disclosure, exact real-tarball verification, checksummed CI artifacts, completed one-time interactive bootstrap, restrictive package access, and an isolated protected OIDC job limited to npm staging.
 
 Every milestone updates docs, reviews its diff, runs focused tests and the full available quality gate, scans staged content for secrets, commits, pushes, and verifies the exact remote head.
 
@@ -62,11 +62,11 @@ Milestone 1 adds root workspace/build/test/lint configuration, `.github/workflow
 
 ## Rollback
 
-Milestones are isolated commits. A defective unreleased milestone can be reverted with a new commit; public history is never rewritten. Provider features remain behind interfaces so a failing provider can be disabled by an explicit policy/version change without weakening other evidence silently.
+Milestones are isolated commits. A defective unreleased milestone can be reverted with a new commit; public history is never rewritten. Published npm versions are immutable and must be remediated with a reviewed new version or, when necessary, a visible deprecation rather than an attempted overwrite. Provider features remain behind interfaces so a failing provider can be disabled by an explicit policy/version change without weakening other evidence silently.
 
 ## Open questions
 
-There are no unresolved design questions for the first release candidate. Actual publication remains a separately approved operation after exact CI artifacts exist; npm scope ownership, package bootstrap, trusted-publisher setup, and protected-environment reviewers are verified during that procedure (see `docs/releasing.md`).
+There are no unresolved design questions for the first public alpha. The exact-artifact bootstrap, npm scope ownership, restrictive package access, stage-only trusted publishers, and protected GitHub environment are complete; [release operations](releasing.md) records the evidence and remaining provenance limitation. Public feedback must inform any next-version scope change.
 
 Resolved: OSV malicious-record classification is defined in `docs/architecture.md` (PG010 matches non-withdrawn `MAL-YYYY-N` identifiers or aliases).
 

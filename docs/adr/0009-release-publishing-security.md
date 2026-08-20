@@ -33,6 +33,12 @@ The first `0.1.0-alpha.1` versions use a one-time interactive 2FA publication of
 - Version strings and artifact filenames are deliberately explicit in the reviewed workflow; every release requires a PR rather than a moving generic publisher.
 - The design still trusts GitHub-hosted runners, pinned GitHub actions, npm's registry/staging service, and the integrity-pinned npm CLI.
 
+## Implementation record
+
+The bootstrap completed on 2026-08-20 UTC from exact source commit `a2eccf130055bf14062a209452f77c24265b7f8f`. Both public registry tarballs match the approved CI artifacts, the CLI depends on the exact core version, and the first version has no provenance attestation. Each package now trusts only `nafiyad/AgentHawk` workflow `release.yml` in environment `npm-release` for `npm stage publish`; direct OIDC publication and bypass-2FA token publication are disabled.
+
+npm's [registry metadata format](https://github.com/npm/registry/blob/master/docs/responses/package-metadata.md) requires every package to have a `latest` tag. For a first publication, npm created `latest` in addition to the requested `alpha` tag and rejected removing it. Both tags therefore point to `0.1.0-alpha.1`. This is an acknowledged registry constraint, not a stability claim; changing `latest` to a later version requires a reviewed release decision.
+
 ## Rejected alternatives
 
 - **Long-lived npm automation token:** rejected because it is reusable, secret-bearing, and unnecessary after bootstrap.
