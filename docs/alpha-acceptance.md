@@ -18,23 +18,24 @@ AgentHawk's npm admission-control implementation is feature-complete for the rep
 | Repository scan and diff | Complete | Root regular-file constraints, 64-dependency bound, deterministic reports, hostile Git environment/ref handling, immutable base resolution, and PG014 lockfile correlation are tested. |
 | GitHub pull-request reporting | Complete | Read-only unprivileged evaluation, bounded artifact/summary, isolated opt-in commenter, hostile rendering tests, and immutable pins are documented and CI-tested. |
 | Agent templates | Complete | Copyable Codex, Claude Code, Cursor, and generic instructions are fail-closed and explicitly advisory. |
-| Package readiness | Complete but locked | Exact offline manifests, metadata, README/license inclusion, path/symlink/size checks, and entrypoint smoke tests run in Quality. Both packages remain private and unpublished. |
+| Package readiness | Complete, unpublished | Exact offline manifests, tarball parsing, metadata, README/license/disclosure inclusion, path/symlink/size checks, workspace-dependency rewrite, runtime version, and entrypoint smoke tests run in Quality. Both packages remain unpublished. |
+| Release control | Complete, not executed | A credential-free job builds checksummed artifacts; only an exact version tag can reach the protected `npm-release` environment, whose isolated OIDC job can stage but cannot promote packages. |
 
 ## Quality evidence
 
 The required Quality workflow runs lint, typecheck, the full offline test suite, core coverage thresholds, build, package verification, and CLI smoke testing. Security-sensitive core coverage thresholds are 90% for statements, branches, functions, and lines. Exact results belong to each commit's workflow run; this document intentionally does not freeze a test count that will become stale.
 
-## Remaining blockers before publication
+## Remaining operations before publication
 
-These are owner decisions, not missing alpha admission features:
+The package names, `0.1.0-alpha.1` version, paired release, `npm-release` environment, trusted-publishing posture, persistent dual-use declaration, and one-time interactive 2FA bootstrap are approved. Publication still requires operational evidence and a separate exact-artifact approval:
 
-1. confirm final npm package names and ownership;
-2. choose the first semantic prerelease version;
-3. decide whether CLI and core publish together;
-4. configure protected release approvers and npm trusted publishing;
-5. authorize a separate release-workflow PR and release candidate.
+1. merge the exact-head green release-workflow PR after independent review;
+2. run its manual credential-free artifact preparation from the exact current `main` commit;
+3. inspect the resulting manifest, checksums, and two package tarballs;
+4. explicitly approve publication of those exact hashes;
+5. perform the one-time interactive 2FA bootstrap, then configure each package's stage-only trusted publisher and the protected GitHub environment.
 
-Until then, `private: true` is the npm publication guard. Version `0.0.0` and the CLI's `workspace:*` dependency are additional readiness sentinels that the package gate requires; they are not npm publication controls by themselves.
+The source workspace keeps `workspace:*` so local package relationships cannot drift. `pnpm pack` must rewrite it to the exact shared release version, and the package gate inspects the packed manifest to enforce that invariant. Public metadata in a source manifest is not publication by itself; no workflow path uses direct `npm publish`.
 
 ## Explicitly deferred
 

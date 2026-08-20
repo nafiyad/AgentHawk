@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { type FileHandle, open } from "node:fs/promises";
 import {
+  AGENTHAWK_VERSION,
   type ApprovalFile,
   agentHawkConfigSchema,
   applyApprovals,
@@ -152,7 +153,7 @@ export async function checkNpmPackage(
         : strictExitCode(approvalApplication.verdict, options.strict);
     const report = evaluationReportSchema.parse({
       schemaVersion: "1.0",
-      toolVersion: "0.0.0",
+      toolVersion: AGENTHAWK_VERSION,
       generatedAt: now.toISOString(),
       target,
       verdict: approvalApplication.verdict,
@@ -490,7 +491,7 @@ function renderJson(report: EvaluationReport): string {
 
 function renderTerminal(report: EvaluationReport): string {
   const lines = [
-    "AgentHawk v0.0.0",
+    `AgentHawk v${AGENTHAWK_VERSION}`,
     "",
     `Target: npm:${escapeTerminal(report.target.name)}@${escapeTerminal(report.target.resolvedVersion ?? report.target.requestedSpec)}`,
     `Verdict: ${report.verdict.toUpperCase()}`,

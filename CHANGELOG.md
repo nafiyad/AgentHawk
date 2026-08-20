@@ -4,6 +4,8 @@ All notable changes will be documented in this file. AgentHawk follows semantic 
 
 ## Unreleased
 
+Target candidate: `0.1.0-alpha.1`. This heading remains unreleased until both npm packages are independently verified after publication.
+
 ### Added
 
 - Local-first npm dependency admission with deterministic policy findings.
@@ -11,6 +13,7 @@ All notable changes will be documented in this file. AgentHawk follows semantic 
 - Exact expiring approvals and bounded offline metadata caching.
 - `check npm`, `scan`, and `diff` commands with stable strict JSON contracts.
 - Read-only GitHub pull-request reporting and AI-agent instruction templates.
+- Checksummed release artifacts, persistent dual-use declarations, and protected stage-only npm trusted publishing.
 
 ### Security
 

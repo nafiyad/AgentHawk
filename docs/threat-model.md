@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, Git diff analysis, GitHub pull-request reporting, agent instruction templates, and release-package verification.
+This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, Git diff analysis, GitHub pull-request reporting, agent instruction templates, release-package verification, and npm staging.
 
 ## Assets
 
@@ -11,6 +11,7 @@ This threat model covers npm request parsing, registry and OSV evidence retrieva
 - environment variables and package-registry credentials;
 - the integrity and availability of AgentHawk reports;
 - the distinction between direct evidence and unverified metadata.
+- release artifact integrity and the npm publishing identity.
 
 ## Trust boundaries
 
@@ -51,8 +52,12 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 | Pull-request content gains privileged workflow authority | Evaluate in an unprivileged `pull_request` workflow; isolate the opt-in commenter in a non-executing `workflow_run`; validate, label, escape, and bound artifacts before rendering | A diagnostic comment is not authoritative and GitHub remains in the trust boundary |
 | Hostile report text breaks Markdown or terminal rendering | Escape Markdown structure, HTML, links, C0/C1 controls, DEL, and bidirectional controls; cap rendered summaries and comment searches | New rendering contexts require separate escaping review |
 | Agent instruction text is mistaken for enforcement | Templates state that they are advisory, fail closed on unknown outcomes, preserve host permissions, and require protected CI | A compromised or disobedient agent can ignore prompt-level instructions |
-| Release tarball omits runtime code or includes sensitive/development files | Exact canonical manifests, non-symlink intermediate directories, regular non-symlink final files, size bounds, package metadata locks, and entrypoint smoke tests | Publication remains blocked until package ownership and trusted publishing are configured |
-| A release credential is stolen or provenance is overstated | Require future npm OIDC trusted publishing from a protected workflow; do not store a long-lived npm token; describe provenance only as source/build linkage | Trusted publishing does not prove code is benign and npm/GitHub remain external trust dependencies |
+| Release tarball omits runtime code, changes dependency linkage, or includes sensitive/development files | Exact canonical dry-run and tar manifests, tar-header validation, non-symlink intermediate directories, regular non-symlink final files, size bounds, metadata locks, packed dependency validation, and entrypoint smoke tests | A reviewed allowlist can still intentionally include vulnerable code |
+| Untrusted build code steals a publishing identity | Keep the build/test job credential-free; grant OIDC only to a protected job that performs no checkout, project install, project script, or package-code execution | Pinned GitHub and npm tooling remain supply-chain trust dependencies |
+| A substituted or cross-run artifact is staged | Same-run artifact name binds the full commit SHA; require an exact five-file set, SHA-256 checks, strict release manifest, exact version/source identity, and an integrity-pinned npm CLI | GitHub artifact storage and runner integrity remain external dependencies |
+| CI directly makes a dual-use package public | Restrict the npm trusted publisher to `npm stage publish`; require protected-environment review and separate npm 2FA promotion; store no npm token | An authorized maintainer can still approve a harmful or mistaken staged release |
+| Bootstrap credentials or artifacts are misused | Permit one interactive 2FA bootstrap only for exact manually dispatched CI artifacts, core before CLI; prohibit automation tokens, rebuilds, and silent procedure changes | The first version lacks OIDC provenance and the maintainer workstation is temporarily trusted |
+| Provenance is overstated | Describe provenance only as source/build linkage and explicitly record the bootstrap version's absence of attestation | Trusted publishing does not prove code is benign; npm and GitHub remain external trust dependencies |
 
 ## Unsupported claims
 

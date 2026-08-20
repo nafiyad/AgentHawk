@@ -1,40 +1,99 @@
-# Release readiness
+# Release operations
 
-AgentHawk is not yet published. Both workspace packages remain `private: true` at version `0.0.0`; this is a deliberate publication lock, not a release version.
+AgentHawk is not yet published. The reviewed first candidate is `0.1.0-alpha.1` for `@agenthawk/core` and `@agenthawk/cli`; the packages publish together, core first, under npm's `alpha` distribution tag. Preparing this machinery does not publish either package and does not authorize a GitHub Release.
 
-## Current package gate
+## Recorded maintainer decisions
 
-`pnpm package:check` builds both packages and runs `npm pack --dry-run --ignore-scripts --offline --json` against each package directory. The verifier requires:
+- Package names: `@agenthawk/core` and `@agenthawk/cli`.
+- First version: `0.1.0-alpha.1`.
+- Release unit: both packages at the same version, core before CLI.
+- GitHub protection: the `npm-release` environment.
+- Permanent authentication: npm trusted publishing with GitHub OIDC and no stored npm token.
+- Dual-use handling: persistent `contentPolicy.class: dual-use` metadata and a packaged `DISCLOSURE` file.
+- Initial bootstrap: one-time interactive publication of the exact CI-built tarballs with npm 2FA.
 
-- the expected package identity, repository, license, Node engine, and publication lock;
-- the exact reviewed compiled JavaScript/declaration manifest and consumer entrypoint smoke tests;
-- package-specific README and Apache-2.0 license files;
-- bounded unpacked size;
-- canonical contained paths backed by regular non-symlink files;
-- no extra or missing files, source, tests, coverage, source maps, build metadata, `.env`, `.npmrc`, or tarballs.
+The bootstrap-process approval is not an instruction to publish immediately. Actual publication still requires an explicit release approval after the exact workflow run and artifacts are available for inspection.
 
-The quality workflow runs this gate on every change. It cannot publish, invoke lifecycle scripts, or contact the registry.
+## Package and artifact gate
 
-## Decisions required before publication
+`pnpm package:check` builds both packages and performs two independent offline checks:
 
-A maintainer must explicitly confirm:
+1. `npm pack --dry-run --ignore-scripts --offline --json` must match the exact reviewed file manifests.
+2. `pnpm pack` creates temporary tarballs, whose tar headers, paths, file types, manifests, versions, and CLI-to-core dependency rewrite are verified before the temporary directory is removed.
 
-1. final npm package names and ownership;
-2. the first semantic prerelease version;
-3. whether the CLI and core library publish together;
-4. the protected GitHub environment and release approvers;
-5. npm trusted-publisher configuration for the exact workflow path.
+The verifier requires:
 
-Only after those decisions may a separate PR remove `private`, replace `workspace:*` with a publishable version relationship, and add a release workflow.
+- exact identity, version, repository, license, Node engine, dual-use declaration, and public-alpha publication metadata;
+- the complete reviewed compiled JavaScript/declaration manifest, `README.md`, `LICENSE`, and `DISCLOSURE`;
+- positive bounded unpacked size, canonical contained paths, non-symlink directories, and regular non-symlink files;
+- no extra or missing source, tests, coverage, source maps, build metadata, `.env`, `.npmrc`, or nested tarballs;
+- core import, CLI startup, and the shared runtime version;
+- `workspace:*` only in the source workspace and an exact `0.1.0-alpha.1` core dependency inside the packed CLI.
 
-## Required release security
+The Quality workflow runs this gate on every change. It cannot publish, invoke package lifecycle scripts, or contact npm during package verification.
 
-The eventual workflow must use npm trusted publishing with GitHub OIDC, a GitHub-hosted runner, least privilege, a protected release environment, immutable action pins, and a repository URL that exactly matches the public source repository. It must not store a long-lived npm token. Trusted publishing can produce provenance for a public package from a public repository, but provenance proves the source/build relationship—not that the package is benign. Producing AgentHawk's release provenance is distinct from verifying third-party dependency provenance; [ADR 0008](adr/0008-provenance-verification-boundary.md) defines that consumer boundary.
+## Trust-separated workflow
 
-Before a release candidate is authorized:
+`.github/workflows/release.yml` has two jobs with deliberately different authority:
+
+### Prepare
+
+The `prepare` job checks out only the exact current `main` commit, has `contents: read` and no OIDC permission, installs with lifecycle scripts disabled, runs the full quality gate, and creates two package tarballs. It also downloads the exact npm CLI tarball pinned by version and SHA-512 integrity. The resulting bundle contains only:
+
+- `agenthawk-core-0.1.0-alpha.1.tgz`;
+- `agenthawk-cli-0.1.0-alpha.1.tgz`;
+- `npm-12.0.2.tgz`;
+- `release-manifest.json`;
+- `SHA256SUMS`.
+
+A manual dispatch stops after this job. It is the credential-free path used to build the initial bootstrap artifacts.
+
+### Stage
+
+An exact `v<package-version>` tag also enables the `stage` job after `prepare` succeeds. The job is protected by the `npm-release` environment and has only `actions: read`, `id-token: write`, and no repository-content permission. It does not check out the repository, run project scripts, install project dependencies, or execute package lifecycle scripts. It downloads the same-run artifact, verifies the exact five-file set, checks every SHA-256 digest and manifest invariant, installs the integrity-pinned npm CLI from the local bundle, then runs `npm stage publish` for core followed by CLI.
+
+The stage job cannot make a package public. A maintainer must inspect and approve each staged release with npm 2FA. Direct `npm publish` is intentionally absent from the workflow.
+
+## One-time interactive 2FA bootstrap
+
+npm requires a package to exist before a trusted publisher can be configured and before `npm stage publish` can stage a version. The first version therefore uses this bounded bootstrap:
+
+1. Merge the exact green release-workflow PR normally.
+2. Manually dispatch `release.yml` from the exact current `main` commit. Do not create the version tag.
+3. Confirm the run's `Build and verify release artifacts` job is green and that no `stage` job ran.
+4. Download `agenthawk-release-<full-main-SHA>` from that run to a clean maintainer workstation.
+5. Confirm the workflow run SHA equals the intended `main` SHA. Run `sha256sum --check SHA256SUMS` (or an equivalent trusted SHA-256 verifier), inspect `release-manifest.json`, and confirm the directory contains exactly the five documented files.
+6. Confirm the npm account controls the `@agenthawk` scope, uses 2FA for publishing, and is logged in interactively. Install the verified bundled CLI with `npm install --global ./npm-12.0.2.tgz --ignore-scripts`, then require `npm --version` to print exactly `12.0.2`. Do not create or export an automation token.
+7. Obtain a separate explicit release approval for these exact hashes.
+8. From the verified artifact directory, publish core first and CLI second, allowing npm to prompt interactively for 2FA:
+
+   ```bash
+   npm publish ./agenthawk-core-0.1.0-alpha.1.tgz --access public --tag alpha --ignore-scripts --provenance=false
+   npm publish ./agenthawk-cli-0.1.0-alpha.1.tgz --access public --tag alpha --ignore-scripts --provenance=false
+   ```
+
+   `--provenance=false` is an explicit bootstrap exception: local interactive publication has no GitHub OIDC identity. Record that the first version lacks an npm provenance attestation. Never substitute a rebuilt tarball.
+9. Verify both public registry versions, their `alpha` tags, integrity values, packaged `DISCLOSURE` files, and the CLI's exact core dependency before changing any distribution tag.
+10. Configure each npm package's trusted publisher to this repository, the exact workflow filename `release.yml`, and environment `npm-release`. Restrict the allowed action to `npm stage publish` and disallow token-based publishing.
+11. Configure the GitHub `npm-release` environment with required reviewers, restricted release tags, and no administrator bypass where repository ownership permits.
+
+If either publish fails, stop. Do not rebuild, overwrite, unpublish, change tags, or publish the CLI without a verified compatible core version. Diagnose and obtain a new explicit approval for any changed artifact or procedure.
+
+## Subsequent prereleases
+
+1. Use a reviewed PR to update both manifests, the shared runtime version, exact package allowlists/tests, changelog, workflow filenames, and release documentation.
+2. Run and merge only an exact-head green PR.
+3. Create the exact `v<version>` tag on the then-current `main` commit without moving or recreating it.
+4. The release workflow reruns every quality gate, builds the exact bundle, and uses OIDC only to stage core and then CLI.
+5. Inspect the staged packages and provenance, then approve each with npm 2FA. Do not promote a partially staged pair.
+6. Verify npm registry identity, integrity, provenance, dependency linkage, and the `alpha` tag. A later decision to move `latest` requires its own reviewed release change.
+
+Never publish from a source checkout, reuse an artifact from another run, attach a long-lived npm token, bypass the protected environment, move a release tag, run lifecycle scripts, or claim provenance proves the package benign.
+
+## Full release-candidate gate
 
 ```bash
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm lint
 pnpm typecheck
 pnpm test
@@ -44,6 +103,4 @@ pnpm package:check
 pnpm audit --audit-level high
 ```
 
-Review the generated file manifests and changelog, verify a clean exact tag target, and publish only from the reviewed release workflow. Never publish from a developer workstation.
-
-The packaging behavior follows the official [npm pack](https://docs.npmjs.com/cli/pack/), [package.json](https://docs.npmjs.com/files/package.json/), [trusted publishing](https://docs.npmjs.com/trusted-publishers/), and [provenance](https://docs.npmjs.com/generating-provenance-statements/) documentation.
+This design follows npm's official [trusted publishing](https://docs.npmjs.com/trusted-publishers/), [staged publishing](https://docs.npmjs.com/cli/v12/commands/npm-stage/), [dual-use package](https://docs.npmjs.com/policies/dual-use/), [package manifest](https://docs.npmjs.com/files/package.json/), and [provenance](https://docs.npmjs.com/generating-provenance-statements/) documentation. Provenance establishes a source/build relationship; it does not establish that code is safe or benign. [ADR 0009](adr/0009-release-publishing-security.md) records the trust decision.

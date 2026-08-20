@@ -1,0 +1,215 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agenthawk-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Build and verify release artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify exact main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -c core.hooksPath=/dev/null fetch --no-tags origin main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up release Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+
+      - name: Install dependencies without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate release tag and package versions
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+          const core = JSON.parse(await readFile("packages/core/package.json", "utf8"));
+          const cli = JSON.parse(await readFile("packages/cli/package.json", "utf8"));
+          if (core.version !== cli.version) throw new Error("package versions differ");
+          if (!/^0\.[0-9]+\.[0-9]+-alpha\.[1-9][0-9]*$/u.test(core.version)) {
+            throw new Error("release version is not an alpha prerelease");
+          }
+          if (process.env.GITHUB_REF_NAME !== `v${core.version}`) {
+            throw new Error("tag does not exactly match package version");
+          }
+          NODE
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Coverage
+        run: pnpm test:coverage
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify package contents
+        run: pnpm package:check
+
+      - name: CLI smoke test
+        run: pnpm agenthawk --help
+
+      - name: Download pinned npm CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 60 \
+            --output "$RUNNER_TEMP/npm-12.0.2.tgz" \
+            'https://registry.npmjs.org/npm/-/npm-12.0.2.tgz'
+
+      - name: Create checksummed release bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run release:prepare \
+            "$RUNNER_TEMP/agenthawk-release" \
+            "$GITHUB_SHA" \
+            "$RUNNER_TEMP/npm-12.0.2.tgz"
+          cd "$RUNNER_TEMP/agenthawk-release"
+          sha256sum --check SHA256SUMS
+
+      - name: Upload exact release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agenthawk-release-${{ github.sha }}
+          path: ${{ runner.temp }}/agenthawk-release
+          if-no-files-found: error
+          retention-days: 7
+
+  stage:
+    name: Stage packages with npm trusted publishing
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm-release
+    permissions:
+      actions: read
+      contents: none
+      id-token: write
+    steps:
+      - name: Set up publishing Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.15.0
+
+      - name: Download exact release bundle
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: agenthawk-release-${{ github.sha }}
+          path: ${{ runner.temp }}/agenthawk-release
+
+      - name: Verify bundle identity and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/agenthawk-release"
+          cd "$release_dir"
+          test -z "$(find . -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
+          test "$(find . -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)" = "$(printf '%s\n' \
+            'SHA256SUMS' \
+            'agenthawk-cli-0.1.0-alpha.1.tgz' \
+            'agenthawk-core-0.1.0-alpha.1.tgz' \
+            'npm-12.0.2.tgz' \
+            'release-manifest.json' | sort)"
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFile } from "node:fs/promises";
+          const digest = (value, algorithm, encoding) => createHash(algorithm).update(value).digest(encoding);
+          const targetFiles = [
+            "agenthawk-cli-0.1.0-alpha.1.tgz",
+            "agenthawk-core-0.1.0-alpha.1.tgz",
+            "npm-12.0.2.tgz",
+            "release-manifest.json",
+          ];
+          const checksumText = await readFile("SHA256SUMS", "utf8");
+          const checksumLines = checksumText.trimEnd().split("\n");
+          if (checksumLines.length !== targetFiles.length) throw new Error("checksum count differs");
+          const checksums = new Map();
+          for (const line of checksumLines) {
+            const match = /^([0-9a-f]{64})  ([A-Za-z0-9.-]+)$/u.exec(line);
+            if (!match || checksums.has(match[2])) throw new Error("checksum manifest is invalid");
+            checksums.set(match[2], match[1]);
+          }
+          if (JSON.stringify([...checksums.keys()].sort()) !== JSON.stringify([...targetFiles].sort())) throw new Error("checksum targets differ");
+          const bytes = new Map();
+          for (const file of targetFiles) {
+            const value = await readFile(file);
+            bytes.set(file, value);
+            if (digest(value, "sha256", "hex") !== checksums.get(file)) throw new Error(`${file} checksum differs`);
+          }
+          const manifest = JSON.parse(await readFile("release-manifest.json", "utf8"));
+          const expectedPackages = [
+            ["@agenthawk/core", "agenthawk-core-0.1.0-alpha.1.tgz"],
+            ["@agenthawk/cli", "agenthawk-cli-0.1.0-alpha.1.tgz"],
+          ];
+          const exactKeys = (value, keys) =>
+            value && typeof value === "object" && !Array.isArray(value) &&
+            JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+          if (!exactKeys(manifest, ["npmCli", "packages", "publication", "schemaVersion", "sourceCommit", "version"])) throw new Error("release manifest fields differ");
+          if (manifest.schemaVersion !== "1.0" || manifest.sourceCommit !== process.env.GITHUB_SHA || manifest.version !== "0.1.0-alpha.1") throw new Error("release identity differs");
+          if (!Array.isArray(manifest.packages) || manifest.packages.length !== 2) throw new Error("package list differs");
+          for (const [index, [name, file]] of expectedPackages.entries()) {
+            const entry = manifest.packages[index];
+            if (!exactKeys(entry, ["file", "name", "sha256", "unpackedFiles", "version"]) || entry.name !== name || entry.file !== file || entry.version !== manifest.version || entry.sha256 !== checksums.get(file) || !Number.isSafeInteger(entry.unpackedFiles) || entry.unpackedFiles < 1) throw new Error(`package ${index} differs`);
+          }
+          const npmIntegrity = `sha512-${digest(bytes.get("npm-12.0.2.tgz"), "sha512", "base64")}`;
+          if (!exactKeys(manifest.npmCli, ["file", "integrity", "sha256", "version"]) || manifest.npmCli.file !== "npm-12.0.2.tgz" || manifest.npmCli.version !== "12.0.2" || manifest.npmCli.integrity !== "sha512-uIXokLlBj6FpNUTQX1PmT5pz7BlIN9QlixX+zdaSNHsd0qUXsbDLr50xzY6Sw7cJVr0uzHKDOle0swmPW/p5Qw==" || npmIntegrity !== manifest.npmCli.integrity || manifest.npmCli.sha256 !== checksums.get(manifest.npmCli.file)) throw new Error("npm CLI identity differs");
+          if (!exactKeys(manifest.publication, ["access", "promotion", "provenance", "staging", "tag"]) || manifest.publication.access !== "public" || manifest.publication.promotion !== "maintainer-2fa" || manifest.publication.provenance !== true || manifest.publication.staging !== "npm-oidc" || manifest.publication.tag !== "alpha") throw new Error("publication policy differs");
+          NODE
+          sha256sum --check SHA256SUMS
+
+      - name: Install verified npm CLI without lifecycle scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global "$RUNNER_TEMP/agenthawk-release/npm-12.0.2.tgz" --ignore-scripts
+          test "$(npm --version)" = "12.0.2"
+
+      - name: Stage core package
+        run: >-
+          npm stage publish
+          "${{ runner.temp }}/agenthawk-release/agenthawk-core-0.1.0-alpha.1.tgz"
+          --access public --tag alpha --ignore-scripts --provenance
+
+      - name: Stage CLI package
+        run: >-
+          npm stage publish
+          "${{ runner.temp }}/agenthawk-release/agenthawk-cli-0.1.0-alpha.1.tgz"
+          --access public --tag alpha --ignore-scripts --provenance

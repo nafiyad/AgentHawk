@@ -4,7 +4,7 @@ Date: 2026-08-19
 
 ## Current state
 
-The repository began empty except for Git metadata; `AGENTS.md` and Milestone 0 research were the first tracked material. All fourteen alpha milestones below are now complete: the pre-publication alpha implements `check npm`, `scan`, and `diff` with npm/OSV evidence, deterministic policy, approvals, cache/offline behavior, GitHub Action integration, agent templates, hardened JSON contracts, and an offline package-content gate. The public remote is `https://github.com/nafiyad/AgentHawk`. Packages remain `private: true` at version `0.0.0` pending explicit publication authorization.
+The repository began empty except for Git metadata; `AGENTS.md` and Milestone 0 research were the first tracked material. All fifteen alpha milestones below are now complete: the pre-publication alpha implements `check npm`, `scan`, and `diff` with npm/OSV evidence, deterministic policy, approvals, cache/offline behavior, GitHub Action integration, agent templates, hardened JSON contracts, exact package artifacts, and trust-separated staged publishing. The public remote is `https://github.com/nafiyad/AgentHawk`. Both `0.1.0-alpha.1` packages remain unpublished; release-workflow readiness is not publication authorization.
 
 ## Assumptions and constraints
 
@@ -37,6 +37,7 @@ Initial development dependencies: TypeScript, Vitest/coverage, Biome, and tsup. 
 12. **Alpha contract hardening — complete**: strict exported schemas for every JSON report family, one versioned failure envelope, compatibility documentation, and golden contract tests.
 13. **Release-readiness foundation — complete**: offline package-content validation, consumer-facing package documentation/licenses, changelog, metadata, and an explicit publication lock pending ownership decisions.
 14. **Alpha acceptance audit — complete**: implementation-to-test acceptance matrix, current architecture/threat boundaries, publication blockers, and explicit deferred scope.
+15. **Release workflow — complete, unpublished**: paired alpha metadata, shared runtime version, persistent dual-use disclosure, exact real-tarball verification, checksummed CI artifacts, one-time interactive bootstrap procedure, and an isolated protected OIDC job limited to npm staging.
 
 Every milestone updates docs, reviews its diff, runs focused tests and the full available quality gate, scans staged content for secrets, commits, pushes, and verifies the exact remote head.
 
@@ -50,7 +51,7 @@ Use table-driven unit tests for parsing/rules/precedence/approvals/digests/escap
 - False confidence: precise product language and visible evidence limitations.
 - False positives: configurable thresholds and exact expiring approvals.
 - CLI/report compatibility: schema versioning and golden integration tests.
-- Dependency compromise in AgentHawk itself: minimize runtime dependencies, pin lockfile, use trusted publishing/provenance later.
+- Dependency compromise in AgentHawk itself: minimize runtime dependencies, pin the lockfile, disable lifecycle scripts, separate build from OIDC authority, and use integrity-pinned stage-only trusted publishing.
 - Future action shields: preserve clean core boundaries; do not generalize until requirements exist.
 
 No migration exists for the empty repository. Once public APIs ship, incompatible changes require a schema/version migration plan and changelog.
@@ -65,7 +66,7 @@ Milestones are isolated commits. A defective unreleased milestone can be reverte
 
 ## Open questions
 
-- Confirm the final npm package names and publishing ownership before release work (see `docs/releasing.md`).
+There are no unresolved design questions for the first release candidate. Actual publication remains a separately approved operation after exact CI artifacts exist; npm scope ownership, package bootstrap, trusted-publisher setup, and protected-environment reviewers are verified during that procedure (see `docs/releasing.md`).
 
 Resolved: OSV malicious-record classification is defined in `docs/architecture.md` (PG010 matches non-withdrawn `MAL-YYYY-N` identifiers or aliases).
 

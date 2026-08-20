@@ -1,0 +1,5 @@
+AgentHawk Core is defensive, dual-use security software.
+
+It parses npm dependency requests, normalizes bounded public registry and OSV evidence, and applies deterministic repository policy before a dependency is admitted. Its intended use is to help developers and coding agents identify risk signals and require explicit review.
+
+The package does not install or execute inspected package code, exploit systems, collect credentials, or claim that a dependency is benign. Security findings remain limited by the enabled evidence sources and policy.

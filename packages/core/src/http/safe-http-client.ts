@@ -1,3 +1,5 @@
+import { AGENTHAWK_VERSION } from "../version.js";
+
 export type HttpErrorKind =
   | "invalid_response"
   | "network_error"
@@ -57,7 +59,7 @@ export class SafeHttpClient implements JsonRequestClient {
     this.#maxRetries = options.maxRetries ?? 1;
     this.#retryDelayMs = options.retryDelayMs ?? 100;
     this.#timeoutMs = options.timeoutMs ?? 5_000;
-    this.#userAgent = options.userAgent ?? "AgentHawk/0.0.0";
+    this.#userAgent = options.userAgent ?? `AgentHawk/${AGENTHAWK_VERSION}`;
 
     for (const [name, value] of [
       ["maxBodyBytes", this.#maxBodyBytes],

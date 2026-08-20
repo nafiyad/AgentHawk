@@ -1,7 +1,6 @@
 {
   "name": "@agenthawk/core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0-alpha.1",
   "type": "module",
   "description": "Deterministic policy and evidence engine for AgentHawk.",
   "homepage": "https://github.com/nafiyad/AgentHawk#readme",
@@ -14,6 +13,9 @@
     "url": "https://github.com/nafiyad/AgentHawk/issues"
   },
   "license": "Apache-2.0",
+  "contentPolicy": {
+    "class": "dual-use"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -26,8 +28,15 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "DISCLOSURE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/",
+    "tag": "alpha"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"

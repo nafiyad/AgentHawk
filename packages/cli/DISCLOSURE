@@ -1,0 +1,5 @@
+AgentHawk CLI is defensive, dual-use security software.
+
+It exposes local commands that inspect npm dependency metadata, repository dependency manifests, and Git dependency diffs, then applies deterministic policy before a dependency is admitted. Its intended use is to help developers and coding agents identify risk signals and require explicit review.
+
+The package does not install or execute inspected package code, exploit systems, collect credentials, or claim that a dependency is benign. Security findings remain limited by the enabled evidence sources and policy.
