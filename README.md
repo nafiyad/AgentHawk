@@ -15,7 +15,7 @@
 
 AgentHawk is a local-first, deterministic security gate that checks dependencies proposed by AI coding agents before they enter a repository.
 
-> **Project status:** the npm admission-control alpha scope is implemented and under pre-publication hardening. The packages remain private and unpublished. Do not use this alpha as a complete security control.
+> **Project status:** the npm admission-control alpha scope is implemented and under pre-publication hardening. Release metadata targets `0.1.0-alpha.1`, but neither npm package has been published. Do not use this alpha as a complete security control.
 
 [Why AgentHawk](#why-agenthawk) · [Current capabilities](#current-capabilities) · [Development](#development) · [Security](#security-and-privacy-posture) · [Contributing](#contributing)
 
@@ -38,14 +38,14 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Stable redacted provider errors without package installation or execution
 - Read-only GitHub pull-request evaluation with an isolated opt-in write commenter
 - Fail-closed advisory templates for Codex, Claude Code, Cursor, and generic agents
-- Exact offline release-package manifests with publication locks and entrypoint smoke tests
+- Exact release-package manifests, dual-use disclosure, checksummed CI artifacts, and a stage-only trusted-publishing design
 - Offline fixtures and security regression tests
 
 See [approvals](docs/approvals.md) for the exact exception model.
 See [GitHub Actions integration](docs/github-action.md) for the read-only pull-request workflow and opt-in idempotent comments.
 See [AI agent integrations](docs/agent-integrations.md) for copyable Codex, Claude Code, Cursor, and generic fail-closed instruction templates.
 See the [CLI JSON contract](docs/json-contract.md) for versioning, report families, failure envelopes, and stable exit codes.
-See [release readiness](docs/releasing.md) for the offline package gate and the decisions required before any publication.
+See [release operations](docs/releasing.md) for the package gate, one-time interactive bootstrap, protected OIDC staging, and publication boundaries.
 See [alpha acceptance status](docs/alpha-acceptance.md) for the implemented-scope matrix, remaining publication blockers, and explicitly deferred platform work.
 See [the age-threshold decision](docs/adr/0007-policy-age-thresholds.md) for the evidence, real-project calibration, and limitations behind the default review windows.
 

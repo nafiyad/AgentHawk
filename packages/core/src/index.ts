@@ -108,3 +108,4 @@ export {
   type PackageManifest,
   packageManifestSchema,
 } from "./scan/dependencies.js";
+export { AGENTHAWK_VERSION } from "./version.js";

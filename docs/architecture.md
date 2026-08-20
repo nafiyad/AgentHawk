@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, and `diff` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub evaluation with an isolated opt-in write commenter, advisory agent templates, and locked release-package verification.
+AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, and `diff` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub evaluation with an isolated opt-in write commenter, advisory agent templates, and trust-separated release-package verification and staging.
 
 ```text
 untrusted package spec
@@ -112,4 +112,8 @@ Codex, Claude Code, Cursor, and generic templates require strict JSON evaluation
 
 ## Release-package boundary
 
-Both packages remain private at the unreleased `0.0.0` version. The offline package gate validates exact canonical tarball manifests, intermediate path components as non-symlink directories, final entries as regular non-symlink files, bounded positive size metadata, required consumer documentation/licenses, and core/CLI entrypoint startup. It cannot publish. Package ownership, versioning, and an OIDC trusted-publishing workflow require a separate maintainer-authorized change.
+Both packages are unpublished `0.1.0-alpha.1` candidates and carry persistent npm dual-use metadata plus packaged disclosures. The offline package gate validates exact canonical dry-run and real-tarball manifests, tar header checksums, intermediate path components as non-symlink directories, final entries as regular non-symlink files, bounded positive size metadata, required consumer documentation/license/disclosure, shared runtime version, core/CLI entrypoint startup, and the packed CLI's exact core dependency. It cannot publish.
+
+The release workflow separates build authority from publishing identity. The credential-free `prepare` job must run at the exact current `main`, executes the full quality gate, verifies an integrity-pinned npm CLI, and uploads a five-file checksummed bundle. Manual dispatch ends there. Only an exact version tag can request the `stage` job; that job is protected by `npm-release`, has OIDC but no repository-content permission, performs no checkout or project execution, verifies the same-run bundle, and calls `npm stage publish` in core-then-CLI order. npm 2FA promotion remains a maintainer action.
+
+Because npm cannot configure a trusted publisher or stage a package before its name exists, the first version has an approved one-time interactive bootstrap from the exact CI artifact. That exception uses no automation token and has no provenance attestation; all later versions use stage-only OIDC. See [release operations](releasing.md) and [ADR 0009](adr/0009-release-publishing-security.md).

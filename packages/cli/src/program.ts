@@ -1,3 +1,4 @@
+import { AGENTHAWK_VERSION } from "@agenthawk/core";
 import { Command } from "commander";
 import { type CheckDependencies, checkNpmPackage, type OutputFormat } from "./check.js";
 import { diffDependencies } from "./diff.js";
@@ -19,7 +20,7 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
   const program = new Command()
     .name("agenthawk")
     .description("Deterministic dependency admission control for AI coding agents.")
-    .version("0.0.0")
+    .version(AGENTHAWK_VERSION)
     .showSuggestionAfterError()
     .configureOutput(safeOutput);
 

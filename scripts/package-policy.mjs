@@ -3,9 +3,11 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export const packageSpecifications = [
   {
+    name: "@agenthawk/core",
     directory: "packages/core",
     maximumBytes: 250_000,
     paths: [
+      "DISCLOSURE",
       "LICENSE",
       "README.md",
       "dist/approvals/index.d.ts",
@@ -34,13 +36,17 @@ export const packageSpecifications = [
       "dist/scan/dependencies.js",
       "dist/time.d.ts",
       "dist/time.js",
+      "dist/version.d.ts",
+      "dist/version.js",
       "package.json",
     ],
   },
   {
+    name: "@agenthawk/cli",
     directory: "packages/cli",
     maximumBytes: 150_000,
     paths: [
+      "DISCLOSURE",
       "LICENSE",
       "README.md",
       "dist/check.d.ts",
@@ -62,6 +68,86 @@ export const packageSpecifications = [
   },
 ];
 
+export const releaseVersion = "0.1.0-alpha.1";
+
+const commonFiles = ["dist", "README.md", "LICENSE", "DISCLOSURE"];
+const publishConfig = {
+  access: "public",
+  provenance: true,
+  registry: "https://registry.npmjs.org/",
+  tag: "alpha",
+};
+const publicationLifecycleScripts = [
+  "prepublish",
+  "prepare",
+  "prepublishOnly",
+  "prepack",
+  "postpack",
+  "publish",
+  "postpublish",
+];
+
+export function validateReleaseManifest({ manifest, specification, packed = false }) {
+  assert(isRecord(manifest), "package manifest must be an object");
+  assert(manifest.name === specification.name, `${specification.name} identity is inconsistent`);
+  assert(manifest.version === releaseVersion, `${specification.name} version is inconsistent`);
+  assert(manifest.private === undefined, `${specification.name} must not carry private metadata`);
+  assert(manifest.license === "Apache-2.0", `${specification.name} license is inconsistent`);
+  assert(manifest.engines?.node === ">=20", `${specification.name} Node engine is inconsistent`);
+  assert(
+    manifest.homepage === "https://github.com/nafiyad/AgentHawk#readme",
+    `${specification.name} homepage is inconsistent`,
+  );
+  assert(
+    manifest.repository?.type === "git" &&
+      manifest.repository?.url === "git+https://github.com/nafiyad/AgentHawk.git" &&
+      manifest.repository?.directory === specification.directory,
+    `${specification.name} repository metadata is inconsistent`,
+  );
+  assert(
+    manifest.bugs?.url === "https://github.com/nafiyad/AgentHawk/issues",
+    `${specification.name} issue metadata is inconsistent`,
+  );
+  assert(
+    JSON.stringify(manifest.contentPolicy) === JSON.stringify({ class: "dual-use" }),
+    `${specification.name} dual-use declaration is inconsistent`,
+  );
+  assert(
+    JSON.stringify(manifest.files) === JSON.stringify(commonFiles),
+    `${specification.name} files metadata is inconsistent`,
+  );
+  assert(
+    JSON.stringify(manifest.publishConfig) === JSON.stringify(publishConfig),
+    `${specification.name} publish configuration is inconsistent`,
+  );
+  for (const script of publicationLifecycleScripts) {
+    assert(
+      manifest.scripts?.[script] === undefined,
+      `${specification.name} must not define the ${script} lifecycle script`,
+    );
+  }
+  assert(
+    manifest.bundleDependencies === undefined && manifest.bundledDependencies === undefined,
+    `${specification.name} must not bundle dependencies`,
+  );
+
+  if (specification.name === "@agenthawk/core") {
+    assert(
+      manifest.exports?.["."]?.types === "./dist/index.d.ts" &&
+        manifest.exports?.["."]?.import === "./dist/index.js",
+      "Core export metadata is inconsistent",
+    );
+  } else {
+    assert(manifest.bin?.agenthawk === "./dist/index.js", "CLI binary metadata is inconsistent");
+    assert(
+      manifest.dependencies?.["@agenthawk/core"] === (packed ? releaseVersion : "workspace:*"),
+      packed
+        ? "Packed CLI must depend on the exact core release version"
+        : "CLI source must retain its workspace dependency",
+    );
+  }
+}
+
 export async function validatePackageReport({
   directory,
   manifest,
@@ -69,6 +155,7 @@ export async function validatePackageReport({
   specification,
   stat = lstat,
 }) {
+  assert(specification?.name === manifest?.name, "package specification is inconsistent");
   assert(report?.name === manifest.name, `${manifest.name} pack identity is inconsistent`);
   assert(
     Number.isSafeInteger(report.unpackedSize) &&
@@ -124,4 +211,8 @@ function canonical(path) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

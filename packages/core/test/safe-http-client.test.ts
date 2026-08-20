@@ -213,7 +213,7 @@ describe("SafeHttpClient", () => {
     await new SafeHttpClient({ fetch }).getJson(new URL("https://registry.example.test/data"));
 
     expect(headers?.has("authorization")).toBe(false);
-    expect(headers?.get("user-agent")).toBe("AgentHawk/0.0.0");
+    expect(headers?.get("user-agent")).toBe("AgentHawk/0.1.0-alpha.1");
   });
 
   it("posts bounded JSON without following redirects", async () => {
