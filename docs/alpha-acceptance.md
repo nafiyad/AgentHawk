@@ -4,6 +4,8 @@ Date: 2026-08-20
 
 AgentHawk's npm admission-control implementation is feature-complete for the first public alpha scope. Both packages are public; this does not mean that an `ALLOW` verdict proves a dependency benign or that the alpha is a complete security control.
 
+Next-version priorities and their required trust-boundary work are defined separately in the [product roadmap](roadmap.md). A roadmap item is not a current capability until its implementation, tests, review, and release gates are complete.
+
 ## Acceptance matrix
 
 | Capability | Status | Verification and boundary |

@@ -2,7 +2,13 @@
 
 ## Supported versions
 
-AgentHawk has not published a supported release. Security fixes currently target the `main` branch.
+AgentHawk has published prerelease npm packages, but it has not published a stable supported release. Security fixes target `main` and are delivered through a reviewed new prerelease; published npm versions are immutable and are never rewritten.
+
+| Version | Security fixes |
+| --- | --- |
+| `main` | Yes |
+| Latest `0.x` prerelease | Reproduced fixes are released in a new prerelease when warranted |
+| Older prereleases | No; upgrade to the newest available prerelease |
 
 ## Reporting a vulnerability
 
@@ -12,4 +18,4 @@ We aim to acknowledge a complete report within five business days. Timelines for
 
 ## Scope notes
 
-Until a public alpha is released, AgentHawk is development software and must not be relied on as a security boundary. A lack of findings will never mean a dependency is benign.
+AgentHawk remains prerelease software and must not be treated as a complete security boundary. A lack of findings or an `ALLOW` verdict does not mean a dependency is benign. Current capability and limitation details are maintained in [alpha acceptance status](docs/alpha-acceptance.md), and proposed future boundaries are separated in the [product roadmap](docs/roadmap.md).
