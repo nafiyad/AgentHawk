@@ -23,6 +23,8 @@ export {
   directDependencySchema,
   type InventoryReport,
   inventoryReportSchema,
+  type PolicyValidationReport,
+  policyValidationReportSchema,
   type ScanReport,
   scanReportSchema,
 } from "./cli-contract.js";

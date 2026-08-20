@@ -23,6 +23,19 @@ export const cliErrorReportSchema = z.discriminatedUnion("exitCode", [
 ]);
 export type CliErrorReport = z.infer<typeof cliErrorReportSchema>;
 
+export const policyValidationReportSchema = z
+  .object({
+    schemaVersion: z.literal("1.0"),
+    toolVersion: z.string().min(1).max(128),
+    command: z.literal("policy_validate"),
+    valid: z.literal(true),
+    policyVersion: z.literal(1),
+    mode: z.enum(["review", "strict"]),
+    policyDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+  })
+  .strict();
+export type PolicyValidationReport = z.infer<typeof policyValidationReportSchema>;
+
 export const directDependencySchema = z
   .object({
     name: z.string().min(1).max(214),

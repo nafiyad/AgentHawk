@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, Git diff analysis, GitHub pull-request reporting, agent instruction templates, release-package verification, and npm staging.
+This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation and validation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, Git diff analysis, GitHub pull-request reporting, agent instruction templates, release-package verification, and npm staging.
 
 ## Assets
 
@@ -37,6 +37,7 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 | Strong finding is hidden by a weaker finding | Fixed error > block > review > warn > allow precedence | Policy actions can intentionally suppress approvable rules |
 | Similar-looking name is treated as proof | Label PG005 as a heuristic and require review | Conservative matching can still produce false positives or miss confusables |
 | Policy YAML exhausts memory or expands aliases | Require a regular file, enforce a 256 KiB bound, reject duplicate keys and aliases | Local filesystem races remain possible within the bounded read |
+| Standalone validation exposes policy contents, local paths, or provider data | Return only normalized version/mode and a deterministic digest; use fixed redacted errors; perform no provider/cache operation | The digest intentionally reveals when two normalized policies are equivalent |
 | Provider diagnostics leak through reports or digests | Fixed rendered messages and normalized failure digest inputs | Timing and provider status remain observable by design |
 | Hostile text injects terminal controls | Escape C0/C1 control characters before terminal output | Terminal behavior outside standard control ranges is platform-dependent |
 | OSV POST is redirected or oversized | Bound request bodies; reject POST redirects; reuse HTTPS/credential/timeout limits | The OSV endpoint itself may return hostile JSON within the body limit |

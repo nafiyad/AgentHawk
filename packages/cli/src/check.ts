@@ -167,8 +167,10 @@ export async function checkNpmPackage(
         npmResolution.cached,
         osvResolution.cached,
       ),
-      policyDigest: digest(config),
-      evidenceDigest: digest(normalizedEvidenceForDigest(providerResult, osvResult, spec.type)),
+      policyDigest: stableDigest(config),
+      evidenceDigest: stableDigest(
+        normalizedEvidenceForDigest(providerResult, osvResult, spec.type),
+      ),
       ...(approvalApplication.approval ? { approval: approvalApplication.approval } : {}),
       exitCodeMeaning: exitMeaning(exitCode),
     });
@@ -519,7 +521,7 @@ function renderTerminal(report: EvaluationReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-function digest(value: unknown): string {
+export function stableDigest(value: unknown): string {
   return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
 
@@ -576,4 +578,4 @@ function safeMessage(error: unknown): string {
   return "Policy configuration is invalid.";
 }
 
-class PolicyInputError extends Error {}
+export class PolicyInputError extends Error {}

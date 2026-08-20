@@ -51,6 +51,31 @@ describe("CLI program", () => {
     expect(JSON.parse(output)).toMatchObject({ verdict: "allow" });
   });
 
+  it("runs policy validation with the injected production boundary", async () => {
+    let output = "";
+    let exitCode: number | undefined;
+    const program = createProgram({
+      readPolicy: async () => ({ mode: "strict", version: 1 }),
+      setExitCode: (value) => {
+        exitCode = value;
+      },
+      write: (value) => {
+        output += value;
+      },
+    });
+
+    await program.parseAsync(["policy", "validate", "--file", "policy.yml", "--format", "json"], {
+      from: "user",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output)).toMatchObject({
+      command: "policy_validate",
+      mode: "strict",
+      valid: true,
+    });
+  });
+
   it("escapes ANSI controls in Commander parser errors", async () => {
     let errorOutput = "";
     const program = createProgram({ writeError: (value) => (errorOutput += value) }).exitOverride();
@@ -71,6 +96,7 @@ describe("CLI runner JSON parser failures", () => {
     ["missing check spec", ["check", "npm", "--format", "json"]],
     ["unknown scan option", ["scan", "--format", "json", "--unknown"]],
     ["missing diff base", ["diff", "--format", "json"]],
+    ["missing policy file", ["policy", "validate", "--format", "json"]],
   ])("envelopes %s", async (_label, args) => {
     let output = "";
     let exitCode: number | undefined;

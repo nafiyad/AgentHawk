@@ -55,6 +55,8 @@ export const packageSpecifications = [
       "dist/diff.js",
       "dist/index.d.ts",
       "dist/index.js",
+      "dist/policy.d.ts",
+      "dist/policy.js",
       "dist/program.d.ts",
       "dist/program.js",
       "dist/runner.d.ts",
