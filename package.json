@@ -15,6 +15,7 @@
     "format": "biome format --write .",
     "lint": "biome check .",
     "package:check": "pnpm build && node scripts/verify-package-contents.mjs",
+    "release:prepare": "node scripts/prepare-release-artifacts.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "pnpm --filter @agenthawk/core build && pnpm -r typecheck"

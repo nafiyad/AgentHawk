@@ -97,7 +97,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm exec node scripts/prepare-release-artifacts.mjs \
+          pnpm run release:prepare \
             "$RUNNER_TEMP/agenthawk-release" \
             "$GITHUB_SHA" \
             "$RUNNER_TEMP/npm-12.0.2.tgz"

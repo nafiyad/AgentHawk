@@ -67,6 +67,9 @@ describe("AgentHawk workflow", () => {
     expect(source).toContain("git rev-parse origin/main");
     expect(source).toContain('git rev-parse HEAD)" = "$GITHUB_SHA"');
     expect(source).toContain("--frozen-lockfile --ignore-scripts");
+    expect(source).toContain("pnpm run release:prepare");
+    expect(source).not.toContain("pnpm run release:prepare --");
+    expect(source).not.toContain("pnpm exec node scripts/prepare-release-artifacts.mjs");
     expect(source).toContain("--access public --tag alpha --ignore-scripts --provenance");
   });
 

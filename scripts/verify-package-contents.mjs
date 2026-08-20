@@ -9,7 +9,6 @@ import {
   validatePackageReport,
   validateReleaseManifest,
 } from "./package-policy.mjs";
-import { prepareReleaseArtifacts } from "./prepare-release-artifacts.mjs";
 
 const execute = promisify(execFile);
 const root = resolve(import.meta.dirname, "..");
@@ -74,16 +73,30 @@ async function verifyRuntimeVersion() {
 async function verifyPackedReleaseArtifacts() {
   const outputDirectory = await mkdtemp(join(tmpdir(), "agenthawk-release-check-"));
   try {
-    const manifest = await prepareReleaseArtifacts({
-      outputDirectory,
-      sourceCommit: "0".repeat(40),
-    });
+    const pnpmCli = process.env.npm_execpath;
+    assert(typeof pnpmCli === "string" && pnpmCli.length > 0, "pnpm CLI path is unavailable");
+    await execute(
+      process.execPath,
+      [pnpmCli, "run", "release:prepare", outputDirectory, "0".repeat(40)],
+      {
+        cwd: root,
+        encoding: "utf8",
+        maxBuffer: 1_048_576,
+        timeout: 60_000,
+        windowsHide: true,
+      },
+    );
+    const manifest = JSON.parse(
+      await readFile(join(outputDirectory, "release-manifest.json"), "utf8"),
+    );
     assert(manifest.packages.length === 2, "Release artifact count is inconsistent");
     assert(
       manifest.packages.every(({ version }) => version === releaseVersion),
       "Release artifact versions are inconsistent",
     );
-    process.stdout.write("Verified packed release manifests and exact workspace rewrite.\n");
+    process.stdout.write(
+      "Verified release:prepare invocation, packed manifests, and exact workspace rewrite.\n",
+    );
   } finally {
     await rm(outputDirectory, { force: true, recursive: true });
   }
