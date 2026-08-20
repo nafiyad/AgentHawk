@@ -65,8 +65,9 @@ Milestones are isolated commits. A defective unreleased milestone can be reverte
 
 ## Open questions
 
-- Recalibrate the 30-day package and 72-hour release defaults against real-project fixtures before publication (current values are the researched initial candidates).
 - Decide whether provenance can be verified without artifact download; otherwise defer.
 - Confirm the final npm package names and publishing ownership before release work (see `docs/releasing.md`).
 
 Resolved: OSV malicious-record classification is defined in `docs/architecture.md` (PG010 matches non-withdrawn `MAL-YYYY-N` identifiers or aliases).
+
+Resolved: the 30-day package-age and 72-hour release-age defaults were retained after authoritative-source review and a fixed-revision, real-project sensitivity sample; see [ADR 0007](adr/0007-policy-age-thresholds.md).
