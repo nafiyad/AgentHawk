@@ -17,7 +17,7 @@ AgentHawk is a local-first, deterministic security gate that checks dependencies
 
 > **Project status:** `@agenthawk/core@0.1.0-alpha.1` and `@agenthawk/cli@0.1.0-alpha.1` are public npm alpha packages. The admission-control scope is implemented, but the alpha is not a complete security control and an `ALLOW` verdict is not proof that a dependency is benign.
 
-[Why AgentHawk](#why-agenthawk) · [Current capabilities](#current-capabilities) · [Install](#install-the-public-alpha) · [Development](#development) · [Security](#security-and-privacy-posture) · [Contributing](#contributing)
+[Why AgentHawk](#why-agenthawk) · [Current capabilities](#current-capabilities) · [Install](#install-the-public-alpha) · [Roadmap](#product-roadmap) · [Development](#development) · [Security](#security-and-privacy-posture) · [Contributing](#contributing)
 
 ## Why AgentHawk
 
@@ -88,11 +88,11 @@ pnpm agenthawk --help
 
 Node.js 20 or newer and pnpm 10 are required.
 
-## Alpha roadmap
+## Product roadmap
 
-The first alpha focuses on npm dependency admission: package/version resolution, age and lifecycle-script signals, deprecation and repository metadata, OSV evidence, deterministic policy, exact expiring approvals, stable JSON, and strict CI exit codes.
+The first alpha completed its deliberately narrow npm dependency-admission scope. The next release train adds operator tooling, native pre-action agent hooks, workspace-aware admission, interoperable reporting and local receipts, then carefully bounded provenance and ecosystem expansion.
 
-See [the architecture](docs/architecture.md), [threat model](docs/threat-model.md), and [implementation plan](docs/implementation-plan.md) for current boundaries and milestone sequencing.
+See the evidence-backed [product roadmap](docs/roadmap.md) for priorities, milestone dependencies, security gates, and measurable exit criteria. The [architecture](docs/architecture.md), [threat model](docs/threat-model.md), and [completed alpha implementation plan](docs/implementation-plan.md) remain the source of truth for current behavior.
 
 ## Security and privacy posture
 
