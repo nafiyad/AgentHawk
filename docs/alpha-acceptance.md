@@ -38,7 +38,7 @@ Until then, `private: true` is the npm publication guard. Version `0.0.0` and th
 
 ## Explicitly deferred
 
-PyPI/Cargo/Maven/NuGet support, command or secret interception, network sandboxing, MCP server, hosted services, accounts, full malware analysis, and artifact/provenance verification are outside this alpha. They require separate threat models and milestones.
+PyPI/Cargo/Maven/NuGet support, command or secret interception, network sandboxing, MCP server, hosted services, accounts, full malware analysis, and artifact/provenance verification are outside this alpha. The provenance boundary and future-provider requirements are recorded in [ADR 0008](adr/0008-provenance-verification-boundary.md); implementation requires a separate threat model and milestone.
 
 ## Permanent product exclusions
 

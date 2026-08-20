@@ -65,9 +65,10 @@ Milestones are isolated commits. A defective unreleased milestone can be reverte
 
 ## Open questions
 
-- Decide whether provenance can be verified without artifact download; otherwise defer.
 - Confirm the final npm package names and publishing ownership before release work (see `docs/releasing.md`).
 
 Resolved: OSV malicious-record classification is defined in `docs/architecture.md` (PG010 matches non-withdrawn `MAL-YYYY-N` identifiers or aliases).
 
 Resolved: the 30-day package-age and 72-hour release-age defaults were retained after authoritative-source review and a fixed-revision, real-project sensitivity sample; see [ADR 0007](adr/0007-policy-age-thresholds.md).
+
+Resolved: npm provenance bundles can be cryptographically bound to the exact package coordinate and registry integrity without downloading a tarball, but that does not independently verify artifact bytes. Provenance policy remains deferred pending explicit identity expectations and the separate provider boundary in [ADR 0008](adr/0008-provenance-verification-boundary.md).

@@ -54,6 +54,8 @@ The provider retrieves one package document, validates only the required shape, 
 
 It does not retain arbitrary scripts, maintainers, README content, or the raw registry response. It never downloads a tarball, invokes a package manager, imports package code, or executes lifecycle scripts.
 
+The provider also does not surface npm attestation advertisements as verified provenance. [ADR 0008](adr/0008-provenance-verification-boundary.md) distinguishes cryptographic binding to registry metadata from independent verification of artifact bytes and records the requirements for any future provenance provider.
+
 ## Deterministic policy boundary
 
 The policy engine consumes a parsed npm spec, validated policy, normalized provider result, an explicit evaluation clock, and optional existing direct dependency names. Independent rules emit structured `PG` findings; they never perform network access, install dependencies, or execute lifecycle scripts.
