@@ -6,7 +6,7 @@
 
 - Node satisfies the bundled `^22.0.0 || ^24.0.0` declaration and dated upstream-LTS snapshot.
 - Independently compiled CLI and core versions match.
-- The cache root accepts one exclusive sentinel create, bounded write, sync, close, and delete. No provider-shaped cache record is created.
+- Every observed cache-root path component must be a real directory rather than a symbolic link or junction; the root then accepts one exclusive sentinel create, bounded write, sync, close, and delete. No provider-shaped cache record is created.
 - `git --version` returns bounded valid UTF-8 through AgentHawk's sanitized, no-shell Git runner.
 - `.agenthawk.yml` and `.agenthawk/approvals.yml`, when present, pass the production bounded readers and strict schemas.
 - Fixed Codex, Claude Code, Cursor, and GitHub workflow paths are absent, regular files, or invalid. Regular files are reported only as `present_unverified`.

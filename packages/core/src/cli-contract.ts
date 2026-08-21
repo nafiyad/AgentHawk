@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { evaluationReportSchema, findingSchema, verdictSchema } from "./domain.js";
 import { dependencyChangeSchema, dependencySectionSchema } from "./scan/dependencies.js";
+import { parseStrictIsoTimestamp } from "./time.js";
 
 export const cliErrorCodeSchema = z.enum(["invalid_input", "output_limit", "internal_error"]);
 
@@ -80,7 +81,7 @@ export const doctorReportSchema = z
         nodeVersion: z.union([
           z
             .string()
-            .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u)
+            .regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u)
             .max(64),
           z.literal("invalid"),
         ]),
@@ -116,7 +117,15 @@ export const doctorReportSchema = z
   })
   .strict()
   .superRefine((report, context) => {
-    const nodeMatch = /^(\d+)\.\d+\.\d+$/u.exec(report.runtime.nodeVersion);
+    if (parseStrictIsoTimestamp(report.checkedAt) === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Doctor checkedAt must be a valid UTC timestamp.",
+      });
+    }
+    const nodeMatch = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.exec(
+      report.runtime.nodeVersion,
+    );
     const nodeMajor = nodeMatch ? Number(nodeMatch[1]) : undefined;
     const expectedRuntimeSupport = nodeMajor === 22 || nodeMajor === 24;
     if (

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { type FileHandle, lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import { homedir, platform } from "node:os";
-import { isAbsolute, join, posix, win32 } from "node:path";
+import { isAbsolute, join, parse, posix, resolve, sep, win32 } from "node:path";
 import { z } from "zod";
 import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
@@ -113,7 +113,7 @@ export class MetadataCache {
     } catch {
       return { status: "corrupt" };
     } finally {
-      await handle.close().catch(() => undefined);
+      await handle.close().catch(ignoreCleanupError);
     }
   }
 
@@ -167,7 +167,7 @@ export class MetadataCache {
       await rename(temporary, this.#path(keyDigest));
       return true;
     } catch {
-      await rm(temporary, { force: true }).catch(() => undefined);
+      await rm(temporary, { force: true }).catch(ignoreCleanupError);
       return false;
     }
   }
@@ -178,16 +178,19 @@ export class MetadataCache {
     let created = false;
     let state: CacheProbeState = "unwritable";
     try {
+      const beforeCreation = await inspectDirectoryPath(this.#root);
+      if (beforeCreation === "unsafe") return "unsafe";
+      if (beforeCreation === "unreadable") return "unwritable";
       try {
         await mkdir(this.#root, { mode: 0o700, recursive: true });
       } catch {
-        const existing = await lstat(this.#root).catch(() => undefined);
-        return existing && (existing.isSymbolicLink() || !existing.isDirectory())
-          ? "unsafe"
-          : "unwritable";
+        const afterFailure = await inspectDirectoryPath(this.#root);
+        return afterFailure === "unsafe" ? "unsafe" : "unwritable";
       }
-      const rootStats = await lstat(this.#root);
-      if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) return "unsafe";
+      const afterCreation = await inspectDirectoryPath(this.#root);
+      if (afterCreation !== "safe") {
+        return afterCreation === "unsafe" ? "unsafe" : "unwritable";
+      }
       const handle = await open(
         probe,
         constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
@@ -216,6 +219,31 @@ export class MetadataCache {
   #path(keyDigest: string): string {
     return join(this.#root, `${keyDigest.slice(7)}.json`);
   }
+}
+
+type DirectoryPathState = "safe" | "missing" | "unsafe" | "unreadable";
+
+function ignoreCleanupError(): undefined {
+  return undefined;
+}
+
+async function inspectDirectoryPath(path: string): Promise<DirectoryPathState> {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  const relativeComponents = absolute.slice(root.length).split(sep).filter(Boolean);
+  if (relativeComponents.length === 0) return "unsafe";
+
+  let current = root;
+  for (const component of relativeComponents) {
+    current = join(current, component);
+    try {
+      const stats = await lstat(current);
+      if (stats.isSymbolicLink() || !stats.isDirectory()) return "unsafe";
+    } catch (error) {
+      return isMissing(error) ? "missing" : "unreadable";
+    }
+  }
+  return "safe";
 }
 
 export function cacheKeyDigest(provider: CacheProvider, key: string): string {

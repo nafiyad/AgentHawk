@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cacheKeyDigest, defaultCacheRoot, MetadataCache } from "../src/cache/metadata-cache.js";
 
@@ -35,8 +35,30 @@ describe("MetadataCache", () => {
     await mkdir(target);
     await symlink(target, redirected, process.platform === "win32" ? "junction" : "dir");
     await expect(new MetadataCache({ root: redirected }).probeWritable()).resolves.toBe("unsafe");
+
+    const nestedRedirect = join(redirected, "missing-cache");
+    await expect(new MetadataCache({ root: nestedRedirect }).probeWritable()).resolves.toBe(
+      "unsafe",
+    );
+    await expect(lstat(join(target, "missing-cache"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(new MetadataCache({ root: "relative-cache" }).probeWritable()).resolves.toBe(
       "unsafe",
+    );
+    await expect(new MetadataCache({ root: parse(parent).root }).probeWritable()).resolves.toBe(
+      "unsafe",
+    );
+
+    const invalidPath = join(parent, "invalid\0component");
+    const invalidPathCache = new MetadataCache({ root: invalidPath });
+    await expect(invalidPathCache.probeWritable()).resolves.toBe("unwritable");
+    await expect(invalidPathCache.read("npm", "example", (value) => value)).resolves.toEqual({
+      status: "corrupt",
+    });
+
+    const oversizedComponent = "x".repeat(300);
+    const uncreatable = join(parent, "missing-parent", oversizedComponent);
+    await expect(new MetadataCache({ root: uncreatable }).probeWritable()).resolves.toBe(
+      "unwritable",
     );
   });
 

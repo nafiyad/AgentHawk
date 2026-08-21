@@ -151,6 +151,21 @@ describe("CLI JSON contract", () => {
         runtime: { ...report.runtime, platform: "other" },
       }).success,
     ).toBe(false);
+    for (const nodeVersion of ["22.01.0", "022.0.0", "24.019.0"]) {
+      expect(
+        doctorReportSchema.safeParse({
+          ...report,
+          runtime: { ...report.runtime, nodeVersion },
+        }).success,
+      ).toBe(false);
+    }
+    for (const checkedAt of [
+      "2026-02-30T22:00:00.000Z",
+      "2026-13-01T22:00:00.000Z",
+      "2026-01-01T24:00:00.000Z",
+    ]) {
+      expect(doctorReportSchema.safeParse({ ...report, checkedAt }).success).toBe(false);
+    }
   });
 
   it("rejects incomplete nested scan reports", () => {

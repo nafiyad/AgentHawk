@@ -137,7 +137,7 @@ export async function runDoctor(
 }
 
 function parseNodeMajor(version: string): number | undefined {
-  const match = /^(\d+)\.\d+\.\d+$/u.exec(version);
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.exec(version);
   return match ? Number(match[1]) : undefined;
 }
 
