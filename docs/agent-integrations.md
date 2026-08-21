@@ -13,6 +13,8 @@ AgentHawk's templates teach coding agents to check dependencies before installat
 
 Merge the relevant section into an existing instruction file rather than overwriting project guidance.
 
+For a fresh target, `agenthawk init --integration <codex|claude|cursor|generic>` creates the canonical policy and selected template with collision-safe fixed paths. It refuses different existing content; use the copy table above for a manual reviewed merge instead. See [initialization and recovery](initialization.md).
+
 Codex discovers repository guidance through `AGENTS.md`. Claude Code loads project instructions from `CLAUDE.md`. Cursor project rules live under `.cursor/rules` and use MDC metadata. See the official [Codex documentation](https://developers.openai.com/codex), [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-code), and [Cursor rules documentation](https://docs.cursor.com/context/rules).
 
 ## Decision contract

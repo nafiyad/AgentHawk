@@ -110,6 +110,53 @@ describe("checkNpmPackage", () => {
     expect(result.output).toContain("No package was installed.");
   });
 
+  it("loads the canonical optional policy and preserves explicit-path precedence", async () => {
+    const paths: string[] = [];
+    const dependencies = {
+      getPackage: async () => success({ lifecycleScripts: ["postinstall"] }),
+      now: () => now,
+      queryOsv: async () => emptyOsv(),
+      readPolicy: async (path: string) => {
+        paths.push(path);
+        return {
+          version: 1,
+          rules: {
+            lifecycleScripts: {
+              action: "allow",
+              scripts: ["preinstall", "install", "postinstall", "prepack", "prepare"],
+            },
+          },
+        };
+      },
+    };
+    const automatic = await checkNpmPackage(
+      "example-package@1.0.0",
+      { cwd: "C:/repository", format: "json", strict: true },
+      dependencies,
+    );
+    const explicit = await checkNpmPackage(
+      "example-package@1.0.0",
+      { format: "json", policyPath: "custom-policy.yml", strict: true },
+      dependencies,
+    );
+    expect(automatic.exitCode).toBe(0);
+    expect(explicit.exitCode).toBe(0);
+    expect(paths).toEqual([join("C:/repository", ".agenthawk.yml"), "custom-policy.yml"]);
+  });
+
+  it("fails closed when the canonical policy is malformed", async () => {
+    const result = await checkNpmPackage(
+      "example-package@1.0.0",
+      { format: "json", strict: true },
+      { readPolicy: async () => ({ bypass: true, version: 1 }) },
+    );
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.output)).toMatchObject({
+      error: { code: "invalid_input" },
+      exitCode: 2,
+    });
+  });
+
   it("applies an exact approval after evaluation and reports both verdicts", async () => {
     const result = await checkNpmPackage(
       "example-package@1.0.0",

@@ -66,6 +66,49 @@ export const approvalValidationReportSchema = z
   });
 export type ApprovalValidationReport = z.infer<typeof approvalValidationReportSchema>;
 
+export const initIntegrationSchema = z.enum(["none", "codex", "claude", "cursor", "generic"]);
+export type InitIntegration = z.infer<typeof initIntegrationSchema>;
+export const initTargetSchema = z.enum(["policy", "codex", "claude", "cursor", "generic"]);
+export type InitTarget = z.infer<typeof initTargetSchema>;
+
+export const initReportSchema = z
+  .object({
+    schemaVersion: z.literal("1.0"),
+    toolVersion: z.string().min(1).max(128),
+    command: z.literal("init"),
+    initialized: z.literal(true),
+    integration: initIntegrationSchema,
+    policyVersion: z.literal(1),
+    templateVersion: z.literal(1),
+    created: z.array(initTargetSchema).max(2),
+    unchanged: z.array(initTargetSchema).max(2),
+    providersContacted: z.literal(false),
+  })
+  .strict()
+  .superRefine((report, context) => {
+    const expected: InitTarget[] =
+      report.integration === "none" ? ["policy"] : ["policy", report.integration];
+    const combined = [...report.created, ...report.unchanged];
+    if (new Set(combined).size !== combined.length) {
+      context.addIssue({ code: "custom", message: "Initialization targets must be unique." });
+    }
+    if (
+      combined.length !== expected.length ||
+      expected.some((target) => !combined.includes(target)) ||
+      report.created.some(
+        (target, index, targets) =>
+          expected.indexOf(target) < expected.indexOf(targets[index - 1] ?? target),
+      ) ||
+      report.unchanged.some(
+        (target, index, targets) =>
+          expected.indexOf(target) < expected.indexOf(targets[index - 1] ?? target),
+      )
+    ) {
+      context.addIssue({ code: "custom", message: "Initialization targets are inconsistent." });
+    }
+  });
+export type InitReport = z.infer<typeof initReportSchema>;
+
 const diagnosticStateSchema = z.enum(["absent", "valid", "invalid"]);
 const integrationStateSchema = z.enum(["absent", "present_unverified", "invalid"]);
 const canonicalNodeVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;

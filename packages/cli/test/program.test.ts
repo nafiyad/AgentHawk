@@ -126,6 +126,31 @@ describe("CLI program", () => {
     expect(JSON.parse(output)).toMatchObject({ command: "doctor", ready: true });
   });
 
+  it("rejects unknown initialization integrations with the strict error envelope", async () => {
+    let output = "";
+    let exitCode: number | undefined;
+    const program = createProgram({
+      setExitCode: (value) => {
+        exitCode = value;
+      },
+      write: (value) => {
+        output += value;
+      },
+    });
+    await program.parseAsync(["init", "--integration", "unknown", "--format", "json"], {
+      from: "user",
+    });
+    expect(exitCode).toBe(2);
+    expect(JSON.parse(output)).toEqual({
+      schemaVersion: "1.0",
+      error: {
+        code: "invalid_input",
+        message: "Integration must be none, codex, claude, cursor, or generic.",
+      },
+      exitCode: 2,
+    });
+  });
+
   it("escapes ANSI controls in Commander parser errors", async () => {
     let errorOutput = "";
     const program = createProgram({ writeError: (value) => (errorOutput += value) }).exitOverride();
@@ -149,6 +174,7 @@ describe("CLI runner JSON parser failures", () => {
     ["missing policy file", ["policy", "validate", "--format", "json"]],
     ["missing approvals file", ["approvals", "verify", "--format", "json"]],
     ["unknown doctor option", ["doctor", "--format", "json", "--unknown"]],
+    ["unknown init option", ["init", "--format", "json", "--unknown"]],
   ])("envelopes %s", async (_label, args) => {
     let output = "";
     let exitCode: number | undefined;

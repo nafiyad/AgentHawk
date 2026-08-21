@@ -86,7 +86,9 @@ Pagination follows `next_page_token` until it is absent. A first page that conta
 
 ## CLI check boundary
 
-`agenthawk check npm <package-spec>` is a thin orchestrator over the parser, npm provider, OSV provider, cache, and policy engine. It supports terminal or JSON output, an optional strict YAML policy file, strict exit behavior, a configurable registry URL, `--offline`, and `--no-cache`. Policy files are bounded to 256 KiB, must be regular files, reject duplicate keys and unsupported aliases, and still pass the strict core schema.
+`agenthawk check npm <package-spec>` is a thin orchestrator over the parser, npm provider, OSV provider, cache, and policy engine. It supports terminal or JSON output, canonical optional `.agenthawk.yml` discovery, explicit policy-path precedence, strict exit behavior, a configurable registry URL, `--offline`, and `--no-cache`. Policy files are bounded to 256 KiB, must be regular files, reject duplicate keys and unsupported aliases, and still pass the strict core schema.
+
+`agenthawk init` creates the canonical policy and at most one fixed advisory integration target from release-pinned compiled bytes. It preflights all targets, accepts only exact safe bytes as `unchanged`, uses an exclusive lock and complete root-local staged files, publishes through no-replace hard links, and rolls back only invocation-owned identities with non-recursive cleanup. Cross-device or unsupported hard-link publication fails closed. It does not claim multi-file atomicity, Git-root discovery, Windows ACL hardening, or integration enforcement. See [ADR 0011](adr/0011-collision-safe-initialization.md).
 
 `agenthawk policy validate --file <path>` uses that same production file reader and strict core schema without resolving a package, opening the metadata cache, or contacting npm/OSV. Success reports only the normalized policy version/mode and deterministic digest; invalid policy uses the shared bounded CLI error envelope and exit `2`.
 

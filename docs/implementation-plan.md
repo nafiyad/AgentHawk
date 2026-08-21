@@ -70,7 +70,7 @@ There are no unresolved design questions for the first public alpha. The exact-a
 
 Post-alpha work is sequenced in the evidence-backed [product roadmap](roadmap.md). That document starts at Milestone 16 and defines the research prerequisites, dependencies, security gates, measurable exit criteria, and explicit exclusions for each proposed phase. This implementation plan remains the historical source of truth for the completed first-alpha milestones.
 
-Milestone 16 is active. Its first slices add `policy validate`, `approvals verify`, and a Node 22/24 six-platform quality matrix. The current `doctor` slice adds strict minimum-disclosure runtime, package-alignment, cache, Git, configuration, and advisory-integration diagnostics without provider or package-manager execution. Collision-safe `init` remains a separate reviewable slice.
+Milestone 16 is complete. Its reviewed slices add `policy validate`, `approvals verify`, the Node 22/24 six-platform quality matrix, strict minimum-disclosure `doctor`, and collision-safe `init` with canonical policy discovery and packaged deterministic assets. Milestone 17 begins with a separate native-hook threat model and ADR before any enforcement adapter is implemented.
 
 Resolved: OSV malicious-record classification is defined in `docs/architecture.md` (PG010 matches non-withdrawn `MAL-YYYY-N` identifiers or aliases).
 

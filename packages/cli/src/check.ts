@@ -35,6 +35,7 @@ export type OutputFormat = "json" | "terminal";
 
 export interface CheckOptions {
   approvalsPath?: string;
+  cwd?: string;
   existingDependencies?: readonly string[];
   format: OutputFormat;
   noCache?: boolean;
@@ -69,11 +70,12 @@ export async function checkNpmPackage(
     }
     const spec = parseNpmSpec(rawSpec);
     const now = (dependencies.now ?? (() => new Date()))();
-    const baseConfig = options.policyPath
-      ? agentHawkConfigSchema.parse(
-          await (dependencies.readPolicy ?? readPolicyFile)(options.policyPath),
-        )
-      : agentHawkConfigSchema.parse({ version: 1 });
+    const policyDocument = options.policyPath
+      ? await (dependencies.readPolicy ?? readPolicyFile)(options.policyPath)
+      : await (dependencies.readPolicy ?? readOptionalPolicyFile)(
+          join(options.cwd ?? process.cwd(), ".agenthawk.yml"),
+        );
+    const baseConfig = agentHawkConfigSchema.parse(policyDocument ?? { version: 1 });
     const config = options.strict
       ? agentHawkConfigSchema.parse({ ...baseConfig, mode: "strict" })
       : baseConfig;

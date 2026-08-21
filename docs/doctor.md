@@ -20,6 +20,6 @@ Doctor does not recursively search, run npm/pnpm/Yarn/Bun/Corepack, import repos
 - Exit `2`: invalid CLI syntax or output format.
 - Exit `4`: an unexpected failure prevented a schema-valid report.
 
-Absent policy, approvals, and optional integration files do not cause exit `1`. Invalid or unsafe files do. Policy discovery does not prove that another command was invoked with that policy; callers must continue to pass `--policy .agenthawk.yml` where required.
+Absent policy, approvals, and optional integration files do not cause exit `1`. Invalid or unsafe files do. `check` and `scan` consume canonical optional `.agenthawk.yml` by default after initialization; an explicit `--policy` path retains precedence. Discovery still does not prove that a separate host or workflow invoked AgentHawk.
 
 The support snapshot is bundled and dated. Doctor does not make a live lifecycle query, so an older AgentHawk release cannot know about later upstream lifecycle changes.

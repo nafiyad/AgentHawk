@@ -1,14 +1,19 @@
+import { cliErrorReportSchema, initIntegrationSchema } from "@agenthawk/core";
 import { Command } from "commander";
 import { verifyApprovalFile } from "./approvals.js";
 import { type CheckDependencies, checkNpmPackage, type OutputFormat } from "./check.js";
 import { diffDependencies } from "./diff.js";
 import { type DoctorDependencies, runDoctor } from "./doctor.js";
+import { type InitDependencies, initializeRepository } from "./init.js";
 import { validatePolicyFile } from "./policy.js";
 import { scanDependencies } from "./scan.js";
 import { escapeTerminal } from "./terminal.js";
 import { AGENTHAWK_CLI_VERSION } from "./version.js";
 
-export interface ProgramDependencies extends CheckDependencies, DoctorDependencies {
+export interface ProgramDependencies
+  extends CheckDependencies,
+    DoctorDependencies,
+    InitDependencies {
   writeError?: (text: string) => void;
   write?: (text: string) => void;
   setExitCode?: (code: number) => void;
@@ -26,6 +31,36 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     .version(AGENTHAWK_CLI_VERSION)
     .showSuggestionAfterError()
     .configureOutput(safeOutput);
+
+  const initCommand = program
+    .command("init")
+    .description(
+      "Create deterministic local policy and advisory agent instructions without overwriting files.",
+    )
+    .option(
+      "--integration <integration>",
+      "integration: none, codex, claude, cursor, or generic",
+      "none",
+    )
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  initCommand.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    const integration = initIntegrationSchema.safeParse(options.integration);
+    if (!integration.success) {
+      writeInvalidInput(
+        "Integration must be none, codex, claude, cursor, or generic.",
+        format,
+        dependencies,
+      );
+      return;
+    }
+    writeResult(
+      await initializeRepository({ format, integration: integration.data }, dependencies),
+      dependencies,
+    );
+  });
 
   const check = program
     .command("check")
@@ -182,4 +217,23 @@ function writeResult(
 ) {
   (dependencies.write ?? process.stdout.write.bind(process.stdout))(result.output);
   (dependencies.setExitCode ?? ((code) => (process.exitCode = code)))(result.exitCode);
+}
+
+function writeInvalidInput(
+  message: string,
+  format: OutputFormat,
+  dependencies: ProgramDependencies,
+): void {
+  const output =
+    format === "json"
+      ? `${JSON.stringify(
+          cliErrorReportSchema.parse({
+            schemaVersion: "1.0",
+            error: { code: "invalid_input", message },
+            exitCode: 2,
+          }),
+        )}\n`
+      : `AgentHawk: ${escapeTerminal(message)}\n`;
+  (dependencies.write ?? process.stdout.write.bind(process.stdout))(output);
+  (dependencies.setExitCode ?? ((code) => (process.exitCode = code)))(2);
 }

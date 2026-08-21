@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -104,10 +104,95 @@ async function verifyPackedReleaseArtifacts() {
       manifest.packages.every(({ version }) => version === releaseVersion),
       "Release artifact versions are inconsistent",
     );
+    await verifyPackedInit(outputDirectory, manifest);
     process.stdout.write(
-      "Verified release:prepare invocation, packed manifests, and exact workspace rewrite.\n",
+      "Verified release:prepare invocation, packed manifests, exact workspace rewrite, and packed init.\n",
     );
   } finally {
     await rm(outputDirectory, { force: true, recursive: true });
+  }
+}
+
+async function verifyPackedInit(outputDirectory, manifest) {
+  const consumerDirectory = await mkdtemp(join(tmpdir(), "agenthawk-packed-consumer-"));
+  try {
+    await writeFile(
+      join(consumerDirectory, "package.json"),
+      `${JSON.stringify({ name: "agenthawk-packed-consumer", private: true, version: "0.0.0" })}\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+    const coreArchive = manifest.packages.find(({ name }) => name === "@agenthawk/core");
+    const cliArchive = manifest.packages.find(({ name }) => name === "@agenthawk/cli");
+    assert(
+      coreArchive !== undefined && cliArchive !== undefined,
+      "Release packages are incomplete",
+    );
+    await execute(
+      process.execPath,
+      [
+        npmCli,
+        "install",
+        join(outputDirectory, coreArchive.file),
+        join(outputDirectory, cliArchive.file),
+        "--ignore-scripts",
+        "--offline",
+        "--no-audit",
+        "--no-fund",
+      ],
+      {
+        cwd: consumerDirectory,
+        encoding: "utf8",
+        maxBuffer: 1_048_576,
+        timeout: 30_000,
+        windowsHide: true,
+      },
+    );
+    const cliEntrypoint = join(
+      consumerDirectory,
+      "node_modules",
+      "@agenthawk",
+      "cli",
+      "dist",
+      "index.js",
+    );
+    const initArguments = [cliEntrypoint, "init", "--integration", "cursor", "--format", "json"];
+    const initialized = await execute(process.execPath, initArguments, {
+      cwd: consumerDirectory,
+      encoding: "utf8",
+      maxBuffer: 65_536,
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    assert(
+      JSON.stringify(JSON.parse(initialized.stdout).created) ===
+        JSON.stringify(["policy", "cursor"]),
+      "Packed CLI init creation smoke failed",
+    );
+    const repeated = await execute(process.execPath, initArguments, {
+      cwd: consumerDirectory,
+      encoding: "utf8",
+      maxBuffer: 65_536,
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    assert(
+      JSON.stringify(JSON.parse(repeated.stdout).unchanged) ===
+        JSON.stringify(["policy", "cursor"]),
+      "Packed CLI init idempotency smoke failed",
+    );
+    const validated = await execute(
+      process.execPath,
+      [cliEntrypoint, "policy", "validate", "--file", ".agenthawk.yml", "--format", "json"],
+      {
+        cwd: consumerDirectory,
+        encoding: "utf8",
+        maxBuffer: 65_536,
+        timeout: 10_000,
+        windowsHide: true,
+      },
+    );
+    assert(JSON.parse(validated.stdout).valid === true, "Packed initialized policy is invalid");
+  } finally {
+    await rm(consumerDirectory, { force: true, recursive: true });
   }
 }

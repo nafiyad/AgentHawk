@@ -33,6 +33,8 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 
+`agenthawk init` is exercised by the same Ubuntu, Windows, and macOS Node 22/24 quality matrix. It targets local filesystems; Windows UNC roots are rejected, and portable no-replace guarantees are not claimed for network filesystems. File modes are best-effort and do not establish Windows ACL policy.
+
 ## Lifecycle policy
 
 The matrix is reviewed before each release against the official [Node.js release schedule](https://nodejs.org/en/about/previous-releases). AgentHawk does not perform a live lifecycle lookup during local checks or diagnostics. An older installed version therefore cannot know about lifecycle changes published after its bundled support snapshot.

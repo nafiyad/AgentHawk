@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
+import { INIT_POLICY, initAssets } from "../src/init-content.js";
 
 const workspace = resolve(import.meta.dirname, "../../..");
 const templatePaths = [
@@ -43,5 +44,19 @@ describe("agent integration templates", () => {
     for (const path of templatePaths) expect(source).toContain(path);
     expect(source).toContain("Instruction files influence agent behavior");
     expect(source).toContain("protected CI");
+  });
+
+  it("keeps compiled release assets byte-for-byte aligned with reviewed source files", async () => {
+    await expect(readFile(join(workspace, ".agenthawk.yml"), "utf8")).resolves.toBe(INIT_POLICY);
+    const sourceByIntegration = {
+      codex: "templates/codex/AGENTS.md",
+      claude: "templates/claude/CLAUDE.md",
+      cursor: "templates/cursor/.cursor/rules/agenthawk.mdc",
+      generic: "templates/generic/AGENT-INSTRUCTIONS.md",
+    } as const;
+    for (const [integration, path] of Object.entries(sourceByIntegration)) {
+      const asset = initAssets(integration as keyof typeof sourceByIntegration)[1];
+      await expect(readFile(join(workspace, path), "utf8")).resolves.toBe(asset?.content);
+    }
   });
 });

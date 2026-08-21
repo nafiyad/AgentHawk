@@ -7,6 +7,7 @@ Local-first dependency admission control for AI coding agents, from [AgentHawk](
 ```bash
 npm install --global @agenthawk/cli@alpha
 agenthawk --version
+agenthawk init --integration codex
 ```
 
 ```bash
@@ -14,6 +15,7 @@ agenthawk check npm example-package@1.0.0 --strict --format json
 agenthawk policy validate --file .agenthawk.yml --format json
 agenthawk approvals verify --file .agenthawk/approvals.yml --format json
 agenthawk doctor --format json
+agenthawk init --integration none --format json
 agenthawk scan --strict --format json
 agenthawk diff --base origin/main --strict --format json
 ```
