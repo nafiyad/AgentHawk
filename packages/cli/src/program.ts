@@ -1,5 +1,6 @@
 import { AGENTHAWK_VERSION } from "@agenthawk/core";
 import { Command } from "commander";
+import { verifyApprovalFile } from "./approvals.js";
 import { type CheckDependencies, checkNpmPackage, type OutputFormat } from "./check.js";
 import { diffDependencies } from "./diff.js";
 import { validatePolicyFile } from "./policy.js";
@@ -110,6 +111,23 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     const format = parseOutputFormat(options.format, dependencies);
     if (!format) return;
     const result = await validatePolicyFile(String(options.file), { format }, dependencies);
+    writeResult(result, dependencies);
+  });
+
+  const approvals = program
+    .command("approvals")
+    .description("Inspect exact AgentHawk approval records.")
+    .configureOutput(safeOutput);
+  const approvalsVerify = approvals
+    .command("verify")
+    .description("Verify a strict approvals file without applying an approval.")
+    .requiredOption("--file <path>", "path to a strict AgentHawk approvals YAML file")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  approvalsVerify.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    const result = await verifyApprovalFile(String(options.file), { format }, dependencies);
     writeResult(result, dependencies);
   });
 

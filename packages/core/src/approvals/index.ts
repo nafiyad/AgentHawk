@@ -6,17 +6,19 @@ import { parseNpmSpec } from "../npm/spec.js";
 import { combineVerdicts } from "../policy/engine.js";
 import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
-const safeTextSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .refine((value) => !hasControlCharacter(value), "Control characters are not allowed.");
+const maximumApprovalRecords = 1_024;
+
+function safeTextSchema(maximumLength: number) {
+  return z
+    .string()
+    .trim()
+    .min(1)
+    .max(maximumLength)
+    .refine((value) => !hasControlCharacter(value), "Control characters are not allowed.");
+}
 
 function hasControlCharacter(value: string): boolean {
-  return Array.from(value).some((character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 31 || (codePoint >= 127 && codePoint <= 159);
-  });
+  return /\p{C}/u.test(value);
 }
 
 function isExactNpmName(value: string): boolean {
@@ -36,9 +38,12 @@ function isHttpsUrl(value: string): boolean {
   }
 }
 
-const timestampSchema = z.string().refine((value) => parseStrictIsoTimestamp(value) !== undefined, {
-  message: "Approval timestamp must be a strict ISO 8601 instant.",
-});
+const timestampSchema = z
+  .string()
+  .max(24)
+  .refine((value) => parseStrictIsoTimestamp(value) !== undefined, {
+    message: "Approval timestamp must be a strict ISO 8601 instant.",
+  });
 
 export const approvalRecordSchema = z
   .object({
@@ -46,13 +51,17 @@ export const approvalRecordSchema = z
     name: z
       .string()
       .min(1)
+      .max(214)
       .refine(isExactNpmName, "Name must be an exact normalized npm package name."),
-    version: z.string().refine((value) => valid(value) === value, "Version must be exact SemVer."),
-    approvedBy: safeTextSchema,
+    version: z
+      .string()
+      .max(256)
+      .refine((value) => valid(value) === value, "Version must be exact SemVer."),
+    approvedBy: safeTextSchema(256),
     approvedAt: timestampSchema,
     expiresAt: timestampSchema,
-    reason: safeTextSchema,
-    issue: z.url().refine(isHttpsUrl, "Issue URL must use HTTPS.").optional(),
+    reason: safeTextSchema(4_096),
+    issue: z.string().max(2_048).url().refine(isHttpsUrl, "Issue URL must use HTTPS.").optional(),
   })
   .strict()
   .superRefine((record, context) => {
@@ -65,7 +74,10 @@ export const approvalRecordSchema = z
 export type ApprovalRecord = z.infer<typeof approvalRecordSchema>;
 
 export const approvalFileSchema = z
-  .object({ version: z.literal(1), approvals: z.array(approvalRecordSchema) })
+  .object({
+    version: z.literal(1),
+    approvals: z.array(approvalRecordSchema).max(maximumApprovalRecords),
+  })
   .strict()
   .superRefine((file, context) => {
     const coordinates = new Set<string>();
@@ -82,6 +94,36 @@ export const approvalFileSchema = z
     }
   });
 export type ApprovalFile = z.infer<typeof approvalFileSchema>;
+
+export interface ApprovalTimeSummary {
+  checkedAt: string;
+  expiredCount: number;
+  notYetEffectiveCount: number;
+  timeEligibleCount: number;
+}
+
+export function summarizeApprovalTimes(file: ApprovalFile, now: Date): ApprovalTimeSummary {
+  const checkedAt = validClockValue(now, "Approval verification clock");
+  const checkedAtTimestamp = parseStrictIsoTimestamp(checkedAt);
+  if (checkedAtTimestamp === undefined)
+    throw new TypeError("Approval verification clock is invalid.");
+
+  let expiredCount = 0;
+  let notYetEffectiveCount = 0;
+  let timeEligibleCount = 0;
+  for (const record of file.approvals) {
+    const approvedAt = parseStrictIsoTimestamp(record.approvedAt);
+    const expiresAt = parseStrictIsoTimestamp(record.expiresAt);
+    if (approvedAt === undefined || expiresAt === undefined) {
+      throw new TypeError("Approval timestamps were not normalized.");
+    }
+    if (approvedAt > checkedAtTimestamp) notYetEffectiveCount += 1;
+    else if (expiresAt <= checkedAtTimestamp) expiredCount += 1;
+    else timeEligibleCount += 1;
+  }
+
+  return { checkedAt, expiredCount, notYetEffectiveCount, timeEligibleCount };
+}
 
 export interface ApprovalApplication {
   approval?: ApprovalMatch;

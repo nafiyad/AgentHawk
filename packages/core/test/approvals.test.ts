@@ -4,6 +4,7 @@ import {
   applyApprovals,
   approvalFileSchema,
   type Finding,
+  summarizeApprovalTimes,
 } from "../src/index.js";
 
 const now = new Date("2026-08-19T18:00:00.000Z");
@@ -67,6 +68,54 @@ describe("approval schema", () => {
   it("rejects duplicate package-version approvals", () => {
     const record = approvals().approvals[0];
     expect(() => approvalFileSchema.parse({ version: 1, approvals: [record, record] })).toThrow();
+  });
+
+  it("rejects format controls and explicitly bounds records and text", () => {
+    expect(() => approvals({ reason: "reviewed\u202eexe" })).toThrow();
+    expect(() => approvals({ approvedBy: "x".repeat(257) })).toThrow();
+    expect(() => approvals({ reason: "x".repeat(4_097) })).toThrow();
+    const record = approvals().approvals[0];
+    expect(record).toBeDefined();
+    expect(() =>
+      approvalFileSchema.parse({
+        version: 1,
+        approvals: Array.from({ length: 1_025 }, (_, index) => ({
+          ...record,
+          version: `1.0.${index}`,
+        })),
+      }),
+    ).toThrow();
+  });
+
+  it("summarizes exact approval time boundaries from one checked instant", () => {
+    const base = approvals().approvals[0];
+    expect(base).toBeDefined();
+    const file = approvalFileSchema.parse({
+      version: 1,
+      approvals: [
+        { ...base, name: "effective", approvedAt: now.toISOString() },
+        {
+          ...base,
+          name: "expired",
+          approvedAt: "2026-07-01T00:00:00.000Z",
+          expiresAt: now.toISOString(),
+        },
+        {
+          ...base,
+          name: "future",
+          approvedAt: "2026-08-20T00:00:00.000Z",
+          expiresAt: "2026-09-20T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(summarizeApprovalTimes(file, now)).toEqual({
+      checkedAt: now.toISOString(),
+      expiredCount: 1,
+      notYetEffectiveCount: 1,
+      timeEligibleCount: 1,
+    });
+    expect(() => summarizeApprovalTimes(file, new Date(Number.NaN))).toThrow();
   });
 });
 

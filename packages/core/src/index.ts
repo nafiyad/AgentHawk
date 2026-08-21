@@ -2,9 +2,11 @@ export {
   type ApprovalApplication,
   type ApprovalFile,
   type ApprovalRecord,
+  type ApprovalTimeSummary,
   applyApprovals,
   approvalFileSchema,
   approvalRecordSchema,
+  summarizeApprovalTimes,
 } from "./approvals/index.js";
 export {
   type CacheProvider,
@@ -15,6 +17,8 @@ export {
   type MetadataCacheOptions,
 } from "./cache/metadata-cache.js";
 export {
+  type ApprovalValidationReport,
+  approvalValidationReportSchema,
   type CliErrorReport,
   cliErrorCodeSchema,
   cliErrorReportSchema,

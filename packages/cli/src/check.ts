@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { type FileHandle, open } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { type FileHandle, lstat, open } from "node:fs/promises";
+import { join, parse, resolve, sep } from "node:path";
 import {
   AGENTHAWK_VERSION,
   type ApprovalFile,
@@ -322,8 +324,12 @@ function isOsvProviderResult(value: ResolvedOsvResult): value is OsvProviderResu
   return Boolean(value && value.status !== "disabled");
 }
 
-export async function readPolicyFile(path: string, openFile: typeof open = open): Promise<unknown> {
-  const document = await readYamlFile(path, true, openFile, "Policy");
+export async function readPolicyFile(
+  path: string,
+  openFile: typeof open = open,
+  inspectPath: typeof lstat = lstat,
+): Promise<unknown> {
+  const document = await readYamlFile(path, true, openFile, inspectPath, "Policy");
   if (document === undefined) throw new PolicyInputError("Policy file could not be read.");
   return document;
 }
@@ -332,16 +338,26 @@ export async function readApprovalFile(
   path: string,
   required: boolean,
   openFile: typeof open = open,
+  inspectPath: typeof lstat = lstat,
 ): Promise<unknown | undefined> {
-  return await readYamlFile(path, required, openFile, "Approval");
+  return await readYamlFile(path, required, openFile, inspectPath, "Approval");
 }
 
 async function readYamlFile(
   path: string,
   required: boolean,
   openFile: typeof open,
+  inspectPath: typeof lstat,
   kind: "Approval" | "Policy",
 ): Promise<unknown | undefined> {
+  let initialStats: Stats;
+  try {
+    initialStats = await inspectRegularPath(path, inspectPath, kind);
+  } catch (error) {
+    if (!required && isMissingFile(error)) return undefined;
+    if (error instanceof PolicyInputError) throw error;
+    throw new PolicyInputError(`${kind} file could not be read.`);
+  }
   let handle: FileHandle;
   try {
     handle = await openFile(path, "r");
@@ -351,7 +367,11 @@ async function readYamlFile(
   }
   try {
     const stats = await handle.stat();
-    if (!stats.isFile() || stats.size > maximumPolicyBytes) {
+    if (
+      !stats.isFile() ||
+      !sameFileIdentity(initialStats, stats) ||
+      stats.size > maximumPolicyBytes
+    ) {
       throw new PolicyInputError(`${kind} file must be a regular file no larger than 256 KiB.`);
     }
     const buffer = Buffer.alloc(maximumPolicyBytes + 1);
@@ -363,6 +383,14 @@ async function readYamlFile(
     }
     if (bytesRead > maximumPolicyBytes) {
       throw new PolicyInputError(`${kind} file exceeded the 256 KiB limit.`);
+    }
+    const finalStats = await inspectRegularPath(path, inspectPath, kind);
+    if (
+      !sameFileIdentity(initialStats, finalStats) ||
+      finalStats.size !== initialStats.size ||
+      bytesRead !== initialStats.size
+    ) {
+      throw new PolicyInputError(`${kind} file changed while it was being read.`);
     }
     let source: string;
     try {
@@ -384,6 +412,34 @@ async function readYamlFile(
   } finally {
     await handle.close();
   }
+}
+
+async function inspectRegularPath(
+  path: string,
+  inspectPath: typeof lstat,
+  kind: "Approval" | "Policy",
+): Promise<Stats> {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  const segments = absolute.slice(root.length).split(sep).filter(Boolean);
+  let current = root;
+  let stats: Stats | undefined;
+  for (const [index, segment] of segments.entries()) {
+    current = join(current, segment);
+    stats = await inspectPath(current);
+    const final = index === segments.length - 1;
+    if (stats.isSymbolicLink() || (final ? !stats.isFile() : !stats.isDirectory())) {
+      throw new PolicyInputError(`${kind} file must be a regular file and must not use symlinks.`);
+    }
+  }
+  if (!stats || stats.size > maximumPolicyBytes) {
+    throw new PolicyInputError(`${kind} file must be a regular file no larger than 256 KiB.`);
+  }
+  return stats;
+}
+
+function sameFileIdentity(left: Stats, right: Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 function providerStatuses(
