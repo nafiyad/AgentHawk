@@ -101,10 +101,10 @@ function normalizedApprovalSemantics(file: ApprovalFile): ApprovalFile {
         approvedAt: new Date(record.approvedAt).toISOString(),
         expiresAt: new Date(record.expiresAt).toISOString(),
       }))
-      .sort((left, right) =>
-        `${left.ecosystem}\0${left.name}\0${left.version}`.localeCompare(
-          `${right.ecosystem}\0${right.name}\0${right.version}`,
-        ),
-      ),
+      .sort((left, right) => {
+        const leftCoordinate = `${left.ecosystem}\0${left.name}\0${left.version}`;
+        const rightCoordinate = `${right.ecosystem}\0${right.name}\0${right.version}`;
+        return leftCoordinate < rightCoordinate ? -1 : leftCoordinate > rightCoordinate ? 1 : 0;
+      }),
   };
 }

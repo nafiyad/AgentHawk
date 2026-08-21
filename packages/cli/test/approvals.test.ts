@@ -70,15 +70,23 @@ describe("approvals verify", () => {
   });
 
   it("uses a semantic digest independent of record order and timestamp precision", async () => {
+    const base = records[0];
+    if (!base) throw new Error("approval fixture is empty");
+    const digestRecords = [
+      ...records,
+      { ...base, name: "@scope/package", version: "1.0.1" },
+      { ...base, name: "a.package", version: "1.0.2" },
+      { ...base, name: "a_package", version: "1.0.3" },
+    ];
     const first = await verifyApprovalFile(
       "first",
       { format: "json" },
       {
         now: () => checkedAt,
-        readApprovals: async () => ({ version: 1, approvals: records }),
+        readApprovals: async () => ({ version: 1, approvals: digestRecords }),
       },
     );
-    const equivalent = records.toReversed().map((record) => ({
+    const equivalent = digestRecords.toReversed().map((record) => ({
       ...record,
       approvedAt: new Date(record.approvedAt).toISOString(),
       expiresAt: new Date(record.expiresAt).toISOString(),
