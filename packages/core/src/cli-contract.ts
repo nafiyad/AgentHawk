@@ -36,6 +36,35 @@ export const policyValidationReportSchema = z
   .strict();
 export type PolicyValidationReport = z.infer<typeof policyValidationReportSchema>;
 
+const approvalCountSchema = z.number().int().min(0).max(1_024);
+export const approvalValidationReportSchema = z
+  .object({
+    schemaVersion: z.literal("1.0"),
+    toolVersion: z.string().min(1).max(128),
+    command: z.literal("approvals_verify"),
+    valid: z.literal(true),
+    approvalVersion: z.literal(1),
+    approvalCount: approvalCountSchema,
+    timeEligibleCount: approvalCountSchema,
+    expiredCount: approvalCountSchema,
+    notYetEffectiveCount: approvalCountSchema,
+    checkedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u),
+    approvalDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+  })
+  .strict()
+  .superRefine((report, context) => {
+    if (
+      report.timeEligibleCount + report.expiredCount + report.notYetEffectiveCount !==
+      report.approvalCount
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Approval state counts must match total count.",
+      });
+    }
+  });
+export type ApprovalValidationReport = z.infer<typeof approvalValidationReportSchema>;
+
 export const directDependencySchema = z
   .object({
     name: z.string().min(1).max(214),

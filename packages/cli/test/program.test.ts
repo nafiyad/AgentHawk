@@ -76,6 +76,29 @@ describe("CLI program", () => {
     });
   });
 
+  it("runs approval verification with the injected production boundary", async () => {
+    let output = "";
+    let exitCode: number | undefined;
+    const program = createProgram({
+      now: () => new Date("2026-08-21T15:00:00.000Z"),
+      readApprovals: async () => ({ version: 1, approvals: [] }),
+      setExitCode: (value) => {
+        exitCode = value;
+      },
+      write: (value) => {
+        output += value;
+      },
+    });
+
+    await program.parseAsync(
+      ["approvals", "verify", "--file", "approvals.yml", "--format", "json"],
+      { from: "user" },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output)).toMatchObject({ command: "approvals_verify", valid: true });
+  });
+
   it("escapes ANSI controls in Commander parser errors", async () => {
     let errorOutput = "";
     const program = createProgram({ writeError: (value) => (errorOutput += value) }).exitOverride();
@@ -97,6 +120,7 @@ describe("CLI runner JSON parser failures", () => {
     ["unknown scan option", ["scan", "--format", "json", "--unknown"]],
     ["missing diff base", ["diff", "--format", "json"]],
     ["missing policy file", ["policy", "validate", "--format", "json"]],
+    ["missing approvals file", ["approvals", "verify", "--format", "json"]],
   ])("envelopes %s", async (_label, args) => {
     let output = "";
     let exitCode: number | undefined;

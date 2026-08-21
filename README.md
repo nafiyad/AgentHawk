@@ -33,6 +33,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Strict deterministic PG001–PG007, PG010, PG011, PG013, and PG015 policy findings with stable verdict precedence (PG005 name-similarity runs during `scan` against the manifest's other direct dependencies)
 - `agenthawk check npm <package-spec>` with terminal/JSON output, strict mode, policy and approval files, bounded caching/offline operation, and stable exit codes
 - `agenthawk policy validate --file <path>` with the production strict YAML boundary, normalized policy digest, and no provider access
+- `agenthawk approvals verify --file <path>` with exact-coordinate validation, aggregate approval-time state, a semantic digest, and no approval application
 - `agenthawk scan` for aggregate policy evaluation of every bounded root-manifest direct dependency without executing repository code
 - `agenthawk diff --base <git-ref>` for direct dependency additions/version changes and PG014 lockfile correlation
 - Bounded OSV query, pagination, and batch-match hydration without executing package code
@@ -70,6 +71,7 @@ pnpm agenthawk check npm example-package@1.0.0 --policy .agenthawk/policy.yml
 pnpm agenthawk check npm example-package@1.0.0 --offline
 pnpm agenthawk check npm example-package@1.0.0 --no-cache
 pnpm agenthawk policy validate --file .agenthawk/policy.yml --format json
+pnpm agenthawk approvals verify --file .agenthawk/approvals.yml --format json
 pnpm agenthawk scan --format json
 pnpm agenthawk diff --base origin/main --strict --format json
 ```

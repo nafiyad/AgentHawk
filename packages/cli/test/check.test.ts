@@ -1,7 +1,7 @@
 import type { FileHandle } from "node:fs/promises";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { type lstat, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { MetadataCache, type NpmProviderResult } from "@agenthawk/core";
 import { describe, expect, it } from "vitest";
 import { checkNpmPackage, readApprovalFile, readPolicyFile } from "../src/check.js";
@@ -650,13 +650,56 @@ describe("checkNpmPackage", () => {
         if (bytesRead > 0) source.copy(buffer, offset, position, position + bytesRead);
         return { buffer, bytesRead };
       },
-      stat: async () => ({ isFile: () => true, size: source.length }),
+      stat: async () => ({ dev: 1, ino: 1, isFile: () => true, size: source.length }),
     } as unknown as FileHandle;
 
-    await expect(readPolicyFile("ignored", async () => handle)).resolves.toMatchObject({
-      version: 1,
-    });
+    const inspectPath = (async (path: Parameters<typeof lstat>[0]) => {
+      const textPath = path.toString();
+      return {
+        dev: 1,
+        ino: 1,
+        isDirectory: () => textPath !== resolve("ignored"),
+        isFile: () => textPath === resolve("ignored"),
+        isSymbolicLink: () => false,
+        size: source.length,
+      } as Awaited<ReturnType<typeof lstat>>;
+    }) as typeof lstat;
+    await expect(readPolicyFile("ignored", async () => handle, inspectPath)).resolves.toMatchObject(
+      { version: 1 },
+    );
     expect(closed).toBe(true);
+  });
+
+  it("rejects a policy file that changes during the bounded read", async () => {
+    const source = Buffer.from("version: 1\n");
+    const target = resolve("changing-policy.yml");
+    let finalInspections = 0;
+    const handle = {
+      close: async () => undefined,
+      read: async (buffer: Buffer, offset: number, length: number, position: number) => {
+        const bytesRead = Math.min(length, source.length - position);
+        if (bytesRead > 0) source.copy(buffer, offset, position, position + bytesRead);
+        return { buffer, bytesRead };
+      },
+      stat: async () => ({ dev: 1, ino: 1, isFile: () => true, size: source.length }),
+    } as unknown as FileHandle;
+    const inspectPath = (async (path: Parameters<typeof lstat>[0]) => {
+      const textPath = path.toString();
+      const final = textPath === target;
+      if (final) finalInspections += 1;
+      return {
+        dev: 1,
+        ino: 1,
+        isDirectory: () => !final,
+        isFile: () => final,
+        isSymbolicLink: () => false,
+        size: source.length + (finalInspections > 1 ? 1 : 0),
+      } as Awaited<ReturnType<typeof lstat>>;
+    }) as typeof lstat;
+
+    await expect(
+      readPolicyFile("changing-policy.yml", async () => handle, inspectPath),
+    ).rejects.toThrow("changed while it was being read");
   });
 
   it("does not query OSV when the provider is explicitly disabled", async () => {

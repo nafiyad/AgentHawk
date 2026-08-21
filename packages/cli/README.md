@@ -12,6 +12,7 @@ agenthawk --version
 ```bash
 agenthawk check npm example-package@1.0.0 --strict --format json
 agenthawk policy validate --file .agenthawk/policy.yml --format json
+agenthawk approvals verify --file .agenthawk/approvals.yml --format json
 agenthawk scan --strict --format json
 agenthawk diff --base origin/main --strict --format json
 ```

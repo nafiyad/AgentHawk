@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  approvalValidationReportSchema,
   cliErrorReportSchema,
   diffReportSchema,
   inventoryReportSchema,
@@ -67,6 +68,32 @@ describe("CLI JSON contract", () => {
     );
     expect(
       policyValidationReportSchema.safeParse({ ...report, toolVersion: "x".repeat(129) }).success,
+    ).toBe(false);
+  });
+
+  it("strictly validates bounded approval-verification reports and count consistency", () => {
+    const report = {
+      schemaVersion: "1.0",
+      toolVersion: "0.1.0-alpha.1",
+      command: "approvals_verify",
+      valid: true,
+      approvalVersion: 1,
+      approvalCount: 3,
+      timeEligibleCount: 1,
+      expiredCount: 1,
+      notYetEffectiveCount: 1,
+      checkedAt: "2026-08-21T15:00:00.000Z",
+      approvalDigest: `sha256:${"a".repeat(64)}`,
+    };
+    expect(approvalValidationReportSchema.parse(report)).toEqual(report);
+    expect(
+      approvalValidationReportSchema.safeParse({ ...report, path: "private.yml" }).success,
+    ).toBe(false);
+    expect(approvalValidationReportSchema.safeParse({ ...report, expiredCount: 2 }).success).toBe(
+      false,
+    );
+    expect(
+      approvalValidationReportSchema.safeParse({ ...report, approvalCount: 1_025 }).success,
     ).toBe(false);
   });
 
