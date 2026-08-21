@@ -19,6 +19,37 @@ describe("AgentHawk workflow", () => {
     expect(source).not.toContain("npm publish");
   });
 
+  it("tests the full gate on the declared Node LTS and operating-system matrix", async () => {
+    const source = await readFile(join(workspace, ".github/workflows/quality.yml"), "utf8");
+    const document = parseDocument(source, { uniqueKeys: true });
+    expect(document.errors).toEqual([]);
+    const workflow = document.toJS() as {
+      jobs: {
+        quality: {
+          strategy: { "fail-fast": boolean; matrix: { node: number[]; os: string[] } };
+        };
+      };
+    };
+    expect(workflow.jobs.quality.strategy).toEqual({
+      "fail-fast": false,
+      matrix: {
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"],
+        node: [22, 24],
+      },
+    });
+    for (const command of [
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm test",
+      "pnpm test:coverage",
+      "pnpm build",
+      "pnpm package:check",
+      "pnpm agenthawk --help",
+    ]) {
+      expect(source).toContain(`run: ${command}`);
+    }
+  });
+
   it("keeps the public threat model and alpha status aligned with shipped integrations", async () => {
     const threatModel = await readFile(join(workspace, "docs/threat-model.md"), "utf8");
     const acceptance = await readFile(join(workspace, "docs/alpha-acceptance.md"), "utf8");
@@ -74,6 +105,8 @@ describe("AgentHawk workflow", () => {
     expect(source).not.toContain("pnpm run release:prepare --");
     expect(source).not.toContain("pnpm exec node scripts/prepare-release-artifacts.mjs");
     expect(source).toContain("--access public --tag alpha --ignore-scripts --provenance");
+    expect(source.match(/node-version: 24\.19\.0/gu)).toHaveLength(2);
+    expect(source).not.toContain("node-version: 24.15.0");
   });
 
   it("does not check out or run repository code in the OIDC stage job", async () => {
@@ -102,6 +135,7 @@ describe("AgentHawk workflow", () => {
     expect(source).toContain("persist-credentials: false");
     expect(source).not.toMatch(/uses:\s*[^\s@]+@(main|master|v\d+)\s*$/mu);
     expect(source).not.toMatch(/run:[^\n]*\$\{\{\s*github\.event/iu);
+    expect(source).toContain("node-version: 24");
   });
 
   it("isolates optional write permission in a non-executing workflow_run commenter", async () => {

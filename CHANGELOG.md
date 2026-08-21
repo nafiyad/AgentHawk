@@ -7,6 +7,12 @@ All notable changes are documented in this file. AgentHawk follows semantic vers
 ### Added
 
 - `agenthawk policy validate --file <path>` reuses the production bounded YAML and strict policy schema, returns terminal or strict JSON output, and contacts no evidence provider.
+- `agenthawk approvals verify --file <path>` reports bounded approval time states and a semantic digest without applying an approval or contacting providers.
+
+### Changed
+
+- The development and next-release runtime baseline is Node.js 22 or 24 LTS. Node 20 is no longer declared or tested after its upstream end-of-life.
+- Quality CI covers Node.js 22 and 24 on Ubuntu, Windows, and macOS; the dependency-diff workflow uses Node.js 24.
 
 ## 0.1.0-alpha.1 - 2026-08-20
 

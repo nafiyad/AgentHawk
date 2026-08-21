@@ -1,0 +1,38 @@
+# Support matrix
+
+Support snapshot: 2026-08-21 UTC
+
+AgentHawk separates declared compatibility, upstream lifecycle status, and direct CI evidence. A compatible or tested environment is not a claim that the host or a dependency is secure.
+
+## Runtime and operating systems
+
+| Node.js major | Upstream state at snapshot | Declared compatible | Quality CI |
+| --- | --- | --- | --- |
+| 20 | End-of-life | No | No |
+| 22 | LTS | Yes | Ubuntu, Windows, macOS GitHub-hosted runners |
+| 24 | LTS | Yes | Ubuntu, Windows, macOS GitHub-hosted runners |
+| 26 | Current | No | No |
+| Other or future majors | Unknown or unsupported by this snapshot | No | No |
+
+The package engine range is `^22.0.0 || ^24.0.0`. CI runner labels are moving external environments; this matrix does not promise a particular distribution build, Windows edition, macOS release, CPU architecture, or self-hosted-runner configuration. Exact workflow runs are the evidence for a commit.
+
+## Package managers and dependency files
+
+pnpm 10 is the development package manager. AgentHawk evaluates npm registry dependencies and recognizes root `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, and `bun.lockb` for change correlation. Recognition does not mean the corresponding package manager is installed, executed, or fully supported for native interception.
+
+## Agent and CI integrations
+
+| Integration | Current status |
+| --- | --- |
+| Codex | Advisory repository instruction template |
+| Claude Code | Advisory project instruction template |
+| Cursor | Advisory project rule template |
+| Generic coding agent | Advisory instruction template |
+| GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
+| Native pre-action hooks | Deferred to Milestone 17 |
+
+Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
+
+## Lifecycle policy
+
+The matrix is reviewed before each release against the official [Node.js release schedule](https://nodejs.org/en/about/previous-releases). AgentHawk does not perform a live lifecycle lookup during local checks or diagnostics. An older installed version therefore cannot know about lifecycle changes published after its bundled support snapshot.

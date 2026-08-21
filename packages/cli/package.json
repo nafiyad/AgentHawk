@@ -17,7 +17,7 @@
     "class": "dual-use"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^22.0.0 || ^24.0.0"
   },
   "bin": {
     "agenthawk": "./dist/index.js"

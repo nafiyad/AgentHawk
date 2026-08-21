@@ -8,7 +8,7 @@ The repository began empty except for Git metadata; `AGENTS.md` and Milestone 0 
 
 ## Assumptions and constraints
 
-- Node.js 20+ and pnpm workspaces; TypeScript strict mode.
+- Node.js 22 or 24 LTS and pnpm workspaces; TypeScript strict mode. Node 20 reached upstream end-of-life on 2026-03-24 and is no longer an accepted security baseline.
 - npm public registry and OSV are the only required remote providers for alpha.
 - No package installation or package-code execution occurs during evaluation.
 - No telemetry, hosted backend, database, account, secret ingestion, or LLM verdicts.
@@ -70,7 +70,7 @@ There are no unresolved design questions for the first public alpha. The exact-a
 
 Post-alpha work is sequenced in the evidence-backed [product roadmap](roadmap.md). That document starts at Milestone 16 and defines the research prerequisites, dependencies, security gates, measurable exit criteria, and explicit exclusions for each proposed phase. This implementation plan remains the historical source of truth for the completed first-alpha milestones.
 
-Milestone 16 is active. Its first two focused slices add `policy validate` and `approvals verify` by reusing the production bounded YAML readers and strict core schemas, with deterministic terminal/JSON results and no provider access or approval application. The approval slice also hardens the shared file boundary against observed symlink/junction components and read mutation. `doctor` and collision-safe `init` remain separate reviewable slices.
+Milestone 16 is active. Its first two focused slices add `policy validate` and `approvals verify` by reusing the production bounded YAML readers and strict core schemas, with deterministic terminal/JSON results and no provider access or approval application. The approval slice also hardens the shared file boundary against observed symlink/junction components and read mutation. Research for `doctor` found that Node 20 was already end-of-life, so the operator foundation first moves its declared and tested baseline to Node 22/24 LTS across Ubuntu, Windows, and macOS. `doctor` and collision-safe `init` remain separate reviewable slices.
 
 Resolved: OSV malicious-record classification is defined in `docs/architecture.md` (PG010 matches non-withdrawn `MAL-YYYY-N` identifiers or aliases).
 

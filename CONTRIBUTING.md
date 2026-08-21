@@ -8,7 +8,7 @@ For substantial behavior or policy changes, open an issue first. Security decisi
 
 ## Development
 
-Use Node.js 20+ and pnpm 10.
+Use Node.js 22 or 24 LTS and pnpm 10.
 
 ```bash
 pnpm install

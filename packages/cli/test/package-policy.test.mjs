@@ -98,6 +98,7 @@ describe("release manifest policy", () => {
     ["public access removed", (value) => (value.publishConfig.access = "restricted")],
     ["provenance disabled", (value) => (value.publishConfig.provenance = false)],
     ["registry redirected", (value) => (value.publishConfig.registry = "https://example.invalid/")],
+    ["Node engine widened", (value) => (value.engines.node = ">=20")],
     ["stable tag selected", (value) => (value.publishConfig.tag = "latest")],
     ["publish lifecycle added", (value) => (value.scripts.prepublishOnly = "node publish.js")],
     ["bundled dependency added", (value) => (value.bundleDependencies = ["commander"])],

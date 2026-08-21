@@ -398,4 +398,4 @@ The following are not promised phases: hosted dashboards, user accounts, organiz
 
 ## Immediate next action
 
-Milestone 16 is active. Its first two focused slices are `agenthawk policy validate` and `agenthawk approvals verify`, their strict JSON contracts, hostile file-boundary tests, and public documentation. Follow with `doctor` and finally collision-safe `init`. That sequence exercises existing production parsers first and establishes the diagnostics needed before Milestone 17 installs native hooks.
+Milestone 16 is active. Its first two focused slices are `agenthawk policy validate` and `agenthawk approvals verify`, their strict JSON contracts, hostile file-boundary tests, and public documentation. `doctor` research identified Node 20 end-of-life as a blocking support-claim defect, so the next prerequisite is an explicit Node 22/24 LTS matrix across Ubuntu, Windows, and macOS. Follow with `doctor` and finally collision-safe `init`. That sequence establishes truthful support evidence and diagnostics before Milestone 17 installs native hooks.
