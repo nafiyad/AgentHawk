@@ -31,6 +31,7 @@ export {
   type InventoryReport,
   inventoryReportSchema,
   type PolicyValidationReport,
+  parseDoctorNodeMajor,
   policyValidationReportSchema,
   type ScanReport,
   scanReportSchema,

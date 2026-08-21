@@ -151,7 +151,13 @@ describe("CLI JSON contract", () => {
         runtime: { ...report.runtime, platform: "other" },
       }).success,
     ).toBe(false);
-    for (const nodeVersion of ["22.01.0", "022.0.0", "24.019.0"]) {
+    for (const nodeVersion of [
+      "22.01.0",
+      "022.0.0",
+      "24.019.0",
+      "22.9007199254740992.0",
+      "24.0.9007199254740992",
+    ]) {
       expect(
         doctorReportSchema.safeParse({
           ...report,

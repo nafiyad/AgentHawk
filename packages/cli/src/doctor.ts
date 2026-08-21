@@ -7,6 +7,7 @@ import {
   cliErrorReportSchema,
   doctorReportSchema,
   MetadataCache,
+  parseDoctorNodeMajor,
 } from "@agenthawk/core";
 import {
   type CheckResult,
@@ -45,7 +46,7 @@ export async function runDoctor(
   try {
     const cwd = dependencies.cwd ?? process.cwd();
     const nodeVersion = dependencies.nodeVersion ?? process.versions.node;
-    const nodeMajor = parseNodeMajor(nodeVersion);
+    const nodeMajor = parseDoctorNodeMajor(nodeVersion);
     const operatingSystem = normalizePlatform(dependencies.platform ?? platform());
     const architecture = normalizeArchitecture(dependencies.architecture ?? arch());
     const cliVersion = dependencies.cliVersion ?? AGENTHAWK_CLI_VERSION;
@@ -134,11 +135,6 @@ export async function runDoctor(
           : `AgentHawk: ${escapeTerminal(message)}\n`,
     };
   }
-}
-
-function parseNodeMajor(version: string): number | undefined {
-  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.exec(version);
-  return match ? Number(match[1]) : undefined;
 }
 
 function normalizePlatform(value: NodeJS.Platform): "win32" | "darwin" | "linux" | "other" {

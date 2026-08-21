@@ -68,6 +68,16 @@ export type ApprovalValidationReport = z.infer<typeof approvalValidationReportSc
 
 const diagnosticStateSchema = z.enum(["absent", "valid", "invalid"]);
 const integrationStateSchema = z.enum(["absent", "present_unverified", "invalid"]);
+const canonicalNodeVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+
+export function parseDoctorNodeMajor(version: string): number | undefined {
+  const match = canonicalNodeVersionPattern.exec(version);
+  if (!match) return undefined;
+  const components = match.slice(1).map(Number);
+  if (!components.every(Number.isSafeInteger)) return undefined;
+  return components[0];
+}
+
 export const doctorReportSchema = z
   .object({
     schemaVersion: z.literal("1.0"),
@@ -81,8 +91,9 @@ export const doctorReportSchema = z
         nodeVersion: z.union([
           z
             .string()
-            .regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u)
-            .max(64),
+            .regex(canonicalNodeVersionPattern)
+            .max(64)
+            .refine((version) => parseDoctorNodeMajor(version) !== undefined),
           z.literal("invalid"),
         ]),
         nodeRange: z.literal("^22.0.0 || ^24.0.0"),
@@ -123,10 +134,7 @@ export const doctorReportSchema = z
         message: "Doctor checkedAt must be a valid UTC timestamp.",
       });
     }
-    const nodeMatch = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.exec(
-      report.runtime.nodeVersion,
-    );
-    const nodeMajor = nodeMatch ? Number(nodeMatch[1]) : undefined;
+    const nodeMajor = parseDoctorNodeMajor(report.runtime.nodeVersion);
     const expectedRuntimeSupport = nodeMajor === 22 || nodeMajor === 24;
     if (
       report.runtime.declaredCompatible !== expectedRuntimeSupport ||

@@ -70,6 +70,8 @@ describe("doctor", () => {
     ["zero-padded minor", { nodeVersion: "22.01.0" }],
     ["zero-padded major", { nodeVersion: "022.0.0" }],
     ["zero-padded current minor", { nodeVersion: "24.019.0" }],
+    ["unsafe Node 22 minor", { nodeVersion: "22.9007199254740992.0" }],
+    ["unsafe Node 24 patch", { nodeVersion: "24.0.9007199254740992" }],
     ["version mismatch", { cliVersion: "0.1.0-alpha.2" }],
     ["cache unavailable", { probeCache: async () => "unwritable" as const }],
     ["Git unavailable", { runGit: async () => "hostile output" }],
