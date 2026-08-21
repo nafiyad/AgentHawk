@@ -1,6 +1,16 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cacheKeyDigest, defaultCacheRoot, MetadataCache } from "../src/cache/metadata-cache.js";
 
@@ -10,7 +20,7 @@ afterEach(async () => {
 });
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), "agenthawk-cache-"));
+  const value = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-"));
   roots.push(value);
   return value;
 }
@@ -20,6 +30,48 @@ function pathFor(cacheRoot: string, provider: "npm" | "osv", key: string): strin
 }
 
 describe("MetadataCache", () => {
+  it("probes actual cache writes and removes its sentinel", async () => {
+    const parent = await root();
+    const cacheRoot = join(parent, "new-cache");
+    await expect(new MetadataCache({ root: cacheRoot }).probeWritable()).resolves.toBe("writable");
+    await expect(readdir(cacheRoot)).resolves.toEqual([]);
+
+    const occupied = join(parent, "occupied");
+    await writeFile(occupied, "not a directory");
+    await expect(new MetadataCache({ root: occupied }).probeWritable()).resolves.toBe("unsafe");
+
+    const target = join(parent, "target");
+    const redirected = join(parent, "redirected");
+    await mkdir(target);
+    await symlink(target, redirected, process.platform === "win32" ? "junction" : "dir");
+    await expect(new MetadataCache({ root: redirected }).probeWritable()).resolves.toBe("unsafe");
+
+    const nestedRedirect = join(redirected, "missing-cache");
+    await expect(new MetadataCache({ root: nestedRedirect }).probeWritable()).resolves.toBe(
+      "unsafe",
+    );
+    await expect(lstat(join(target, "missing-cache"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(new MetadataCache({ root: "relative-cache" }).probeWritable()).resolves.toBe(
+      "unsafe",
+    );
+    await expect(new MetadataCache({ root: parse(parent).root }).probeWritable()).resolves.toBe(
+      "unsafe",
+    );
+
+    const invalidPath = join(parent, "invalid\0component");
+    const invalidPathCache = new MetadataCache({ root: invalidPath });
+    await expect(invalidPathCache.probeWritable()).resolves.toBe("unwritable");
+    await expect(invalidPathCache.read("npm", "example", (value) => value)).resolves.toEqual({
+      status: "corrupt",
+    });
+
+    const oversizedComponent = "x".repeat(300);
+    const uncreatable = join(parent, "missing-parent", oversizedComponent);
+    await expect(new MetadataCache({ root: uncreatable }).probeWritable()).resolves.toBe(
+      "unwritable",
+    );
+  });
+
   it("validates size, TTL, clock, and date-range boundaries", async () => {
     expect(() => new MetadataCache({ maximumBytes: 0 })).toThrow(TypeError);
     expect(() => new MetadataCache({ maximumBytes: 1.5 })).toThrow(TypeError);
@@ -166,6 +218,12 @@ describe("defaultCacheRoot", () => {
     );
     expect(defaultCacheRoot({ XDG_CACHE_HOME: "/cache" }, "linux", "/home/user")).toBe(
       join("/cache", "agenthawk"),
+    );
+    expect(defaultCacheRoot({ XDG_CACHE_HOME: "relative" }, "linux", "/home/user")).toBe(
+      join("/home/user", ".cache", "agenthawk"),
+    );
+    expect(defaultCacheRoot({ LOCALAPPDATA: "relative" }, "win32", "C:\\Home")).toBe(
+      join("C:\\Home", "AppData", "Local", "AgentHawk", "Cache"),
     );
     expect(defaultCacheRoot({}, "linux", "/home/user")).toBe(
       join("/home/user", ".cache", "agenthawk"),

@@ -70,7 +70,7 @@ There are no unresolved design questions for the first public alpha. The exact-a
 
 Post-alpha work is sequenced in the evidence-backed [product roadmap](roadmap.md). That document starts at Milestone 16 and defines the research prerequisites, dependencies, security gates, measurable exit criteria, and explicit exclusions for each proposed phase. This implementation plan remains the historical source of truth for the completed first-alpha milestones.
 
-Milestone 16 is active. Its first two focused slices add `policy validate` and `approvals verify` by reusing the production bounded YAML readers and strict core schemas, with deterministic terminal/JSON results and no provider access or approval application. The approval slice also hardens the shared file boundary against observed symlink/junction components and read mutation. Research for `doctor` found that Node 20 was already end-of-life, so the operator foundation first moves its declared and tested baseline to Node 22/24 LTS across Ubuntu, Windows, and macOS. `doctor` and collision-safe `init` remain separate reviewable slices.
+Milestone 16 is active. Its first slices add `policy validate`, `approvals verify`, and a Node 22/24 six-platform quality matrix. The current `doctor` slice adds strict minimum-disclosure runtime, package-alignment, cache, Git, configuration, and advisory-integration diagnostics without provider or package-manager execution. Collision-safe `init` remains a separate reviewable slice.
 
 Resolved: OSV malicious-record classification is defined in `docs/architecture.md` (PG010 matches non-withdrawn `MAL-YYYY-N` identifiers or aliases).
 

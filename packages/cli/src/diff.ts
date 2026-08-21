@@ -308,6 +308,10 @@ const defaultGitRunner: GitRunner = {
     }),
 };
 
+export async function runBoundedGit(args: string[], cwd: string): Promise<string> {
+  return await defaultGitRunner.run(args, cwd);
+}
+
 function gitEnvironment(): NodeJS.ProcessEnv {
   const environment = { ...process.env };
   for (const key of Object.keys(environment)) {

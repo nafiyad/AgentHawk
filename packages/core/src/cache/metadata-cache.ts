@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { type FileHandle, mkdir, open, rename, rm } from "node:fs/promises";
+import { type FileHandle, lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, parse, posix, resolve, sep, win32 } from "node:path";
 import { z } from "zod";
 import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
@@ -25,6 +25,7 @@ export type CacheProvider = "npm" | "osv";
 export type CacheReadResult<T> =
   | { status: "missing" | "corrupt" }
   | { status: "fresh" | "stale"; storedAt: string; expiresAt: string; value: T };
+export type CacheProbeState = "writable" | "unwritable" | "unsafe";
 
 export interface MetadataCacheOptions {
   maximumBytes?: number;
@@ -112,7 +113,7 @@ export class MetadataCache {
     } catch {
       return { status: "corrupt" };
     } finally {
-      await handle.close().catch(() => undefined);
+      await handle.close().catch(ignoreCleanupError);
     }
   }
 
@@ -166,14 +167,83 @@ export class MetadataCache {
       await rename(temporary, this.#path(keyDigest));
       return true;
     } catch {
-      await rm(temporary, { force: true }).catch(() => undefined);
+      await rm(temporary, { force: true }).catch(ignoreCleanupError);
       return false;
     }
+  }
+
+  async probeWritable(): Promise<CacheProbeState> {
+    if (!isAbsolute(this.#root)) return "unsafe";
+    const probe = join(this.#root, `.doctor-${randomUUID()}.tmp`);
+    let created = false;
+    let state: CacheProbeState = "unwritable";
+    try {
+      const beforeCreation = await inspectDirectoryPath(this.#root);
+      if (beforeCreation === "unsafe") return "unsafe";
+      if (beforeCreation === "unreadable") return "unwritable";
+      try {
+        await mkdir(this.#root, { mode: 0o700, recursive: true });
+      } catch {
+        const afterFailure = await inspectDirectoryPath(this.#root);
+        return afterFailure === "unsafe" ? "unsafe" : "unwritable";
+      }
+      const afterCreation = await inspectDirectoryPath(this.#root);
+      if (afterCreation !== "safe") {
+        return afterCreation === "unsafe" ? "unsafe" : "unwritable";
+      }
+      const handle = await open(
+        probe,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+        0o600,
+      );
+      created = true;
+      try {
+        await handle.writeFile("agenthawk-doctor\n", "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      state = "writable";
+    } catch {
+      state = "unwritable";
+    }
+    if (!created) return state;
+    try {
+      await rm(probe);
+    } catch {
+      return "unsafe";
+    }
+    return state;
   }
 
   #path(keyDigest: string): string {
     return join(this.#root, `${keyDigest.slice(7)}.json`);
   }
+}
+
+type DirectoryPathState = "safe" | "missing" | "unsafe" | "unreadable";
+
+function ignoreCleanupError(): undefined {
+  return undefined;
+}
+
+async function inspectDirectoryPath(path: string): Promise<DirectoryPathState> {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  const relativeComponents = absolute.slice(root.length).split(sep).filter(Boolean);
+  if (relativeComponents.length === 0) return "unsafe";
+
+  let current = root;
+  for (const component of relativeComponents) {
+    current = join(current, component);
+    try {
+      const stats = await lstat(current);
+      if (stats.isSymbolicLink() || !stats.isDirectory()) return "unsafe";
+    } catch (error) {
+      return isMissing(error) ? "missing" : "unreadable";
+    }
+  }
+  return "safe";
 }
 
 export function cacheKeyDigest(provider: CacheProvider, key: string): string {
@@ -186,12 +256,12 @@ export function defaultCacheRoot(
   userHome: string = homedir(),
 ): string {
   if (operatingSystem === "win32") {
-    return environment.LOCALAPPDATA
+    return environment.LOCALAPPDATA && win32.isAbsolute(environment.LOCALAPPDATA)
       ? join(environment.LOCALAPPDATA, "AgentHawk", "Cache")
       : join(userHome, "AppData", "Local", "AgentHawk", "Cache");
   }
   if (operatingSystem === "darwin") return join(userHome, "Library", "Caches", "AgentHawk");
-  return environment.XDG_CACHE_HOME
+  return environment.XDG_CACHE_HOME && posix.isAbsolute(environment.XDG_CACHE_HOME)
     ? join(environment.XDG_CACHE_HOME, "agenthawk")
     : join(userHome, ".cache", "agenthawk");
 }

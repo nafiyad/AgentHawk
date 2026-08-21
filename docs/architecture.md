@@ -2,7 +2,7 @@
 
 ## Current boundary
 
-AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, `diff`, `policy validate`, and `approvals verify` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub evaluation with an isolated opt-in write commenter, advisory agent templates, and trust-separated release-package verification and staging.
+AgentHawk provides npm request parsing, normalized registry and OSV evidence, deterministic policy evaluation, `check`, `scan`, `diff`, `policy validate`, `approvals verify`, and offline `doctor` commands, exact expiring approvals, a bounded public-metadata cache, read-only GitHub evaluation with an isolated opt-in write commenter, advisory agent templates, and trust-separated release-package verification and staging.
 
 ```text
 untrusted package spec
@@ -91,6 +91,8 @@ Pagination follows `next_page_token` until it is absent. A first page that conta
 `agenthawk policy validate --file <path>` uses that same production file reader and strict core schema without resolving a package, opening the metadata cache, or contacting npm/OSV. Success reports only the normalized policy version/mode and deterministic digest; invalid policy uses the shared bounded CLI error envelope and exit `2`.
 
 `agenthawk approvals verify --file <path>` uses the production approval schema without calling approval application. It returns only bounded aggregate time-state counts, one sampled UTC instant, and an order-independent semantic digest. Structural success does not claim policy applicability: the repository policy's maximum validity is enforced later when a matching approval is applied.
+
+`agenthawk doctor` is an offline, minimum-disclosure readiness diagnostic. It compares independently compiled CLI/core versions, evaluates the bundled Node support snapshot, rejects observed symbolic links or junctions in the cache-root path before and after directory creation, performs one exclusive create/write/sync/delete cache probe, invokes only bounded `git --version` through the hardened Git boundary, validates fixed policy/approval paths with production parsers, and inspects only fixed integration paths. Integration presence is labeled `present_unverified`; it does not prove host loading, enforcement, workflow enablement, or branch protection. Doctor does not invoke package managers or evidence providers.
 
 The shared YAML boundary rejects symbolic links or junctions in every observed path component, compares the opened file identity with pre/post path metadata, requires stable size through the bounded read, and rejects mutation. These portable checks reduce redirection and read-race risk but cannot make path traversal atomic against a local actor that can replace filesystem components between system calls.
 

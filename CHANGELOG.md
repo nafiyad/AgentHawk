@@ -8,6 +8,7 @@ All notable changes are documented in this file. AgentHawk follows semantic vers
 
 - `agenthawk policy validate --file <path>` reuses the production bounded YAML and strict policy schema, returns terminal or strict JSON output, and contacts no evidence provider.
 - `agenthawk approvals verify --file <path>` reports bounded approval time states and a semantic digest without applying an approval or contacting providers.
+- `agenthawk doctor` reports bounded offline readiness without executing package managers, repository code, or evidence-provider requests.
 
 ### Changed
 

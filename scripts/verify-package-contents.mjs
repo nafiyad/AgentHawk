@@ -60,13 +60,23 @@ async function verifyConsumerEntrypoints() {
 
 async function verifyRuntimeVersion() {
   const core = await import("../packages/core/dist/index.js");
+  const cli = await import("../packages/cli/dist/version.js");
   assert(core.AGENTHAWK_VERSION === releaseVersion, "Core runtime version is inconsistent");
+  assert(cli.AGENTHAWK_CLI_VERSION === releaseVersion, "CLI runtime constant is inconsistent");
   const { stdout } = await execute(
     process.execPath,
     [join(root, "packages", "cli", "dist", "index.js"), "--version"],
     { cwd: root, encoding: "utf8", maxBuffer: 65_536, timeout: 10_000, windowsHide: true },
   );
   assert(stdout.trim() === releaseVersion, "CLI runtime version is inconsistent");
+  const doctor = await execute(
+    process.execPath,
+    [join(root, "packages", "cli", "dist", "index.js"), "doctor", "--format", "json"],
+    { cwd: root, encoding: "utf8", maxBuffer: 65_536, timeout: 15_000, windowsHide: true },
+  );
+  const doctorReport = JSON.parse(doctor.stdout);
+  assert(doctorReport.command === "doctor", "CLI doctor smoke failed");
+  assert(doctorReport.packages?.aligned === true, "CLI/core runtime alignment failed");
   process.stdout.write(`Verified runtime version ${releaseVersion}.\n`);
 }
 

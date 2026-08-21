@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     coverage: {
       provider: "v8",
-      include: ["packages/core/src/**/*.ts"],
+      include: ["packages/core/src/**/*.ts", "packages/cli/src/doctor.ts"],
       reporter: ["text", "json-summary"],
       thresholds: {
         branches: 90,

@@ -9,6 +9,7 @@ export {
   summarizeApprovalTimes,
 } from "./approvals/index.js";
 export {
+  type CacheProbeState,
   type CacheProvider,
   type CacheReadResult,
   cacheKeyDigest,
@@ -23,11 +24,14 @@ export {
   cliErrorCodeSchema,
   cliErrorReportSchema,
   type DiffReport,
+  type DoctorReport,
   diffReportSchema,
   directDependencySchema,
+  doctorReportSchema,
   type InventoryReport,
   inventoryReportSchema,
   type PolicyValidationReport,
+  parseDoctorNodeMajor,
   policyValidationReportSchema,
   type ScanReport,
   scanReportSchema,

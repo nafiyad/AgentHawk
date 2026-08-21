@@ -1,13 +1,14 @@
-import { AGENTHAWK_VERSION } from "@agenthawk/core";
 import { Command } from "commander";
 import { verifyApprovalFile } from "./approvals.js";
 import { type CheckDependencies, checkNpmPackage, type OutputFormat } from "./check.js";
 import { diffDependencies } from "./diff.js";
+import { type DoctorDependencies, runDoctor } from "./doctor.js";
 import { validatePolicyFile } from "./policy.js";
 import { scanDependencies } from "./scan.js";
 import { escapeTerminal } from "./terminal.js";
+import { AGENTHAWK_CLI_VERSION } from "./version.js";
 
-export interface ProgramDependencies extends CheckDependencies {
+export interface ProgramDependencies extends CheckDependencies, DoctorDependencies {
   writeError?: (text: string) => void;
   write?: (text: string) => void;
   setExitCode?: (code: number) => void;
@@ -22,7 +23,7 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
   const program = new Command()
     .name("agenthawk")
     .description("Deterministic dependency admission control for AI coding agents.")
-    .version(AGENTHAWK_VERSION)
+    .version(AGENTHAWK_CLI_VERSION)
     .showSuggestionAfterError()
     .configureOutput(safeOutput);
 
@@ -129,6 +130,17 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     if (!format) return;
     const result = await verifyApprovalFile(String(options.file), { format }, dependencies);
     writeResult(result, dependencies);
+  });
+
+  const doctor = program
+    .command("doctor")
+    .description("Check bounded local AgentHawk readiness without contacting providers.")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  doctor.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    writeResult(await runDoctor({ format }, dependencies), dependencies);
   });
 
   const diff = program

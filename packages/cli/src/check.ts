@@ -334,6 +334,26 @@ export async function readPolicyFile(
   return document;
 }
 
+export async function readOptionalPolicyFile(
+  path: string,
+  openFile: typeof open = open,
+  inspectPath: typeof lstat = lstat,
+): Promise<unknown | undefined> {
+  return await readYamlFile(path, false, openFile, inspectPath, "Policy");
+}
+
+export async function inspectOptionalRegularFile(
+  path: string,
+  inspectPath: typeof lstat = lstat,
+): Promise<"absent" | "present" | "invalid"> {
+  try {
+    await inspectRegularPath(path, inspectPath, "Policy");
+    return "present";
+  } catch (error) {
+    return isMissingFile(error) ? "absent" : "invalid";
+  }
+}
+
 export async function readApprovalFile(
   path: string,
   required: boolean,
