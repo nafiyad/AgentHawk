@@ -3,6 +3,7 @@ import {
   approvalValidationReportSchema,
   cliErrorReportSchema,
   diffReportSchema,
+  doctorReportSchema,
   inventoryReportSchema,
   policyValidationReportSchema,
   scanReportSchema,
@@ -94,6 +95,61 @@ describe("CLI JSON contract", () => {
     );
     expect(
       approvalValidationReportSchema.safeParse({ ...report, approvalCount: 1_025 }).success,
+    ).toBe(false);
+  });
+
+  it("binds doctor readiness to its strict component states", () => {
+    const report = {
+      schemaVersion: "1.0",
+      toolVersion: "0.1.0-alpha.1",
+      command: "doctor",
+      checkedAt: "2026-08-21T22:00:00.000Z",
+      supportDataAsOf: "2026-08-21",
+      ready: true,
+      runtime: {
+        nodeVersion: "24.19.0",
+        nodeRange: "^22.0.0 || ^24.0.0",
+        declaredCompatible: true,
+        upstreamSupported: true,
+        ciTestedPlatform: true,
+        platform: "linux",
+        architecture: "x64",
+      },
+      packages: { cliVersion: "0.1.0-alpha.1", coreVersion: "0.1.0-alpha.1", aligned: true },
+      cache: { state: "writable" },
+      configuration: { policy: "absent", approvals: "absent" },
+      git: { state: "available" },
+      integrations: {
+        codex: "absent",
+        claudeCode: "absent",
+        cursor: "absent",
+        githubActions: "absent",
+      },
+      providersContacted: false,
+    };
+    expect(doctorReportSchema.parse(report)).toEqual(report);
+    expect(doctorReportSchema.safeParse({ ...report, ready: false }).success).toBe(false);
+    expect(
+      doctorReportSchema.safeParse({ ...report, cache: { state: "unwritable" } }).success,
+    ).toBe(false);
+    expect(doctorReportSchema.safeParse({ ...report, cwd: "/private/repo" }).success).toBe(false);
+    expect(
+      doctorReportSchema.safeParse({
+        ...report,
+        runtime: { ...report.runtime, nodeVersion: "20.20.2" },
+      }).success,
+    ).toBe(false);
+    expect(
+      doctorReportSchema.safeParse({
+        ...report,
+        packages: { ...report.packages, coreVersion: "0.1.0-alpha.2" },
+      }).success,
+    ).toBe(false);
+    expect(
+      doctorReportSchema.safeParse({
+        ...report,
+        runtime: { ...report.runtime, platform: "other" },
+      }).success,
     ).toBe(false);
   });
 

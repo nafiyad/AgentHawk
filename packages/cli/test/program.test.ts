@@ -99,6 +99,33 @@ describe("CLI program", () => {
     expect(JSON.parse(output)).toMatchObject({ command: "approvals_verify", valid: true });
   });
 
+  it("runs doctor through injected bounded probes", async () => {
+    let output = "";
+    let exitCode: number | undefined;
+    const program = createProgram({
+      architecture: "x64",
+      cliVersion: "0.1.0-alpha.1",
+      coreVersion: "0.1.0-alpha.1",
+      inspectFile: async () => "absent",
+      nodeVersion: "24.19.0",
+      now: () => new Date("2026-08-21T22:00:00.000Z"),
+      platform: "linux",
+      probeCache: async () => "writable",
+      readApprovals: async () => undefined,
+      readPolicy: async () => undefined,
+      runGit: async () => "git version 2.51.0\n",
+      setExitCode: (value) => {
+        exitCode = value;
+      },
+      write: (value) => {
+        output += value;
+      },
+    });
+    await program.parseAsync(["doctor", "--format", "json"], { from: "user" });
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output)).toMatchObject({ command: "doctor", ready: true });
+  });
+
   it("escapes ANSI controls in Commander parser errors", async () => {
     let errorOutput = "";
     const program = createProgram({ writeError: (value) => (errorOutput += value) }).exitOverride();
@@ -121,6 +148,7 @@ describe("CLI runner JSON parser failures", () => {
     ["missing diff base", ["diff", "--format", "json"]],
     ["missing policy file", ["policy", "validate", "--format", "json"]],
     ["missing approvals file", ["approvals", "verify", "--format", "json"]],
+    ["unknown doctor option", ["doctor", "--format", "json", "--unknown"]],
   ])("envelopes %s", async (_label, args) => {
     let output = "";
     let exitCode: number | undefined;

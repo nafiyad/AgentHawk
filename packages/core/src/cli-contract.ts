@@ -65,6 +65,88 @@ export const approvalValidationReportSchema = z
   });
 export type ApprovalValidationReport = z.infer<typeof approvalValidationReportSchema>;
 
+const diagnosticStateSchema = z.enum(["absent", "valid", "invalid"]);
+const integrationStateSchema = z.enum(["absent", "present_unverified", "invalid"]);
+export const doctorReportSchema = z
+  .object({
+    schemaVersion: z.literal("1.0"),
+    toolVersion: z.string().min(1).max(128),
+    command: z.literal("doctor"),
+    checkedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u),
+    supportDataAsOf: z.literal("2026-08-21"),
+    ready: z.boolean(),
+    runtime: z
+      .object({
+        nodeVersion: z.union([
+          z
+            .string()
+            .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u)
+            .max(64),
+          z.literal("invalid"),
+        ]),
+        nodeRange: z.literal("^22.0.0 || ^24.0.0"),
+        declaredCompatible: z.boolean(),
+        upstreamSupported: z.boolean(),
+        ciTestedPlatform: z.boolean(),
+        platform: z.enum(["win32", "darwin", "linux", "other"]),
+        architecture: z.enum(["x64", "arm64", "other"]),
+      })
+      .strict(),
+    packages: z
+      .object({
+        cliVersion: z.string().min(1).max(128),
+        coreVersion: z.string().min(1).max(128),
+        aligned: z.boolean(),
+      })
+      .strict(),
+    cache: z.object({ state: z.enum(["writable", "unwritable", "unsafe"]) }).strict(),
+    configuration: z
+      .object({ policy: diagnosticStateSchema, approvals: diagnosticStateSchema })
+      .strict(),
+    git: z.object({ state: z.enum(["available", "unavailable"]) }).strict(),
+    integrations: z
+      .object({
+        codex: integrationStateSchema,
+        claudeCode: integrationStateSchema,
+        cursor: integrationStateSchema,
+        githubActions: integrationStateSchema,
+      })
+      .strict(),
+    providersContacted: z.literal(false),
+  })
+  .strict()
+  .superRefine((report, context) => {
+    const nodeMatch = /^(\d+)\.\d+\.\d+$/u.exec(report.runtime.nodeVersion);
+    const nodeMajor = nodeMatch ? Number(nodeMatch[1]) : undefined;
+    const expectedRuntimeSupport = nodeMajor === 22 || nodeMajor === 24;
+    if (
+      report.runtime.declaredCompatible !== expectedRuntimeSupport ||
+      report.runtime.upstreamSupported !== expectedRuntimeSupport
+    ) {
+      context.addIssue({ code: "custom", message: "Doctor runtime states are inconsistent." });
+    }
+    if (report.runtime.ciTestedPlatform !== (report.runtime.platform !== "other")) {
+      context.addIssue({ code: "custom", message: "Doctor platform state is inconsistent." });
+    }
+    if (report.packages.aligned !== (report.packages.cliVersion === report.packages.coreVersion)) {
+      context.addIssue({ code: "custom", message: "Doctor package state is inconsistent." });
+    }
+    const expectedReady =
+      report.runtime.declaredCompatible &&
+      report.runtime.upstreamSupported &&
+      report.runtime.ciTestedPlatform &&
+      report.packages.aligned &&
+      report.cache.state === "writable" &&
+      report.configuration.policy !== "invalid" &&
+      report.configuration.approvals !== "invalid" &&
+      report.git.state === "available" &&
+      Object.values(report.integrations).every((state) => state !== "invalid");
+    if (report.ready !== expectedReady) {
+      context.addIssue({ code: "custom", message: "Doctor readiness must match check states." });
+    }
+  });
+export type DoctorReport = z.infer<typeof doctorReportSchema>;
+
 export const directDependencySchema = z
   .object({
     name: z.string().min(1).max(214),

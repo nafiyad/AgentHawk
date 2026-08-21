@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -20,6 +20,26 @@ function pathFor(cacheRoot: string, provider: "npm" | "osv", key: string): strin
 }
 
 describe("MetadataCache", () => {
+  it("probes actual cache writes and removes its sentinel", async () => {
+    const parent = await root();
+    const cacheRoot = join(parent, "new-cache");
+    await expect(new MetadataCache({ root: cacheRoot }).probeWritable()).resolves.toBe("writable");
+    await expect(readdir(cacheRoot)).resolves.toEqual([]);
+
+    const occupied = join(parent, "occupied");
+    await writeFile(occupied, "not a directory");
+    await expect(new MetadataCache({ root: occupied }).probeWritable()).resolves.toBe("unsafe");
+
+    const target = join(parent, "target");
+    const redirected = join(parent, "redirected");
+    await mkdir(target);
+    await symlink(target, redirected, process.platform === "win32" ? "junction" : "dir");
+    await expect(new MetadataCache({ root: redirected }).probeWritable()).resolves.toBe("unsafe");
+    await expect(new MetadataCache({ root: "relative-cache" }).probeWritable()).resolves.toBe(
+      "unsafe",
+    );
+  });
+
   it("validates size, TTL, clock, and date-range boundaries", async () => {
     expect(() => new MetadataCache({ maximumBytes: 0 })).toThrow(TypeError);
     expect(() => new MetadataCache({ maximumBytes: 1.5 })).toThrow(TypeError);
@@ -166,6 +186,12 @@ describe("defaultCacheRoot", () => {
     );
     expect(defaultCacheRoot({ XDG_CACHE_HOME: "/cache" }, "linux", "/home/user")).toBe(
       join("/cache", "agenthawk"),
+    );
+    expect(defaultCacheRoot({ XDG_CACHE_HOME: "relative" }, "linux", "/home/user")).toBe(
+      join("/home/user", ".cache", "agenthawk"),
+    );
+    expect(defaultCacheRoot({ LOCALAPPDATA: "relative" }, "win32", "C:\\Home")).toBe(
+      join("C:\\Home", "AppData", "Local", "AgentHawk", "Cache"),
     );
     expect(defaultCacheRoot({}, "linux", "/home/user")).toBe(
       join("/home/user", ".cache", "agenthawk"),

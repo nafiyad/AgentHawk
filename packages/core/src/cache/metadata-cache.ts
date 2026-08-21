@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { type FileHandle, mkdir, open, rename, rm } from "node:fs/promises";
+import { type FileHandle, lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, posix, win32 } from "node:path";
 import { z } from "zod";
 import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
@@ -25,6 +25,7 @@ export type CacheProvider = "npm" | "osv";
 export type CacheReadResult<T> =
   | { status: "missing" | "corrupt" }
   | { status: "fresh" | "stale"; storedAt: string; expiresAt: string; value: T };
+export type CacheProbeState = "writable" | "unwritable" | "unsafe";
 
 export interface MetadataCacheOptions {
   maximumBytes?: number;
@@ -171,6 +172,47 @@ export class MetadataCache {
     }
   }
 
+  async probeWritable(): Promise<CacheProbeState> {
+    if (!isAbsolute(this.#root)) return "unsafe";
+    const probe = join(this.#root, `.doctor-${randomUUID()}.tmp`);
+    let created = false;
+    let state: CacheProbeState = "unwritable";
+    try {
+      try {
+        await mkdir(this.#root, { mode: 0o700, recursive: true });
+      } catch {
+        const existing = await lstat(this.#root).catch(() => undefined);
+        return existing && (existing.isSymbolicLink() || !existing.isDirectory())
+          ? "unsafe"
+          : "unwritable";
+      }
+      const rootStats = await lstat(this.#root);
+      if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) return "unsafe";
+      const handle = await open(
+        probe,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+        0o600,
+      );
+      created = true;
+      try {
+        await handle.writeFile("agenthawk-doctor\n", "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      state = "writable";
+    } catch {
+      state = "unwritable";
+    }
+    if (!created) return state;
+    try {
+      await rm(probe);
+    } catch {
+      return "unsafe";
+    }
+    return state;
+  }
+
   #path(keyDigest: string): string {
     return join(this.#root, `${keyDigest.slice(7)}.json`);
   }
@@ -186,12 +228,12 @@ export function defaultCacheRoot(
   userHome: string = homedir(),
 ): string {
   if (operatingSystem === "win32") {
-    return environment.LOCALAPPDATA
+    return environment.LOCALAPPDATA && win32.isAbsolute(environment.LOCALAPPDATA)
       ? join(environment.LOCALAPPDATA, "AgentHawk", "Cache")
       : join(userHome, "AppData", "Local", "AgentHawk", "Cache");
   }
   if (operatingSystem === "darwin") return join(userHome, "Library", "Caches", "AgentHawk");
-  return environment.XDG_CACHE_HOME
+  return environment.XDG_CACHE_HOME && posix.isAbsolute(environment.XDG_CACHE_HOME)
     ? join(environment.XDG_CACHE_HOME, "agenthawk")
     : join(userHome, ".cache", "agenthawk");
 }
