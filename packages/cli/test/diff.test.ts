@@ -6,10 +6,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { diffDependencies, inventoryDependencies, parseManifest } from "../src/diff.js";
 
 const roots: string[] = [];
+const gitIntegrationTimeoutMs = 20_000;
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
-});
+  await Promise.all(
+    roots
+      .splice(0)
+      .map((root) => rm(root, { force: true, maxRetries: 5, recursive: true, retryDelay: 100 })),
+  );
+}, gitIntegrationTimeoutMs);
 
 async function repository(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "agenthawk-diff-"));
@@ -31,7 +36,7 @@ async function repository(): Promise<string> {
   return root;
 }
 
-describe("scanDependencies", () => {
+describe("scanDependencies", { timeout: gitIntegrationTimeoutMs }, () => {
   it("lists only direct dependencies and does not execute manifest scripts", async () => {
     const root = await repository();
     const result = await inventoryDependencies({ cwd: root, format: "json" });
@@ -69,7 +74,7 @@ describe("scanDependencies", () => {
   );
 });
 
-describe("diffDependencies", () => {
+describe("diffDependencies", { timeout: gitIntegrationTimeoutMs }, () => {
   it("reports additions and PG014 when a direct dependency changes without a lockfile update", async () => {
     const root = await repository();
     await writeFile(
