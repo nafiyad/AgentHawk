@@ -97,7 +97,10 @@ export function validateReleaseManifest({ manifest, specification, packed = fals
   assert(manifest.version === releaseVersion, `${specification.name} version is inconsistent`);
   assert(manifest.private === undefined, `${specification.name} must not carry private metadata`);
   assert(manifest.license === "Apache-2.0", `${specification.name} license is inconsistent`);
-  assert(manifest.engines?.node === ">=20", `${specification.name} Node engine is inconsistent`);
+  assert(
+    manifest.engines?.node === "^22.0.0 || ^24.0.0",
+    `${specification.name} Node engine is inconsistent`,
+  );
   assert(
     manifest.homepage === "https://github.com/nafiyad/AgentHawk#readme",
     `${specification.name} homepage is inconsistent`,

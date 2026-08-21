@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/nafiyad/AgentHawk/actions/workflows/quality.yml"><img src="https://github.com/nafiyad/AgentHawk/actions/workflows/quality.yml/badge.svg" alt="Quality status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="Apache 2.0 license"></a>
-  <img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=nodedotjs&logoColor=white" alt="Node.js 20 or newer">
+  <img src="https://img.shields.io/badge/Node.js-22%20%7C%2024-339933?logo=nodedotjs&logoColor=white" alt="Node.js 22 or 24 LTS">
   <img src="https://img.shields.io/badge/posture-local--first-9cff00" alt="Local-first posture">
 </p>
 
@@ -90,7 +90,7 @@ pnpm build
 pnpm agenthawk --help
 ```
 
-Node.js 20 or newer and pnpm 10 are required.
+Node.js 22 or 24 LTS and pnpm 10 are required. See the [support matrix](docs/support-matrix.md) for the distinction between declared compatibility, CI evidence, and deferred platforms.
 
 ## Product roadmap
 
