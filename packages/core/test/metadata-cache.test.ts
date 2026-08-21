@@ -1,4 +1,14 @@
-import { lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,7 +20,7 @@ afterEach(async () => {
 });
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), "agenthawk-cache-"));
+  const value = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-"));
   roots.push(value);
   return value;
 }
