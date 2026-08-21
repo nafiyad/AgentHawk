@@ -97,13 +97,15 @@ describe("init", () => {
   it("detects target identity replacement during exact-byte inspection", async () => {
     const cwd = await repository();
     const path = join(cwd, ".agenthawk.yml");
+    const replacement = join(cwd, "replacement-policy.yml");
     await writeFile(path, INIT_POLICY, "utf8");
+    await writeFile(replacement, INIT_POLICY, "utf8");
     const result = await initializeRepository(
       { format: "json", integration: "none" },
       {
         afterTargetInspect: async (_target, inspectedPath) => {
           await unlink(inspectedPath);
-          await writeFile(inspectedPath, INIT_POLICY, "utf8");
+          await link(replacement, inspectedPath);
         },
         cwd,
       },

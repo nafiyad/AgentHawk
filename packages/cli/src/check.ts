@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Stats } from "node:fs";
-import { type FileHandle, lstat, open } from "node:fs/promises";
+import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { join, parse, resolve, sep } from "node:path";
 import {
   AGENTHAWK_VERSION,
@@ -73,7 +73,12 @@ export async function checkNpmPackage(
     const policyDocument = options.policyPath
       ? await (dependencies.readPolicy ?? readPolicyFile)(options.policyPath)
       : await (dependencies.readPolicy ?? readOptionalPolicyFile)(
-          join(options.cwd ?? process.cwd(), ".agenthawk.yml"),
+          join(
+            dependencies.readPolicy
+              ? (options.cwd ?? process.cwd())
+              : await canonicalPolicyRoot(options.cwd ?? process.cwd()),
+            ".agenthawk.yml",
+          ),
         );
     const baseConfig = agentHawkConfigSchema.parse(policyDocument ?? { version: 1 });
     const config = options.strict
@@ -334,6 +339,14 @@ export async function readPolicyFile(
   const document = await readYamlFile(path, true, openFile, inspectPath, "Policy");
   if (document === undefined) throw new PolicyInputError("Policy file could not be read.");
   return document;
+}
+
+async function canonicalPolicyRoot(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    throw new PolicyInputError("Policy root could not be resolved.");
+  }
 }
 
 export async function readOptionalPolicyFile(

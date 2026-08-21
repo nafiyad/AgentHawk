@@ -104,7 +104,7 @@ async function verifyPackedReleaseArtifacts() {
       manifest.packages.every(({ version }) => version === releaseVersion),
       "Release artifact versions are inconsistent",
     );
-    await verifyPackedInit(outputDirectory, manifest);
+    await verifyPackedInit(outputDirectory, manifest, pnpmCli);
     process.stdout.write(
       "Verified release:prepare invocation, packed manifests, exact workspace rewrite, and packed init.\n",
     );
@@ -113,32 +113,35 @@ async function verifyPackedReleaseArtifacts() {
   }
 }
 
-async function verifyPackedInit(outputDirectory, manifest) {
+async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
   const consumerDirectory = await mkdtemp(join(tmpdir(), "agenthawk-packed-consumer-"));
   try {
-    await writeFile(
-      join(consumerDirectory, "package.json"),
-      `${JSON.stringify({ name: "agenthawk-packed-consumer", private: true, version: "0.0.0" })}\n`,
-      { encoding: "utf8", flag: "wx" },
-    );
     const coreArchive = manifest.packages.find(({ name }) => name === "@agenthawk/core");
     const cliArchive = manifest.packages.find(({ name }) => name === "@agenthawk/cli");
     assert(
       coreArchive !== undefined && cliArchive !== undefined,
       "Release packages are incomplete",
     );
+    const coreSpecifier = `file:${join(outputDirectory, coreArchive.file).replaceAll("\\", "/")}`;
+    const cliSpecifier = `file:${join(outputDirectory, cliArchive.file).replaceAll("\\", "/")}`;
+    await writeFile(
+      join(consumerDirectory, "package.json"),
+      `${JSON.stringify({
+        dependencies: { "@agenthawk/cli": cliSpecifier, "@agenthawk/core": coreSpecifier },
+        name: "agenthawk-packed-consumer",
+        private: true,
+        version: "0.0.0",
+      })}\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+    await writeFile(
+      join(consumerDirectory, "pnpm-workspace.yaml"),
+      `packages: []\noverrides:\n  '@agenthawk/core': '${coreSpecifier}'\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
     await execute(
       process.execPath,
-      [
-        npmCli,
-        "install",
-        join(outputDirectory, coreArchive.file),
-        join(outputDirectory, cliArchive.file),
-        "--ignore-scripts",
-        "--offline",
-        "--no-audit",
-        "--no-fund",
-      ],
+      [pnpmCli, "install", "--ignore-scripts", "--offline", "--reporter=append-only"],
       {
         cwd: consumerDirectory,
         encoding: "utf8",
