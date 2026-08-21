@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { policyValidationReportSchema } from "@agenthawk/core";
@@ -68,7 +68,7 @@ describe("policy validate", () => {
   });
 
   it("loads a valid policy at the exact 256 KiB boundary", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-validate-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-policy-validate-"));
     try {
       const path = join(directory, "policy.yml");
       const prefix = "version: 1\n#";
@@ -89,7 +89,7 @@ describe("policy validate", () => {
     ["invalid UTF-8", Buffer.from([0xff, 0xfe])],
     ["oversized content", Buffer.alloc(256 * 1_024 + 1, 0x20)],
   ])("rejects hostile policy boundary input: %s", async (_label, contents) => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-validate-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-policy-validate-"));
     try {
       const path = join(directory, "policy.yml");
       await writeFile(path, contents);
@@ -108,7 +108,7 @@ describe("policy validate", () => {
   });
 
   it("rejects missing and non-regular policy paths", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-validate-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-policy-validate-"));
     try {
       const missing = await validatePolicyFile(join(directory, "missing.yml"), { format: "json" });
       const nonRegular = await validatePolicyFile(directory, { format: "json" });

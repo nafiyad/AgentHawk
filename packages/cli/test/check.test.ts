@@ -1,5 +1,5 @@
 import type { FileHandle } from "node:fs/promises";
-import { type lstat, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { type lstat, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { MetadataCache, type NpmProviderResult } from "@agenthawk/core";
@@ -303,7 +303,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("reuses fresh npm and OSV cache entries offline without network access", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-cli-"));
     try {
       const cache = new MetadataCache({ root: directory, now: () => now });
       await checkNpmPackage(
@@ -349,7 +349,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("never lets an approval resolve unauthenticated offline cache evidence", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-cli-"));
     try {
       const cache = new MetadataCache({ root: directory, now: () => now });
       await checkNpmPackage(
@@ -390,7 +390,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("never persists credential-bearing metadata URLs", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-cli-"));
     try {
       const cache = new MetadataCache({ root: directory, now: () => now });
       await checkNpmPackage(
@@ -421,7 +421,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("ignores even schema-valid cached evidence during online evaluation", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-cli-"));
     try {
       const cache = new MetadataCache({ root: directory, now: () => now });
       await checkNpmPackage(
@@ -463,7 +463,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("fail-closes stale offline evidence and reports the provider as stale", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-cli-"));
     let clock = now;
     try {
       const cache = new MetadataCache({ root: directory, now: () => clock });
@@ -499,7 +499,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("fail-closes stale OSV evidence while npm cache remains fresh", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-cli-"));
     let clock = now;
     try {
       const cache = new MetadataCache({ root: directory, now: () => clock });
@@ -543,7 +543,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("--no-cache performs live checks without reading or writing cache files", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-cli-"));
     try {
       const cache = new MetadataCache({ root: directory, now: () => now });
       const result = await checkNpmPackage(
@@ -564,7 +564,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("fail-closes an offline cache miss and rejects offline with no-cache", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-cache-cli-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-cache-cli-"));
     try {
       const cache = new MetadataCache({ root: directory, now: () => now });
       const missing = await checkNpmPackage(
@@ -587,7 +587,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("loads valid policy files at the exact size limit", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-policy-"));
     try {
       const path = join(directory, "policy.yml");
       const prefix = "version: 1\n#";
@@ -609,7 +609,7 @@ describe("checkNpmPackage", () => {
     ["invalid UTF-8", Buffer.from([0xff, 0xfe])],
     ["oversized content", Buffer.alloc(256 * 1_024 + 1, 0x20)],
   ])("rejects policy file boundary violation: %s", async (_label, contents) => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-policy-"));
     try {
       const path = join(directory, "policy.yml");
       await writeFile(path, contents);
@@ -625,7 +625,7 @@ describe("checkNpmPackage", () => {
   });
 
   it("rejects a directory used as a policy file", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-policy-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-policy-"));
     try {
       const result = await checkNpmPackage("example-package", {
         format: "json",
@@ -829,7 +829,7 @@ describe("checkNpmPackage", () => {
     ["duplicate keys", "version: 1\napprovals: []\napprovals: []\n"],
     ["aliases", "version: 1\napprovals: &items []\ncopy: *items\n"],
   ])("rejects hostile approval YAML: %s", async (_label, source) => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-approval-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-approval-"));
     try {
       const path = join(directory, "approvals.yml");
       await writeFile(path, source, "utf8");

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { approvalValidationReportSchema } from "@agenthawk/core";
@@ -119,7 +119,7 @@ describe("approvals verify", () => {
   });
 
   it("loads the exact 256 KiB boundary and rejects hostile file input", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-approvals-verify-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-approvals-verify-"));
     try {
       const exact = join(directory, "exact.yml");
       const prefix = "version: 1\napprovals: []\n#";
@@ -146,7 +146,7 @@ describe("approvals verify", () => {
   });
 
   it("rejects final and parent symlinks plus missing and non-regular paths", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "agenthawk-approvals-link-"));
+    const directory = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-approvals-link-"));
     try {
       const realDirectory = join(directory, "real");
       const target = join(directory, "target.yml");
