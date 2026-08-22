@@ -9,6 +9,7 @@ export default defineConfig({
         "packages/cli/src/doctor.ts",
         "packages/cli/src/init-content.ts",
         "packages/cli/src/init.ts",
+        "packages/cli/src/repository-authority.ts",
       ],
       reporter: ["text", "json-summary"],
       thresholds: {

@@ -73,6 +73,8 @@ export const packageSpecifications = [
       "dist/policy.js",
       "dist/program.d.ts",
       "dist/program.js",
+      "dist/repository-authority.d.ts",
+      "dist/repository-authority.js",
       "dist/runner.d.ts",
       "dist/runner.js",
       "dist/scan.d.ts",
