@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -172,9 +172,11 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       "dist",
       "index.js",
     );
+    const initDirectory = join(consumerDirectory, "clean-project");
+    await mkdir(initDirectory);
     const initArguments = [cliEntrypoint, "init", "--integration", "cursor", "--format", "json"];
     const initialized = await execute(process.execPath, initArguments, {
-      cwd: consumerDirectory,
+      cwd: initDirectory,
       encoding: "utf8",
       maxBuffer: 65_536,
       timeout: 10_000,
@@ -186,7 +188,7 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       "Packed CLI init creation smoke failed",
     );
     const repeated = await execute(process.execPath, initArguments, {
-      cwd: consumerDirectory,
+      cwd: initDirectory,
       encoding: "utf8",
       maxBuffer: 65_536,
       timeout: 10_000,
@@ -201,7 +203,7 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       process.execPath,
       [cliEntrypoint, "policy", "validate", "--file", ".agenthawk.yml", "--format", "json"],
       {
-        cwd: consumerDirectory,
+        cwd: initDirectory,
         encoding: "utf8",
         maxBuffer: 65_536,
         timeout: 10_000,
