@@ -29,7 +29,7 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |
 | GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
-| Native pre-action hooks | Deferred to Milestone 17 |
+| Native pre-action hooks | Milestone 17 threat model and ADR complete; no adapter implemented or supported yet |
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 

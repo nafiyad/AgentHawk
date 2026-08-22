@@ -1,6 +1,6 @@
 # AgentHawk product roadmap
 
-Research snapshot: 2026-08-20 UTC
+Research snapshot: 2026-08-21 UTC
 
 AgentHawk's first public alpha established a narrow, deterministic npm dependency-admission control. This roadmap defines the next product phases required to turn that foundation into an agent-native security gateway without weakening its local-first, evidence-backed security model.
 
@@ -398,4 +398,4 @@ The following are not promised phases: hosted dashboards, user accounts, organiz
 
 ## Immediate next action
 
-Milestone 16 is complete: policy and approval validation, the explicit Node 22/24 six-platform support matrix, bounded offline Doctor diagnostics, and collision-safe initialization are implemented with strict contracts and package-consumer verification. The next slice is Milestone 17 research: define the native-hook authority, bypass, timeout, payload, working-directory, and fail-closed boundaries in a reviewed threat-model extension and ADR before implementing an adapter.
+Milestone 16 is complete: policy and approval validation, the explicit Node 22/24 six-platform support matrix, bounded offline Doctor diagnostics, and collision-safe initialization are implemented with strict contracts and package-consumer verification. Milestone 17's research gate is complete in [ADR 0012](adr/0012-native-hook-enforcement-boundary.md): host authority, deployment trust, bypasses, timeout/failure behavior, payload bounds, repository identity, neutral success, and no-auto-approve semantics are defined. The next slice is the strict vendor-neutral action/decision contracts and pure npm/pnpm command qualifier; no vendor adapter begins before that contract passes its adversarial corpus.
