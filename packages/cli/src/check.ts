@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Stats } from "node:fs";
-import { type FileHandle, lstat, open } from "node:fs/promises";
+import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { join, parse, resolve, sep } from "node:path";
 import {
   AGENTHAWK_VERSION,
@@ -35,6 +35,7 @@ export type OutputFormat = "json" | "terminal";
 
 export interface CheckOptions {
   approvalsPath?: string;
+  cwd?: string;
   existingDependencies?: readonly string[];
   format: OutputFormat;
   noCache?: boolean;
@@ -69,11 +70,17 @@ export async function checkNpmPackage(
     }
     const spec = parseNpmSpec(rawSpec);
     const now = (dependencies.now ?? (() => new Date()))();
-    const baseConfig = options.policyPath
-      ? agentHawkConfigSchema.parse(
-          await (dependencies.readPolicy ?? readPolicyFile)(options.policyPath),
-        )
-      : agentHawkConfigSchema.parse({ version: 1 });
+    const policyDocument = options.policyPath
+      ? await (dependencies.readPolicy ?? readPolicyFile)(options.policyPath)
+      : await (dependencies.readPolicy ?? readOptionalPolicyFile)(
+          join(
+            dependencies.readPolicy
+              ? (options.cwd ?? process.cwd())
+              : await canonicalPolicyRoot(options.cwd ?? process.cwd()),
+            ".agenthawk.yml",
+          ),
+        );
+    const baseConfig = agentHawkConfigSchema.parse(policyDocument ?? { version: 1 });
     const config = options.strict
       ? agentHawkConfigSchema.parse({ ...baseConfig, mode: "strict" })
       : baseConfig;
@@ -332,6 +339,14 @@ export async function readPolicyFile(
   const document = await readYamlFile(path, true, openFile, inspectPath, "Policy");
   if (document === undefined) throw new PolicyInputError("Policy file could not be read.");
   return document;
+}
+
+async function canonicalPolicyRoot(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    throw new PolicyInputError("Policy root could not be resolved.");
+  }
 }
 
 export async function readOptionalPolicyFile(

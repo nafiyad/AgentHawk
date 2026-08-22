@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -104,10 +105,152 @@ async function verifyPackedReleaseArtifacts() {
       manifest.packages.every(({ version }) => version === releaseVersion),
       "Release artifact versions are inconsistent",
     );
+    await verifyPackedInit(outputDirectory, manifest, pnpmCli);
     process.stdout.write(
-      "Verified release:prepare invocation, packed manifests, and exact workspace rewrite.\n",
+      "Verified release:prepare invocation, packed manifests, exact workspace rewrite, and packed init.\n",
     );
   } finally {
     await rm(outputDirectory, { force: true, recursive: true });
   }
+}
+
+async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
+  const consumerDirectory = await mkdtemp(join(tmpdir(), "agenthawk-packed-consumer-"));
+  try {
+    const coreArchive = manifest.packages.find(({ name }) => name === "@agenthawk/core");
+    const cliArchive = manifest.packages.find(({ name }) => name === "@agenthawk/cli");
+    assert(
+      coreArchive !== undefined && cliArchive !== undefined,
+      "Release packages are incomplete",
+    );
+    const coreSpecifier = `file:${join(outputDirectory, coreArchive.file).replaceAll("\\", "/")}`;
+    const cliSpecifier = `file:${join(outputDirectory, cliArchive.file).replaceAll("\\", "/")}`;
+    const runtimeSpecifiers = await installedRuntimeSpecifiers();
+    const dependencies = {
+      "@agenthawk/cli": cliSpecifier,
+      "@agenthawk/core": coreSpecifier,
+      ...runtimeSpecifiers,
+    };
+    await writeFile(
+      join(consumerDirectory, "package.json"),
+      `${JSON.stringify({
+        dependencies,
+        name: "agenthawk-packed-consumer",
+        private: true,
+        version: "0.0.0",
+      })}\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+    await writeFile(
+      join(consumerDirectory, "pnpm-workspace.yaml"),
+      `${[
+        "packages: []",
+        "overrides:",
+        ...Object.entries({ "@agenthawk/core": coreSpecifier, ...runtimeSpecifiers }).map(
+          ([name, specifier]) => `  '${name}': '${specifier}'`,
+        ),
+        "",
+      ].join("\n")}`,
+      { encoding: "utf8", flag: "wx" },
+    );
+    await execute(
+      process.execPath,
+      [pnpmCli, "install", "--ignore-scripts", "--offline", "--reporter=append-only"],
+      {
+        cwd: consumerDirectory,
+        encoding: "utf8",
+        maxBuffer: 1_048_576,
+        timeout: 30_000,
+        windowsHide: true,
+      },
+    );
+    const cliEntrypoint = join(
+      consumerDirectory,
+      "node_modules",
+      "@agenthawk",
+      "cli",
+      "dist",
+      "index.js",
+    );
+    const initDirectory = join(consumerDirectory, "clean-project");
+    await mkdir(initDirectory);
+    const initArguments = [cliEntrypoint, "init", "--integration", "cursor", "--format", "json"];
+    const initialized = await execute(process.execPath, initArguments, {
+      cwd: initDirectory,
+      encoding: "utf8",
+      maxBuffer: 65_536,
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    assert(
+      JSON.stringify(JSON.parse(initialized.stdout).created) ===
+        JSON.stringify(["policy", "cursor"]),
+      "Packed CLI init creation smoke failed",
+    );
+    const repeated = await execute(process.execPath, initArguments, {
+      cwd: initDirectory,
+      encoding: "utf8",
+      maxBuffer: 65_536,
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    assert(
+      JSON.stringify(JSON.parse(repeated.stdout).unchanged) ===
+        JSON.stringify(["policy", "cursor"]),
+      "Packed CLI init idempotency smoke failed",
+    );
+    const validated = await execute(
+      process.execPath,
+      [cliEntrypoint, "policy", "validate", "--file", ".agenthawk.yml", "--format", "json"],
+      {
+        cwd: initDirectory,
+        encoding: "utf8",
+        maxBuffer: 65_536,
+        timeout: 10_000,
+        windowsHide: true,
+      },
+    );
+    assert(JSON.parse(validated.stdout).valid === true, "Packed initialized policy is invalid");
+  } finally {
+    await rm(consumerDirectory, { force: true, recursive: true });
+  }
+}
+
+async function installedRuntimeSpecifiers() {
+  const packages = [
+    { directory: "packages/cli", names: ["commander", "yaml"] },
+    { directory: "packages/core", names: ["semver", "zod"] },
+  ];
+  const specifiers = {};
+  for (const { directory, names } of packages) {
+    const manifest = JSON.parse(await readFile(join(root, directory, "package.json"), "utf8"));
+    const require = createRequire(join(root, directory, "package.json"));
+    for (const name of names) {
+      const expectedVersion = manifest.dependencies[name];
+      assert(typeof expectedVersion === "string", `Runtime dependency ${name} is undeclared`);
+      let current = dirname(require.resolve(name));
+      let matched;
+      for (let depth = 0; depth < 8; depth += 1) {
+        try {
+          const installedManifest = JSON.parse(
+            await readFile(join(current, "package.json"), "utf8"),
+          );
+          if (installedManifest.name === name) {
+            assert(
+              installedManifest.version === expectedVersion,
+              `Runtime dependency ${name} version is inconsistent`,
+            );
+            matched = current;
+            break;
+          }
+        } catch {}
+        const parent = dirname(current);
+        if (parent === current) break;
+        current = parent;
+      }
+      assert(matched !== undefined, `Runtime dependency ${name} could not be located`);
+      specifiers[name] = `link:${matched.replaceAll("\\", "/")}`;
+    }
+  }
+  return specifiers;
 }

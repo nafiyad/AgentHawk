@@ -61,6 +61,8 @@ agenthawk --version
 
 Use `@alpha` or the exact `0.1.0-alpha.1` version in automation. npm requires every package to have a `latest` tag, so the first public alpha is also the current default install even though it remains prerelease software.
 
+The currently published `0.1.0-alpha.1` package does not include `agenthawk init`. Initialization is implemented in this source revision and will be available only in a package version released from it; use `agenthawk --help` to verify the commands present in an installed version.
+
 ## Check a proposed dependency
 
 AgentHawk evaluates metadata only; it does not install the package.
@@ -68,15 +70,19 @@ AgentHawk evaluates metadata only; it does not install the package.
 ```bash
 pnpm agenthawk check npm example-package@1.0.0
 pnpm agenthawk check npm example-package@1.0.0 --strict --format json
-pnpm agenthawk check npm example-package@1.0.0 --policy .agenthawk/policy.yml
+pnpm agenthawk check npm example-package@1.0.0 --policy .agenthawk.yml
 pnpm agenthawk check npm example-package@1.0.0 --offline
 pnpm agenthawk check npm example-package@1.0.0 --no-cache
 pnpm agenthawk policy validate --file .agenthawk.yml --format json
 pnpm agenthawk approvals verify --file .agenthawk/approvals.yml --format json
 pnpm agenthawk doctor --format json
+# Available from this source revision; not in the published 0.1.0-alpha.1 package.
+pnpm agenthawk init --integration none --format json
 pnpm agenthawk scan --format json
 pnpm agenthawk diff --base origin/main --strict --format json
 ```
+
+`init` creates a deterministic root `.agenthawk.yml` and at most one selected advisory template without overwriting different content. Existing instruction files must be merged manually. See [initialization and recovery](docs/initialization.md).
 
 Exit codes are `0` for allowed/non-strict or ready diagnostic results, `1` for strict review/block findings or diagnostic attention, `2` for invalid input or policy, `3` for required provider/evaluation failure, and `4` for unexpected internal failure.
 

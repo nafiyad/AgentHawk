@@ -4,6 +4,7 @@ import {
   cliErrorReportSchema,
   diffReportSchema,
   doctorReportSchema,
+  initReportSchema,
   inventoryReportSchema,
   policyValidationReportSchema,
   scanReportSchema,
@@ -70,6 +71,32 @@ describe("CLI JSON contract", () => {
     expect(
       policyValidationReportSchema.safeParse({ ...report, toolVersion: "x".repeat(129) }).success,
     ).toBe(false);
+  });
+
+  it("binds initialization reports to exact deterministic targets", () => {
+    const report = {
+      schemaVersion: "1.0",
+      toolVersion: "0.1.0-alpha.1",
+      command: "init",
+      initialized: true,
+      integration: "cursor",
+      policyVersion: 1,
+      templateVersion: 1,
+      created: ["policy", "cursor"],
+      unchanged: [],
+      providersContacted: false,
+    };
+    expect(initReportSchema.parse(report)).toEqual(report);
+    expect(initReportSchema.safeParse({ ...report, created: ["cursor", "policy"] }).success).toBe(
+      false,
+    );
+    expect(
+      initReportSchema.safeParse({ ...report, created: ["policy"], unchanged: ["policy"] }).success,
+    ).toBe(false);
+    expect(initReportSchema.safeParse({ ...report, created: ["policy"] }).success).toBe(false);
+    expect(initReportSchema.safeParse({ ...report, integration: "github" }).success).toBe(false);
+    expect(initReportSchema.safeParse({ ...report, path: "C:/private" }).success).toBe(false);
+    expect(initReportSchema.safeParse({ ...report, providersContacted: true }).success).toBe(false);
   });
 
   it("strictly validates bounded approval-verification reports and count consistency", () => {

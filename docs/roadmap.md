@@ -398,4 +398,4 @@ The following are not promised phases: hosted dashboards, user accounts, organiz
 
 ## Immediate next action
 
-Milestone 16 is active. `policy validate`, `approvals verify`, and the explicit Node 22/24 six-platform support matrix are complete. The current slice adds bounded offline `doctor` diagnostics; collision-safe `init` follows as the final operator-foundation slice before Milestone 17 installs native hooks.
+Milestone 16 is complete: policy and approval validation, the explicit Node 22/24 six-platform support matrix, bounded offline Doctor diagnostics, and collision-safe initialization are implemented with strict contracts and package-consumer verification. The next slice is Milestone 17 research: define the native-hook authority, bypass, timeout, payload, working-directory, and fail-closed boundaries in a reviewed threat-model extension and ADR before implementing an adapter.

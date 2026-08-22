@@ -5,6 +5,57 @@ import { describe, expect, it } from "vitest";
 import { scanDependencies } from "../src/scan.js";
 
 describe("scanDependencies", () => {
+  it("applies the canonical policy from the scanned repository", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
+    try {
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({ dependencies: { alpha: "1.0.0" } }),
+      );
+      await writeFile(
+        join(root, ".agenthawk.yml"),
+        [
+          "version: 1",
+          "rules:",
+          "  lifecycleScripts:",
+          "    action: allow",
+          "    scripts: [preinstall, install, postinstall, prepack, prepare]",
+          "",
+        ].join("\n"),
+      );
+      const result = await scanDependencies(
+        { cwd: root, format: "json", noCache: true, strict: true },
+        {
+          getPackage: async (name, requestedSpec) => ({
+            data: {
+              lifecycleScripts: ["postinstall"],
+              name,
+              packagePublishedAt: "2020-01-01T00:00:00.000Z",
+              releasePublishedAt: "2025-01-01T00:00:00.000Z",
+              repositoryUrl: "https://github.com/example/project",
+              requestedSpec,
+              resolvedVersion: requestedSpec,
+            },
+            fetchedAt: "2026-08-19T17:59:00.000Z",
+            ok: true,
+            status: "ok",
+          }),
+          now: () => new Date("2026-08-19T18:00:00.000Z"),
+          queryOsv: async () => ({
+            fetchedAt: "2026-08-19T17:59:00.000Z",
+            ok: true,
+            records: [],
+            status: "ok",
+          }),
+        },
+      );
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.output).verdict).toBe("allow");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("aggregates deterministic checks for every direct dependency and preserves sections", async () => {
     const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
     try {
