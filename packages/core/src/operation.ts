@@ -22,8 +22,8 @@ export class DeadlineExceededError extends OperationCancelledError {
 }
 
 export function cancellationError(signal: AbortSignal): OperationCancelledError {
-  return signal.reason instanceof OperationCancelledError
-    ? signal.reason
+  return signal.reason instanceof DeadlineExceededError
+    ? new DeadlineExceededError()
     : new OperationCancelledError();
 }
 

@@ -72,6 +72,7 @@ export async function inventoryDependencies(options: ScanOptions): Promise<DiffR
     });
     return { exitCode: 0, output: render(report, options.format) };
   } catch (error) {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isOperationCancelled(error)) throw error;
     return inputFailure(error, options.format);
   }
@@ -82,6 +83,7 @@ export async function diffDependencies(
   dependencies: DiffDependencies = {},
 ): Promise<DiffResult> {
   try {
+    throwIfCancelled({ signal: options.signal });
     validateBase(options.base);
     const cwd = resolve(options.cwd ?? process.cwd());
     const git = dependencies.git ?? defaultGitRunner;
@@ -114,6 +116,7 @@ export async function diffDependencies(
         { signal: options.signal },
       ),
     ]);
+    throwIfCancelled({ signal: options.signal });
     const cancellation = operations.find(
       (operation): operation is PromiseRejectedResult =>
         operation.status === "rejected" && isOperationCancelled(operation.reason),
@@ -165,6 +168,7 @@ export async function diffDependencies(
       output: render(report, options.format),
     };
   } catch (error) {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isOperationCancelled(error)) throw error;
     return inputFailure(error, options.format);
   }

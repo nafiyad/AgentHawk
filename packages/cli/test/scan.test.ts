@@ -24,6 +24,21 @@ describe("scanDependencies", () => {
     ).rejects.toBeInstanceOf(OperationCancelledError);
     expect(inventoried).toBe(false);
   });
+
+  it("maps an inventory exception after signal abort to typed cancellation", async () => {
+    const controller = new AbortController();
+    await expect(
+      scanDependencies(
+        { format: "json", noCache: true, signal: controller.signal, strict: true },
+        {
+          inventory: async () => {
+            controller.abort(new Error("untrusted"));
+            throw new Error("ordinary inventory failure");
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+  });
   it("waits for every started check to settle before returning a failure", async () => {
     let releaseSecond: (() => void) | undefined;
     let returned = false;
@@ -79,6 +94,37 @@ describe("scanDependencies", () => {
           }),
           checkPackage: async (spec) => {
             if (spec.startsWith("beta")) throw new OperationCancelledError();
+            return { exitCode: 4, output: "{}" };
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+  });
+
+  it("rechecks the shared signal after every sibling settles", async () => {
+    const controller = new AbortController();
+    await expect(
+      scanDependencies(
+        {
+          format: "json",
+          noCache: true,
+          signal: controller.signal,
+          strict: true,
+        },
+        {
+          inventory: async () => ({
+            exitCode: 0,
+            output: `${JSON.stringify({
+              schemaVersion: "1.0",
+              manifest: "package.json",
+              dependencies: [
+                { name: "alpha", requestedSpec: "1.0.0", section: "dependencies" },
+                { name: "beta", requestedSpec: "1.0.0", section: "dependencies" },
+              ],
+            })}\n`,
+          }),
+          checkPackage: async (spec) => {
+            if (spec.startsWith("alpha")) controller.abort(new Error("untrusted"));
             return { exitCode: 4, output: "{}" };
           },
         },

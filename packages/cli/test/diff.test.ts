@@ -27,11 +27,28 @@ it("does not downgrade a pre-cancelled dependency diff", async () => {
   controller.abort();
   await expect(
     diffDependencies({
-      base: "main",
+      base: "bad\nbase",
       format: "json",
       signal: controller.signal,
       strict: true,
     }),
+  ).rejects.toBeInstanceOf(OperationCancelledError);
+});
+
+it("maps a Git exception after signal abort to typed cancellation", async () => {
+  const controller = new AbortController();
+  await expect(
+    diffDependencies(
+      { base: "main", format: "json", signal: controller.signal, strict: true },
+      {
+        git: {
+          run: async () => {
+            controller.abort(new Error("untrusted"));
+            throw new Error("ordinary Git failure");
+          },
+        },
+      },
+    ),
   ).rejects.toBeInstanceOf(OperationCancelledError);
 });
 

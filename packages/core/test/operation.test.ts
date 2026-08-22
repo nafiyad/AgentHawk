@@ -23,9 +23,23 @@ describe("operation cancellation", () => {
     const deadline = new DeadlineExceededError();
     controller.abort(deadline);
 
-    expect(cancellationError(controller.signal)).toBe(deadline);
+    expect(cancellationError(controller.signal)).toBeInstanceOf(DeadlineExceededError);
+    expect(cancellationError(controller.signal)).not.toBe(deadline);
     expect(isOperationCancelled(deadline)).toBe(true);
     expect(deadline.code).toBe("deadline_exceeded");
+  });
+
+  it("reconstructs exported cancellation errors instead of trusting mutable fields", () => {
+    const controller = new AbortController();
+    const hostile = new OperationCancelledError();
+    hostile.message = "secret caller text";
+    Object.assign(hostile, { token: "credential" });
+    controller.abort(hostile);
+
+    const error = cancellationError(controller.signal);
+    expect(error).not.toBe(hostile);
+    expect(error).toEqual(new OperationCancelledError());
+    expect(error).not.toHaveProperty("token");
   });
 
   it("does nothing without cancellation", () => {

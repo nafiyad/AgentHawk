@@ -1,4 +1,5 @@
 import {
+  cancellationError,
   cliErrorReportSchema,
   type EvaluationReport,
   evaluationReportSchema,
@@ -35,6 +36,7 @@ export async function scanDependencies(
   try {
     return await scanDependenciesUnsafe(options, dependencies);
   } catch (error) {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isOperationCancelled(error)) throw error;
     return scanInternalFailure(options.format);
   }
@@ -70,6 +72,7 @@ async function scanDependenciesUnsafe(
       return { report: parsed.data, section: item.section };
     }),
   );
+  throwIfCancelled({ signal: options.signal });
   const cancellation = settledResults.find(
     (result): result is PromiseRejectedResult =>
       result.status === "rejected" && isOperationCancelled(result.reason),

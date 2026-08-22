@@ -50,7 +50,7 @@ describe("checkNpmPackage", () => {
           getPackage: async (_name, _spec, options) => {
             expect(options?.signal).toBe(controller.signal);
             controller.abort(new Error("untrusted"));
-            return success();
+            throw new Error("ordinary provider failure after cancellation");
           },
           queryOsv: async () => {
             osvCalled = true;

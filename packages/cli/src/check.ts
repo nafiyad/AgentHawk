@@ -213,6 +213,7 @@ export async function checkNpmPackage(
       output: options.format === "json" ? renderJson(report) : renderTerminal(report),
     };
   } catch (error) {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isOperationCancelled(error)) throw error;
     const invalid = isExpectedInputError(error);
     const exitCode = invalid ? 2 : 4;
