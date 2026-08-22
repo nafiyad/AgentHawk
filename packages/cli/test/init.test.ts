@@ -556,6 +556,21 @@ describe("init", () => {
     });
   });
 
+  it("canonicalizes a root reached through a symbolic ancestor", async () => {
+    const targetParent = await repository();
+    const target = join(targetParent, "project");
+    await mkdir(target);
+    const holder = await repository();
+    const alias = join(holder, "parent-alias");
+    await symlink(targetParent, alias, process.platform === "win32" ? "junction" : "dir");
+    const result = await initializeRepository(
+      { format: "json", integration: "none" },
+      { cwd: join(alias, "project") },
+    );
+    expect(result.exitCode).toBe(0);
+    await expect(readFile(join(target, ".agenthawk.yml"), "utf8")).resolves.toBe(INIT_POLICY);
+  });
+
   it("rejects roots too large for bounded case-collision inspection", async () => {
     const cwd = await repository();
     for (let batch = 0; batch < 17; batch += 1) {

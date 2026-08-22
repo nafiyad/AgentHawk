@@ -257,12 +257,7 @@ async function initializationRoot(input: string): Promise<string> {
   } catch {
     rootStats = undefined;
   }
-  if (
-    !rootStats ||
-    rootStats.isSymbolicLink() ||
-    !rootStats.isDirectory() ||
-    !samePath(resolved, canonical)
-  ) {
+  if (!rootStats || rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
     throw new InitInputError("Initialization root is unsafe.");
   }
   return canonical;
@@ -613,10 +608,6 @@ async function releaseLock(lock: {
 
 function sameIdentity(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino;
-}
-
-function samePath(left: string, right: string): boolean {
-  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
 }
 
 function asciiFold(value: string): string {
