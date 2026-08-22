@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation and validation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, Git diff analysis, GitHub pull-request reporting, agent instruction templates, release-package verification, and npm staging.
+This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation and validation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, Git diff analysis, GitHub pull-request reporting, agent instruction templates, the planned native pre-tool enforcement boundary, release-package verification, and npm staging.
 
 ## Assets
 
@@ -12,12 +12,15 @@ This threat model covers npm request parsing, registry and OSV evidence retrieva
 - the integrity and availability of AgentHawk reports;
 - the distinction between direct evidence and unverified metadata.
 - release artifact integrity and the npm publishing identity.
+- host permission and sandbox authority that AgentHawk must not silently grant or replace.
 
 ## Trust boundaries
 
 Package specifications, registry URLs, registry responses, redirects, HTTP status codes, metadata strings, and repository configuration are untrusted. The npm registry is an evidence source, not a trust authority. AgentHawk's normalized internal model is trusted only after schema validation.
 
 Policy configuration is also untrusted input. Strict schemas reject unknown nested fields, numeric thresholds must be non-negative, and the known-malicious action cannot be weakened below `block`.
+
+No native hook request path is implemented yet. Any future hook payload, declared working directory, raw shell command text, host configuration, deployment-trust label, hook environment, and vendor failure behavior is an untrusted boundary. A project hook is repository-controlled code, not an administrator boundary. A managed label is a bounded declaration, not cryptographic evidence. [ADR 0012](adr/0012-native-hook-enforcement-boundary.md) defines the gates that must pass before AgentHawk accepts a hook request.
 
 ## Abuse cases and mitigations
 
@@ -64,6 +67,22 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 | Bootstrap credentials or artifacts are misused | Permit one interactive 2FA bootstrap only for exact manually dispatched CI artifacts, core before CLI; prohibit automation tokens, rebuilds, and silent procedure changes | The first version lacks OIDC provenance and the maintainer workstation is temporarily trusted |
 | Provenance is overstated | Describe provenance only as source/build linkage and explicitly record the bootstrap version's absence of attestation | Trusted publishing does not prove code is benign; npm and GitHub remain external trust dependencies |
 
+## Planned native-hook threats and required implementation gates
+
+These mitigations are design requirements, not current product behavior. The support matrix remains “no adapter implemented or supported” until every applicable gate is tested.
+
+| Threat | Required implementation gate | Residual risk |
+|---|---|---|
+| Vendor hook payload bypasses the policy engine or smuggles hostile fields | Add a dedicated strict bounded edge schema; translate only validated fields into a versioned internal action; never pass raw vendor objects to policy | Vendor schemas and tool coverage can change between versions |
+| Hook `cwd`, policy, approvals, and manifest resolve from different roots | For the first slice, require canonical action directory to equal the discovered Git worktree root and co-root default configuration; reject nested/workspace-targeted actions | PATH-selected local Git and same-account filesystem races remain in the boundary |
+| Ambiguous shell text is treated as a safely analyzed dependency add | Recognize only a fixture-backed direct npm/pnpm add grammar; classify wrappers, composition, ephemeral execution, and unsupported install-like forms separately and deny them | Dependency operations hidden inside scripts, child processes, manual terminals, or unhooked tools are not intercepted |
+| AgentHawk's allow bypasses host permissions or a warning disappears | Serialize allow as neutral; use a tested visible neutral warning channel or deny warn for review; never emit vendor auto-allow or rewritten input | The host may independently allow the command under its own policy |
+| Hook failure, serializer failure, or timeout becomes an advertised fail-closed control | Propagate one abort/deadline through Git, evaluation, HTTP/retry/pagination, concurrency, and cache writes; prove no AgentHawk-owned post-decision work; add a constant outermost exit-2 emergency denial independent of normal serialization; document vendor timeout behavior and require Cursor `failClosed: true` | A process that cannot start, a host timeout, or a bypassed hook can still proceed; remote provider cancellation is not guaranteed; protected CI remains final |
+| Hook input or diagnostics disclose commands, prompts, paths, transcripts, or credentials | Read only bounded event/tool/command/cwd fields; keep raw commands transient; use fixed redacted reason codes; exclude sensitive fields from reports, digests, stdout, and stderr | The host itself supplies the hook environment and can log outside AgentHawk |
+| Repository or user hook is described as tamper-proof policy | Record `project`, `user`, `managed`, or `unknown` as a non-authoritative deployment declaration and state each tier's limits | A user or repository writer can disable mutable hooks; managed deployment still depends on host and binary integrity |
+
 ## Unsupported claims
 
 A successful provider result does not mean a package is safe, benign, maintained, uncompromised, or free of vulnerabilities. It means the configured registry returned a validated metadata shape for the selected coordinate at evaluation time.
+
+A native hook does not mean AgentHawk intercepts every dependency operation, cannot be bypassed, is tamper-proof, or fails closed on every host failure. It can deny only recognized actions that reach a supported, enabled hook under the documented deployment and host-version boundary.
