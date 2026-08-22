@@ -2,7 +2,7 @@ import type { FileHandle } from "node:fs/promises";
 import { type lstat, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { MetadataCache, type NpmProviderResult } from "@agenthawk/core";
+import { MetadataCache, type NpmProviderResult, OperationCancelledError } from "@agenthawk/core";
 import { describe, expect, it } from "vitest";
 import { checkNpmPackage, readApprovalFile, readPolicyFile } from "../src/check.js";
 
@@ -38,6 +38,29 @@ function emptyOsv() {
 }
 
 describe("checkNpmPackage", () => {
+  it("propagates cancellation and starts no later provider work", async () => {
+    const controller = new AbortController();
+    let osvCalled = false;
+
+    await expect(
+      checkNpmPackage(
+        "example-package@1.0.0",
+        { format: "json", noCache: true, signal: controller.signal, strict: true },
+        {
+          getPackage: async (_name, _spec, options) => {
+            expect(options?.signal).toBe(controller.signal);
+            controller.abort(new Error("untrusted"));
+            throw new Error("ordinary provider failure after cancellation");
+          },
+          queryOsv: async () => {
+            osvCalled = true;
+            throw new Error("must not run");
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(osvCalled).toBe(false);
+  });
   const activeApproval = {
     version: 1,
     approvals: [
@@ -745,7 +768,7 @@ describe("checkNpmPackage", () => {
     }) as typeof lstat;
 
     await expect(
-      readPolicyFile("changing-policy.yml", async () => handle, inspectPath),
+      readPolicyFile("changing-policy.yml", { openFile: async () => handle, inspectPath }),
     ).rejects.toThrow("changed while it was being read");
   });
 
@@ -867,7 +890,7 @@ describe("checkNpmPackage", () => {
       throw missing;
     };
     await expect(readApprovalFile("default.yml", false, opener)).resolves.toBeUndefined();
-    await expect(readApprovalFile("explicit.yml", true, opener)).rejects.toThrow(
+    await expect(readApprovalFile("explicit.yml", true, { openFile: opener })).rejects.toThrow(
       "Approval file could not be read.",
     );
   });

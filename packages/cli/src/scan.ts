@@ -1,9 +1,12 @@
 import {
+  cancellationError,
   cliErrorReportSchema,
   type EvaluationReport,
   evaluationReportSchema,
   inventoryReportSchema,
+  isOperationCancelled,
   scanReportSchema,
+  throwIfCancelled,
 } from "@agenthawk/core";
 import {
   type CheckDependencies,
@@ -32,7 +35,9 @@ export async function scanDependencies(
 ): Promise<{ exitCode: number; output: string }> {
   try {
     return await scanDependenciesUnsafe(options, dependencies);
-  } catch {
+  } catch (error) {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
+    if (isOperationCancelled(error)) throw error;
     return scanInternalFailure(options.format);
   }
 }
@@ -41,14 +46,17 @@ async function scanDependenciesUnsafe(
   options: ScanOptions,
   dependencies: ScanDependencies,
 ): Promise<{ exitCode: number; output: string }> {
+  throwIfCancelled({ signal: options.signal });
   const inventory = await (dependencies.inventory ?? inventoryDependencies)({
     ...(options.cwd ? { cwd: options.cwd } : {}),
     format: "json",
+    ...(options.signal ? { signal: options.signal } : {}),
   });
+  throwIfCancelled({ signal: options.signal });
   if (inventory.exitCode !== 0) return inventory;
   const direct = inventoryReportSchema.parse(JSON.parse(inventory.output)).dependencies;
   const directNames = [...new Set(direct.map((item) => item.name))];
-  const results = await Promise.all(
+  const settledResults = await Promise.allSettled(
     direct.map(async (item) => {
       const checked = await (dependencies.checkPackage ?? checkNpmPackage)(
         `${item.name}@${item.requestedSpec}`,
@@ -63,9 +71,22 @@ async function scanDependenciesUnsafe(
       if (!parsed.success) throw new ScanInputError(checked);
       return { report: parsed.data, section: item.section };
     }),
-  ).catch((error: unknown) => error);
-  if (results instanceof ScanInputError) return results.result;
-  if (!Array.isArray(results)) return scanInternalFailure(options.format);
+  );
+  throwIfCancelled({ signal: options.signal });
+  const cancellation = settledResults.find(
+    (result): result is PromiseRejectedResult =>
+      result.status === "rejected" && isOperationCancelled(result.reason),
+  );
+  if (cancellation) throw cancellation.reason;
+  const rejection = settledResults.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  if (rejection?.reason instanceof ScanInputError) return rejection.reason.result;
+  if (rejection) return scanInternalFailure(options.format);
+  const results = settledResults.map((result) => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  });
   const verdict = aggregateVerdict(results.map(({ report }) => report.verdict));
   const exitCode =
     verdict === "error" ? 3 : options.strict && ["review", "block"].includes(verdict) ? 1 : 0;

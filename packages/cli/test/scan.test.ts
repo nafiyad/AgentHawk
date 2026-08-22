@@ -1,10 +1,136 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { OperationCancelledError } from "@agenthawk/core";
 import { describe, expect, it } from "vitest";
 import { scanDependencies } from "../src/scan.js";
 
 describe("scanDependencies", () => {
+  it("starts no inventory and throws for a pre-cancelled operation", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("untrusted"));
+    let inventoried = false;
+
+    await expect(
+      scanDependencies(
+        { format: "json", noCache: true, signal: controller.signal, strict: true },
+        {
+          inventory: async () => {
+            inventoried = true;
+            return { exitCode: 0, output: "" };
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(inventoried).toBe(false);
+  });
+
+  it("maps an inventory exception after signal abort to typed cancellation", async () => {
+    const controller = new AbortController();
+    await expect(
+      scanDependencies(
+        { format: "json", noCache: true, signal: controller.signal, strict: true },
+        {
+          inventory: async () => {
+            controller.abort(new Error("untrusted"));
+            throw new Error("ordinary inventory failure");
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+  });
+  it("waits for every started check to settle before returning a failure", async () => {
+    let releaseSecond: (() => void) | undefined;
+    let returned = false;
+    const second = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const pending = scanDependencies(
+      { format: "json", noCache: true, strict: true },
+      {
+        inventory: async () => ({
+          exitCode: 0,
+          output: `${JSON.stringify({
+            schemaVersion: "1.0",
+            manifest: "package.json",
+            dependencies: [
+              { name: "alpha", requestedSpec: "1.0.0", section: "dependencies" },
+              { name: "beta", requestedSpec: "1.0.0", section: "dependencies" },
+            ],
+          })}\n`,
+        }),
+        checkPackage: async (spec) => {
+          if (spec.startsWith("alpha")) throw new Error("first failed");
+          await second;
+          return { exitCode: 4, output: "{}" };
+        },
+      },
+    ).then((result) => {
+      returned = true;
+      return result;
+    });
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    expect(returned).toBe(false);
+    releaseSecond?.();
+    await expect(pending).resolves.toMatchObject({ exitCode: 4 });
+  });
+
+  it("prioritizes cancellation over a sibling result-shape failure", async () => {
+    await expect(
+      scanDependencies(
+        { format: "json", noCache: true, strict: true },
+        {
+          inventory: async () => ({
+            exitCode: 0,
+            output: `${JSON.stringify({
+              schemaVersion: "1.0",
+              manifest: "package.json",
+              dependencies: [
+                { name: "alpha", requestedSpec: "1.0.0", section: "dependencies" },
+                { name: "beta", requestedSpec: "1.0.0", section: "dependencies" },
+              ],
+            })}\n`,
+          }),
+          checkPackage: async (spec) => {
+            if (spec.startsWith("beta")) throw new OperationCancelledError();
+            return { exitCode: 4, output: "{}" };
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+  });
+
+  it("rechecks the shared signal after every sibling settles", async () => {
+    const controller = new AbortController();
+    await expect(
+      scanDependencies(
+        {
+          format: "json",
+          noCache: true,
+          signal: controller.signal,
+          strict: true,
+        },
+        {
+          inventory: async () => ({
+            exitCode: 0,
+            output: `${JSON.stringify({
+              schemaVersion: "1.0",
+              manifest: "package.json",
+              dependencies: [
+                { name: "alpha", requestedSpec: "1.0.0", section: "dependencies" },
+                { name: "beta", requestedSpec: "1.0.0", section: "dependencies" },
+              ],
+            })}\n`,
+          }),
+          checkPackage: async (spec) => {
+            if (spec.startsWith("alpha")) controller.abort(new Error("untrusted"));
+            return { exitCode: 4, output: "{}" };
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+  });
   it("applies the canonical policy from the scanned repository", async () => {
     const root = await mkdtemp(join(tmpdir(), "agenthawk-security-scan-"));
     try {

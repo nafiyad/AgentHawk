@@ -7,6 +7,7 @@ import {
   SafeHttpClient,
   SafeHttpError,
 } from "../http/safe-http-client.js";
+import { cancellationError, type OperationContext, throwIfCancelled } from "../operation.js";
 import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
 const lifecycleNames = ["preinstall", "install", "postinstall", "prepack", "prepare"] as const;
@@ -157,9 +158,16 @@ export class NpmRegistryProvider {
     this.#registryUrl = normalizeRegistryUrl(options.registryUrl ?? "https://registry.npmjs.org/");
   }
 
-  async getPackage(input: PackageCoordinate): Promise<NpmProviderResult> {
+  async getPackage(
+    input: PackageCoordinate,
+    options: OperationContext = {},
+  ): Promise<NpmProviderResult> {
     try {
-      const document = await this.#httpClient.getJson(packageUrl(this.#registryUrl, input.name));
+      throwIfCancelled(options);
+      const document = await this.#httpClient.getJson(packageUrl(this.#registryUrl, input.name), {
+        signal: options.signal,
+      });
+      throwIfCancelled(options);
       const packument = packumentSchema.parse(document);
       if (packument.name !== input.name) {
         return failure(
@@ -211,6 +219,7 @@ export class NpmRegistryProvider {
         },
       };
     } catch (error) {
+      if (options.signal?.aborted) throw cancellationError(options.signal);
       if (error instanceof SafeHttpError) {
         return failure(error.kind, error.message, validClockValue(this.#now(), "Provider clock"));
       }

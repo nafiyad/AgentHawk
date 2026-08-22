@@ -4,6 +4,7 @@ import { type FileHandle, lstat, mkdir, open, rename, rm } from "node:fs/promise
 import { homedir, platform } from "node:os";
 import { isAbsolute, join, parse, posix, resolve, sep, win32 } from "node:path";
 import { z } from "zod";
+import { cancellationError, type OperationContext, throwIfCancelled } from "../operation.js";
 import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
 const cacheSchemaVersion = 1;
@@ -51,12 +52,15 @@ export class MetadataCache {
     provider: CacheProvider,
     key: string,
     parsePayload: (value: unknown) => T,
+    options: OperationContext = {},
   ): Promise<CacheReadResult<T>> {
+    throwIfCancelled(options);
     const keyDigest = cacheKeyDigest(provider, key);
     let handle: FileHandle;
     try {
       handle = await open(this.#path(keyDigest), constants.O_RDONLY);
     } catch (error) {
+      if (options.signal?.aborted) throw cancellationError(options.signal);
       return isMissing(error) ? { status: "missing" } : { status: "corrupt" };
     }
     try {
@@ -65,6 +69,7 @@ export class MetadataCache {
       const buffer = Buffer.alloc(this.#maximumBytes + 1);
       let bytesRead = 0;
       while (bytesRead < buffer.length) {
+        throwIfCancelled(options);
         const chunk = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
         if (chunk.bytesRead === 0) break;
         bytesRead += chunk.bytesRead;
@@ -111,6 +116,7 @@ export class MetadataCache {
         value,
       };
     } catch {
+      if (options.signal?.aborted) throw cancellationError(options.signal);
       return { status: "corrupt" };
     } finally {
       await handle.close().catch(ignoreCleanupError);
@@ -122,7 +128,9 @@ export class MetadataCache {
     key: string,
     payload: unknown,
     ttlMilliseconds: number,
+    options: OperationContext = {},
   ): Promise<boolean> {
+    throwIfCancelled(options);
     if (!Number.isInteger(ttlMilliseconds) || ttlMilliseconds < 1) {
       throw new TypeError("ttlMilliseconds must be a positive integer.");
     }
@@ -153,21 +161,25 @@ export class MetadataCache {
     const temporary = join(this.#root, `.${keyDigest.slice(7)}.${randomUUID()}.tmp`);
     try {
       await mkdir(this.#root, { mode: 0o700, recursive: true });
+      throwIfCancelled(options);
       const handle = await open(
         temporary,
         constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
         0o600,
       );
       try {
-        await handle.writeFile(serialized, "utf8");
+        await handle.writeFile(serialized, { encoding: "utf8", signal: options.signal });
         await handle.sync();
       } finally {
         await handle.close();
       }
+      throwIfCancelled(options);
       await rename(temporary, this.#path(keyDigest));
+      throwIfCancelled(options);
       return true;
     } catch {
       await rm(temporary, { force: true }).catch(ignoreCleanupError);
+      if (options.signal?.aborted) throw cancellationError(options.signal);
       return false;
     }
   }

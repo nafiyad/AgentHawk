@@ -5,6 +5,7 @@ import {
   SafeHttpClient,
   SafeHttpError,
 } from "../http/safe-http-client.js";
+import { cancellationError, type OperationContext, throwIfCancelled } from "../operation.js";
 import { parseStrictIsoTimestamp, validClockValue } from "../time.js";
 
 export const osvSeveritySchema = z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
@@ -142,16 +143,23 @@ export class OsvProvider {
     }
   }
 
-  async query(input: OsvPackageQuery): Promise<OsvProviderResult> {
+  async query(input: OsvPackageQuery, options: OperationContext = {}): Promise<OsvProviderResult> {
     try {
+      throwIfCancelled(options);
       const records = new Map<string, OsvRecord>();
       let pageToken: string | undefined;
       for (let page = 0; page < this.#maxPages; page += 1) {
-        const document = await this.#httpClient.postJson(new URL("v1/query", this.#apiUrl), {
-          package: { ecosystem: "npm", name: input.name },
-          version: input.version,
-          ...(pageToken ? { page_token: pageToken } : {}),
-        });
+        throwIfCancelled(options);
+        const document = await this.#httpClient.postJson(
+          new URL("v1/query", this.#apiUrl),
+          {
+            package: { ecosystem: "npm", name: input.name },
+            version: input.version,
+            ...(pageToken ? { page_token: pageToken } : {}),
+          },
+          { signal: options.signal },
+        );
+        throwIfCancelled(options);
         const parsed = queryResponseSchema.parse(document);
         for (const value of parsed.vulns ?? []) {
           const record = normalizeRecord(value);
@@ -169,12 +177,17 @@ export class OsvProvider {
       }
       return truncated(this.#now());
     } catch (error) {
+      if (options.signal?.aborted) throw cancellationError(options.signal);
       return mapFailure(error, this.#now());
     }
   }
 
-  async queryBatch(queries: readonly OsvPackageQuery[]): Promise<OsvBatchProviderResult> {
+  async queryBatch(
+    queries: readonly OsvPackageQuery[],
+    options: OperationContext = {},
+  ): Promise<OsvBatchProviderResult> {
     try {
+      throwIfCancelled(options);
       if (queries.length === 0) return batchSuccess([], this.#now());
       if (queries.length > maximumBatchQueries) {
         return failure(
@@ -192,13 +205,19 @@ export class OsvProvider {
         pageToken: undefined as string | undefined,
       }));
       for (let page = 0; page < this.#maxPages; page += 1) {
-        const document = await this.#httpClient.postJson(new URL("v1/querybatch", this.#apiUrl), {
-          queries: remaining.map(({ query, pageToken }) => ({
-            package: { ecosystem: "npm", name: query.name },
-            version: query.version,
-            ...(pageToken ? { page_token: pageToken } : {}),
-          })),
-        });
+        throwIfCancelled(options);
+        const document = await this.#httpClient.postJson(
+          new URL("v1/querybatch", this.#apiUrl),
+          {
+            queries: remaining.map(({ query, pageToken }) => ({
+              package: { ecosystem: "npm", name: query.name },
+              version: query.version,
+              ...(pageToken ? { page_token: pageToken } : {}),
+            })),
+          },
+          { signal: options.signal },
+        );
+        throwIfCancelled(options);
         const parsed = batchResponseSchema.parse(document);
         if (parsed.results.length !== remaining.length) {
           return failure(
@@ -239,9 +258,12 @@ export class OsvProvider {
 
       const hydrated = new Map<string, OsvRecord>();
       for (const id of [...allIds].sort()) {
+        throwIfCancelled(options);
         const document = await this.#httpClient.getJson(
           new URL(`v1/vulns/${encodeURIComponent(id)}`, this.#apiUrl),
+          { signal: options.signal },
         );
+        throwIfCancelled(options);
         const record = normalizeRecord(document);
         if (!record || record.id !== id) {
           return failure(
@@ -262,6 +284,7 @@ export class OsvProvider {
         this.#now(),
       );
     } catch (error) {
+      if (options.signal?.aborted) throw cancellationError(options.signal);
       return mapFailure(error, this.#now());
     }
   }

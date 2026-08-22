@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonRequestClient } from "../src/http/safe-http-client.js";
 import { SafeHttpError } from "../src/http/safe-http-client.js";
+import { OperationCancelledError } from "../src/operation.js";
 import { classifyOsvRecord, OsvProvider } from "../src/osv/provider.js";
 
 interface Route {
@@ -30,6 +31,26 @@ function client(
 const now = () => new Date("2026-08-19T17:58:00.000Z");
 
 describe("OsvProvider.query", () => {
+  it("stops pagination after caller cancellation", async () => {
+    const controller = new AbortController();
+    let requests = 0;
+    const provider = new OsvProvider({
+      httpClient: {
+        getJson: async () => ({}),
+        postJson: async (_url, _body, options) => {
+          requests += 1;
+          expect(options?.signal).toBe(controller.signal);
+          controller.abort(new Error("untrusted"));
+          return { next_page_token: "next", vulns: [] };
+        },
+      },
+    });
+
+    await expect(
+      provider.query({ name: "example", version: "1.0.0" }, { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(requests).toBe(1);
+  });
   it("returns no records for an empty complete page", async () => {
     const provider = new OsvProvider({
       httpClient: client(() => ({ vulns: [] })),
@@ -134,6 +155,26 @@ describe("OsvProvider.query", () => {
 });
 
 describe("OsvProvider.queryBatch", () => {
+  it("stops hydration after caller cancellation", async () => {
+    const controller = new AbortController();
+    let hydrated = 0;
+    const provider = new OsvProvider({
+      httpClient: {
+        postJson: async () => ({ results: [{ vulns: [{ id: "OSV-1" }] }] }),
+        getJson: async (_url, options) => {
+          hydrated += 1;
+          expect(options?.signal).toBe(controller.signal);
+          controller.abort();
+          return { id: "OSV-1" };
+        },
+      },
+    });
+
+    await expect(
+      provider.queryBatch([{ name: "example", version: "1.0.0" }], { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(hydrated).toBe(1);
+  });
   it("hydrates abbreviated matches before returning records", async () => {
     const captured: Route[] = [];
     const provider = new OsvProvider({
