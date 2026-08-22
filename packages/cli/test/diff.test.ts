@@ -2,11 +2,87 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { OperationCancelledError } from "@agenthawk/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { diffDependencies, inventoryDependencies, parseManifest } from "../src/diff.js";
+import {
+  diffDependencies,
+  inventoryDependencies,
+  parseManifest,
+  runBoundedGit,
+} from "../src/diff.js";
 
 const roots: string[] = [];
 const gitIntegrationTimeoutMs = 20_000;
+
+it("spawns no Git process for a pre-cancelled operation", async () => {
+  const controller = new AbortController();
+  controller.abort(new Error("untrusted"));
+  await expect(
+    runBoundedGit(["--version"], process.cwd(), { signal: controller.signal }),
+  ).rejects.toBeInstanceOf(OperationCancelledError);
+});
+
+it("does not downgrade a pre-cancelled dependency diff", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await expect(
+    diffDependencies({
+      base: "main",
+      format: "json",
+      signal: controller.signal,
+      strict: true,
+    }),
+  ).rejects.toBeInstanceOf(OperationCancelledError);
+});
+
+it(
+  "waits for an active Git child to close after cancellation",
+  async () => {
+    const root = await repository();
+    const controller = new AbortController();
+    const pending = runBoundedGit(["cat-file", "--batch"], root, {
+      signal: controller.signal,
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    controller.abort();
+    await expect(pending).rejects.toBeInstanceOf(OperationCancelledError);
+  },
+  gitIntegrationTimeoutMs,
+);
+
+it("waits for every started diff operation to settle before returning a failure", async () => {
+  const root = await mkdtemp(join(tmpdir(), "agenthawk-diff-settle-"));
+  roots.push(root);
+  await writeFile(join(root, "package.json"), JSON.stringify({ dependencies: {} }));
+  let releaseDiff: (() => void) | undefined;
+  const diffOutput = new Promise<string>((resolve) => {
+    releaseDiff = () => resolve("");
+  });
+  let calls = 0;
+  let returned = false;
+  const pending = diffDependencies(
+    { base: "main", cwd: root, format: "json", strict: true },
+    {
+      git: {
+        run: async () => {
+          calls += 1;
+          if (calls === 1) return root;
+          if (calls === 2) return "a".repeat(40);
+          if (calls === 3) throw new Error("show failed");
+          return await diffOutput;
+        },
+      },
+    },
+  ).then((result) => {
+    returned = true;
+    return result;
+  });
+
+  await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  expect(returned).toBe(false);
+  releaseDiff?.();
+  await expect(pending).resolves.toMatchObject({ exitCode: 4 });
+});
 
 afterEach(async () => {
   await Promise.all(

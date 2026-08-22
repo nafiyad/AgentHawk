@@ -8,20 +8,24 @@ import {
   agentHawkConfigSchema,
   applyApprovals,
   approvalFileSchema,
+  cancellationError,
   cliErrorReportSchema,
   type EvaluationReport,
   evaluatePolicy,
   evaluationReportSchema,
+  isOperationCancelled,
   MetadataCache,
   type NpmProviderResult,
   NpmRegistryProvider,
   npmResultForCache,
+  type OperationContext,
   OsvProvider,
   type OsvProviderResult,
   type ProviderStatus,
   parseCachedNpmResult,
   parseCachedOsvResult,
   parseNpmSpec,
+  throwIfCancelled,
   type Verdict,
 } from "@agenthawk/core";
 import { parseDocument } from "yaml";
@@ -43,6 +47,7 @@ export interface CheckOptions {
   policyPath?: string;
   registryUrl?: string;
   strict: boolean;
+  signal?: AbortSignal;
 }
 
 export interface CheckResult {
@@ -52,11 +57,23 @@ export interface CheckResult {
 
 export interface CheckDependencies {
   cache?: MetadataCache;
-  getPackage?: (name: string, requestedSpec: string) => Promise<NpmProviderResult>;
+  getPackage?: (
+    name: string,
+    requestedSpec: string,
+    options?: OperationContext,
+  ) => Promise<NpmProviderResult>;
   now?: () => Date;
-  queryOsv?: (name: string, version: string) => Promise<OsvProviderResult>;
-  readPolicy?: (path: string) => Promise<unknown>;
-  readApprovals?: (path: string, required: boolean) => Promise<unknown | undefined>;
+  queryOsv?: (
+    name: string,
+    version: string,
+    options?: OperationContext,
+  ) => Promise<OsvProviderResult>;
+  readPolicy?: (path: string, options?: OperationContext) => Promise<unknown | undefined>;
+  readApprovals?: (
+    path: string,
+    required: boolean,
+    options?: OperationContext,
+  ) => Promise<unknown | undefined>;
 }
 
 export async function checkNpmPackage(
@@ -65,21 +82,26 @@ export async function checkNpmPackage(
   dependencies: CheckDependencies = {},
 ): Promise<CheckResult> {
   try {
+    throwIfCancelled({ signal: options.signal });
     if (options.offline && options.noCache) {
       throw new PolicyInputError("--offline and --no-cache cannot be used together.");
     }
     const spec = parseNpmSpec(rawSpec);
     const now = (dependencies.now ?? (() => new Date()))();
     const policyDocument = options.policyPath
-      ? await (dependencies.readPolicy ?? readPolicyFile)(options.policyPath)
+      ? await (dependencies.readPolicy ?? readPolicyFile)(options.policyPath, {
+          signal: options.signal,
+        })
       : await (dependencies.readPolicy ?? readOptionalPolicyFile)(
           join(
             dependencies.readPolicy
               ? (options.cwd ?? process.cwd())
-              : await canonicalPolicyRoot(options.cwd ?? process.cwd()),
+              : await canonicalPolicyRoot(options.cwd ?? process.cwd(), options.signal),
             ".agenthawk.yml",
           ),
+          { signal: options.signal },
         );
+    throwIfCancelled({ signal: options.signal });
     const baseConfig = agentHawkConfigSchema.parse(policyDocument ?? { version: 1 });
     const config = options.strict
       ? agentHawkConfigSchema.parse({ ...baseConfig, mode: "strict" })
@@ -88,7 +110,9 @@ export async function checkNpmPackage(
     const approvalDocument = await (dependencies.readApprovals ?? readApprovalFile)(
       approvalPath,
       options.approvalsPath !== undefined,
+      { signal: options.signal },
     );
+    throwIfCancelled({ signal: options.signal });
     const approvals: ApprovalFile = approvalDocument
       ? approvalFileSchema.parse(approvalDocument)
       : approvalFileSchema.parse({ version: 1, approvals: [] });
@@ -121,6 +145,7 @@ export async function checkNpmPackage(
       now,
     );
     const osvResult = osvResolution.result;
+    throwIfCancelled({ signal: options.signal });
     const evaluation = requireLiveVerification(
       evaluatePolicy({
         config,
@@ -188,6 +213,7 @@ export async function checkNpmPackage(
       output: options.format === "json" ? renderJson(report) : renderTerminal(report),
     };
   } catch (error) {
+    if (isOperationCancelled(error)) throw error;
     const invalid = isExpectedInputError(error);
     const exitCode = invalid ? 2 : 4;
     const message = invalid ? safeMessage(error) : "Unexpected internal error.";
@@ -214,13 +240,14 @@ function defaultGetPackage(registryUrl?: string) {
   } catch {
     throw new PolicyInputError("Registry URL is invalid or unsafe.");
   }
-  return async (name: string, requestedSpec: string) =>
-    provider.getPackage({ ecosystem: "npm", name, requestedSpec });
+  return async (name: string, requestedSpec: string, options?: OperationContext) =>
+    provider.getPackage({ ecosystem: "npm", name, requestedSpec }, options);
 }
 
 function defaultQueryOsv() {
   const provider = new OsvProvider();
-  return async (name: string, version: string) => provider.query({ name, version });
+  return async (name: string, version: string, options?: OperationContext) =>
+    provider.query({ name, version }, options);
 }
 
 type ResolvedOsvResult = OsvProviderResult | { status: "disabled" } | undefined;
@@ -240,10 +267,14 @@ async function resolveNpmResult(
   now: Date,
 ): Promise<CacheResolution<NpmProviderResult>> {
   const live = dependencies.getPackage ?? defaultGetPackage(options.registryUrl);
-  if (options.noCache) return { result: await live(name, requestedSpec) };
+  if (options.noCache) {
+    const result = await live(name, requestedSpec, { signal: options.signal });
+    throwIfCancelled({ signal: options.signal });
+    return { result };
+  }
   const key = JSON.stringify({ name, registry: options.registryUrl ?? "public", requestedSpec });
   if (options.offline) {
-    const cached = await cache.read("npm", key, parseCachedNpmResult);
+    const cached = await cache.read("npm", key, parseCachedNpmResult, { signal: options.signal });
     if (cached.status === "fresh") return { cached: true, result: cached.value };
     return {
       result: offlineFailure(
@@ -253,8 +284,12 @@ async function resolveNpmResult(
       ...(cached.status === "stale" ? { stale: cached.storedAt } : {}),
     };
   }
-  const result = await live(name, requestedSpec);
-  if (result.ok) await cache.write("npm", key, npmResultForCache(result), npmCacheTtl);
+  const result = await live(name, requestedSpec, { signal: options.signal });
+  throwIfCancelled({ signal: options.signal });
+  if (result.ok)
+    await cache.write("npm", key, npmResultForCache(result), npmCacheTtl, {
+      signal: options.signal,
+    });
   return { result };
 }
 
@@ -269,14 +304,19 @@ async function resolveOsvResult(
   if (!enabled) return { result: { status: "disabled" } };
   if (!providerResult?.ok) return {};
   const live = dependencies.queryOsv ?? defaultQueryOsv();
-  if (options.noCache)
-    return { result: await live(providerResult.data.name, providerResult.data.resolvedVersion) };
+  if (options.noCache) {
+    const result = await live(providerResult.data.name, providerResult.data.resolvedVersion, {
+      signal: options.signal,
+    });
+    throwIfCancelled({ signal: options.signal });
+    return { result };
+  }
   const key = JSON.stringify({
     name: providerResult.data.name,
     version: providerResult.data.resolvedVersion,
   });
   if (options.offline) {
-    const cached = await cache.read("osv", key, parseCachedOsvResult);
+    const cached = await cache.read("osv", key, parseCachedOsvResult, { signal: options.signal });
     if (cached.status === "fresh") return { cached: true, result: cached.value };
     return {
       result: offlineFailure(
@@ -286,8 +326,11 @@ async function resolveOsvResult(
       ...(cached.status === "stale" ? { stale: cached.storedAt } : {}),
     };
   }
-  const result = await live(providerResult.data.name, providerResult.data.resolvedVersion);
-  if (result.ok) await cache.write("osv", key, result, osvCacheTtl);
+  const result = await live(providerResult.data.name, providerResult.data.resolvedVersion, {
+    signal: options.signal,
+  });
+  throwIfCancelled({ signal: options.signal });
+  if (result.ok) await cache.write("osv", key, result, osvCacheTtl, { signal: options.signal });
   return { result };
 }
 
@@ -333,28 +376,34 @@ function isOsvProviderResult(value: ResolvedOsvResult): value is OsvProviderResu
 
 export async function readPolicyFile(
   path: string,
-  openFile: typeof open = open,
+  optionsOrOpen: FileReadOptions | typeof open = {},
   inspectPath: typeof lstat = lstat,
 ): Promise<unknown> {
-  const document = await readYamlFile(path, true, openFile, inspectPath, "Policy");
+  const options = fileReadOptions(optionsOrOpen, inspectPath);
+  const document = await readYamlFile(path, true, options, "Policy");
   if (document === undefined) throw new PolicyInputError("Policy file could not be read.");
   return document;
 }
 
-async function canonicalPolicyRoot(path: string): Promise<string> {
+async function canonicalPolicyRoot(path: string, signal?: AbortSignal): Promise<string> {
   try {
-    return await realpath(path);
+    if (signal?.aborted) throw cancellationError(signal);
+    const root = await realpath(path);
+    if (signal?.aborted) throw cancellationError(signal);
+    return root;
   } catch {
+    if (signal?.aborted) throw cancellationError(signal);
     throw new PolicyInputError("Policy root could not be resolved.");
   }
 }
 
 export async function readOptionalPolicyFile(
   path: string,
-  openFile: typeof open = open,
+  optionsOrOpen: FileReadOptions | typeof open = {},
   inspectPath: typeof lstat = lstat,
 ): Promise<unknown | undefined> {
-  return await readYamlFile(path, false, openFile, inspectPath, "Policy");
+  const options = fileReadOptions(optionsOrOpen, inspectPath);
+  return await readYamlFile(path, false, options, "Policy");
 }
 
 export async function inspectOptionalRegularFile(
@@ -372,23 +421,42 @@ export async function inspectOptionalRegularFile(
 export async function readApprovalFile(
   path: string,
   required: boolean,
-  openFile: typeof open = open,
+  optionsOrOpen: FileReadOptions | typeof open = {},
   inspectPath: typeof lstat = lstat,
 ): Promise<unknown | undefined> {
-  return await readYamlFile(path, required, openFile, inspectPath, "Approval");
+  const options = fileReadOptions(optionsOrOpen, inspectPath);
+  return await readYamlFile(path, required, options, "Approval");
+}
+
+interface FileReadOptions {
+  inspectPath?: typeof lstat;
+  openFile?: typeof open;
+  signal?: AbortSignal | undefined;
+}
+
+function fileReadOptions(
+  optionsOrOpen: FileReadOptions | typeof open,
+  inspectPath: typeof lstat,
+): FileReadOptions {
+  return typeof optionsOrOpen === "function"
+    ? { inspectPath, openFile: optionsOrOpen }
+    : optionsOrOpen;
 }
 
 async function readYamlFile(
   path: string,
   required: boolean,
-  openFile: typeof open,
-  inspectPath: typeof lstat,
+  options: FileReadOptions,
   kind: "Approval" | "Policy",
 ): Promise<unknown | undefined> {
+  const openFile = options.openFile ?? open;
+  const inspectPath = options.inspectPath ?? lstat;
+  if (options.signal?.aborted) throw cancellationError(options.signal);
   let initialStats: Stats;
   try {
     initialStats = await inspectRegularPath(path, inspectPath, kind);
   } catch (error) {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
     if (!required && isMissingFile(error)) return undefined;
     if (error instanceof PolicyInputError) throw error;
     throw new PolicyInputError(`${kind} file could not be read.`);
@@ -397,10 +465,12 @@ async function readYamlFile(
   try {
     handle = await openFile(path, "r");
   } catch (error) {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
     if (!required && isMissingFile(error)) return undefined;
     throw new PolicyInputError(`${kind} file could not be read.`);
   }
   try {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
     const stats = await handle.stat();
     if (
       !stats.isFile() ||
@@ -412,6 +482,7 @@ async function readYamlFile(
     const buffer = Buffer.alloc(maximumPolicyBytes + 1);
     let bytesRead = 0;
     while (bytesRead < buffer.length) {
+      if (options.signal?.aborted) throw cancellationError(options.signal);
       const chunk = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
       if (chunk.bytesRead === 0) break;
       bytesRead += chunk.bytesRead;
@@ -419,6 +490,7 @@ async function readYamlFile(
     if (bytesRead > maximumPolicyBytes) {
       throw new PolicyInputError(`${kind} file exceeded the 256 KiB limit.`);
     }
+    if (options.signal?.aborted) throw cancellationError(options.signal);
     const finalStats = await inspectRegularPath(path, inspectPath, kind);
     if (
       !sameFileIdentity(initialStats, finalStats) ||

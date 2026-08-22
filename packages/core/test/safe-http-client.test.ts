@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { SafeHttpClient, SafeHttpError } from "../src/http/safe-http-client.js";
+import { OperationCancelledError } from "../src/operation.js";
 
 const servers: Server[] = [];
 
@@ -202,6 +203,102 @@ describe("SafeHttpClient", () => {
 
     expect(result).toEqual({ recovered: true });
     expect(attempts).toBe(2);
+  });
+
+  it("starts no fetch for a pre-cancelled operation", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("untrusted reason"));
+    let fetched = false;
+    const fetch: typeof globalThis.fetch = async () => {
+      fetched = true;
+      return new Response("{}");
+    };
+
+    await expect(
+      new SafeHttpClient({ fetch }).getJson(new URL("https://example.test"), {
+        signal: controller.signal,
+      }),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(fetched).toBe(false);
+  });
+
+  it("cancels a retry delay without starting another attempt", async () => {
+    const controller = new AbortController();
+    let attempts = 0;
+    const fetch: typeof globalThis.fetch = async () => {
+      attempts += 1;
+      throw new TypeError("network failure");
+    };
+    const pending = new SafeHttpClient({ fetch, maxRetries: 2, retryDelayMs: 10_000 }).getJson(
+      new URL("https://example.test"),
+      { signal: controller.signal },
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+
+    await expect(pending).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(attempts).toBe(1);
+  });
+
+  it("preserves caller cancellation while a response body is pending", async () => {
+    const controller = new AbortController();
+    let bodyCancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel: () => {
+        bodyCancelled = true;
+      },
+      start: (stream) => stream.enqueue(new TextEncoder().encode('{"partial":')),
+    });
+    const fetch: typeof globalThis.fetch = async () =>
+      new Response(body, { headers: { "content-type": "application/json" } });
+    const pending = new SafeHttpClient({ fetch, maxRetries: 1, timeoutMs: 10_000 }).getJson(
+      new URL("https://example.test"),
+      { signal: controller.signal },
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    controller.abort(new Error("untrusted"));
+
+    await expect(pending).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(bodyCancelled).toBe(true);
+  });
+
+  it("preserves the first abort cause when local timeout wins", async () => {
+    const controller = new AbortController();
+    const fetch: typeof globalThis.fetch = async (_url, options) =>
+      await new Promise<Response>((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => setTimeout(() => reject(new Error("delayed abort")), 20),
+          { once: true },
+        );
+      });
+    const pending = new SafeHttpClient({ fetch, maxRetries: 0, timeoutMs: 10 }).getJson(
+      new URL("https://example.test"),
+      { signal: controller.signal },
+    );
+    setTimeout(() => controller.abort(), 20);
+
+    await expect(pending).rejects.toMatchObject({ kind: "timeout" });
+  });
+
+  it.each([
+    { headers: {}, status: 302 },
+    { headers: { "content-length": "100" }, status: 200 },
+  ])("cancels rejected response bodies", async ({ headers, status }) => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel: () => {
+        cancelled = true;
+      },
+      start: (stream) => stream.enqueue(new TextEncoder().encode("content")),
+    });
+    const fetch: typeof globalThis.fetch = async () => new Response(body, { headers, status });
+    await expect(
+      new SafeHttpClient({ fetch, maxBodyBytes: 8, maxRedirects: 1 }).getJson(
+        new URL("https://example.test"),
+      ),
+    ).rejects.toBeInstanceOf(SafeHttpError);
+    expect(cancelled).toBe(true);
   });
 
   it("never sends authorization headers", async () => {

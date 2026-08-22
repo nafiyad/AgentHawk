@@ -119,6 +119,14 @@ export {
   parseNpmSpec,
 } from "./npm/spec.js";
 export {
+  cancellationError,
+  DeadlineExceededError,
+  isOperationCancelled,
+  OperationCancelledError,
+  type OperationContext,
+  throwIfCancelled,
+} from "./operation.js";
+export {
   classifyOsvRecord,
   type OsvBatchItem,
   type OsvBatchProviderResult,

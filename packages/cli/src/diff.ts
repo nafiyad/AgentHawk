@@ -3,13 +3,17 @@ import { constants } from "node:fs";
 import { type FileHandle, lstat, open } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
+  cancellationError,
   cliErrorReportSchema,
   compareDirectDependencies,
   type DependencyChange,
   diffReportSchema,
   directDependencies,
   inventoryReportSchema,
+  isOperationCancelled,
+  type OperationContext,
   packageManifestSchema,
+  throwIfCancelled,
 } from "@agenthawk/core";
 import { parseDocument } from "yaml";
 import { escapeTerminal } from "./terminal.js";
@@ -33,15 +37,17 @@ export interface DiffOptions {
   cwd?: string;
   format: DiffOutputFormat;
   strict: boolean;
+  signal?: AbortSignal;
 }
 
 export interface ScanOptions {
   cwd?: string;
   format: DiffOutputFormat;
+  signal?: AbortSignal;
 }
 
 export interface GitRunner {
-  run(args: readonly string[], cwd: string): Promise<string>;
+  run(args: readonly string[], cwd: string, options?: OperationContext): Promise<string>;
 }
 
 export interface DiffDependencies {
@@ -55,8 +61,10 @@ export interface DiffResult {
 
 export async function inventoryDependencies(options: ScanOptions): Promise<DiffResult> {
   try {
+    throwIfCancelled({ signal: options.signal });
     const cwd = resolve(options.cwd ?? process.cwd());
-    const manifest = await readManifest(join(cwd, "package.json"));
+    const manifest = await readManifest(join(cwd, "package.json"), options.signal);
+    throwIfCancelled({ signal: options.signal });
     const report = inventoryReportSchema.parse({
       schemaVersion: "1.0",
       manifest: "package.json",
@@ -64,6 +72,7 @@ export async function inventoryDependencies(options: ScanOptions): Promise<DiffR
     });
     return { exitCode: 0, output: render(report, options.format) };
   } catch (error) {
+    if (isOperationCancelled(error)) throw error;
     return inputFailure(error, options.format);
   }
 }
@@ -76,33 +85,51 @@ export async function diffDependencies(
     validateBase(options.base);
     const cwd = resolve(options.cwd ?? process.cwd());
     const git = dependencies.git ?? defaultGitRunner;
-    const rootOutput = await git.run(["rev-parse", "--show-toplevel"], cwd);
+    const rootOutput = await git.run(["rev-parse", "--show-toplevel"], cwd, {
+      signal: options.signal,
+    });
     const repositoryRoot = rootOutput.trim();
     if (!isAbsolute(repositoryRoot)) throw new DiffInputError("Git returned an invalid root path.");
 
     const commitOutput = await git.run(
       ["rev-parse", "--verify", "--end-of-options", `${options.base}^{commit}`],
       repositoryRoot,
+      { signal: options.signal },
     );
     const baseCommit = commitOutput.trim();
     if (!/^[a-f0-9]{40,64}$/u.test(baseCommit)) {
       throw new DiffInputError("Git returned an invalid base commit.");
     }
 
-    const [baseSource, currentManifest, changedLockfiles] = await Promise.all([
+    const operations = await Promise.allSettled([
       git.run(
         ["show", "--no-textconv", "--no-ext-diff", `${baseCommit}:package.json`],
         repositoryRoot,
+        { signal: options.signal },
       ),
-      readManifest(join(repositoryRoot, "package.json")),
+      readManifest(join(repositoryRoot, "package.json"), options.signal),
       git.run(
         ["diff", "--name-only", "-z", "--no-ext-diff", baseCommit, "--", ...lockfileNames],
         repositoryRoot,
+        { signal: options.signal },
       ),
     ]);
+    const cancellation = operations.find(
+      (operation): operation is PromiseRejectedResult =>
+        operation.status === "rejected" && isOperationCancelled(operation.reason),
+    );
+    if (cancellation) throw cancellation.reason;
+    const rejection = operations.find(
+      (operation): operation is PromiseRejectedResult => operation.status === "rejected",
+    );
+    if (rejection) throw rejection.reason;
+    const [baseSource, currentManifest, changedLockfiles] = operations.map(
+      (operation) => (operation as PromiseFulfilledResult<unknown>).value,
+    ) as [string, ReturnType<typeof packageManifestSchema.parse>, string];
     const baseManifest = parseManifest(baseSource);
     const changes = compareDirectDependencies(baseManifest, currentManifest);
-    const present = await presentLockfiles(repositoryRoot);
+    const present = await presentLockfiles(repositoryRoot, options.signal);
+    throwIfCancelled({ signal: options.signal });
     const updated = parseNullSeparated(changedLockfiles).filter(isLockfileName);
     const usableUpdates = updated.filter((name) => present.includes(name));
     const missingLockfileUpdate = changes.length > 0 && usableUpdates.length === 0;
@@ -138,6 +165,7 @@ export async function diffDependencies(
       output: render(report, options.format),
     };
   } catch (error) {
+    if (isOperationCancelled(error)) throw error;
     return inputFailure(error, options.format);
   }
 }
@@ -155,36 +183,49 @@ export function parseManifest(source: string): ReturnType<typeof packageManifest
   }
 }
 
-async function readManifest(path: string): Promise<ReturnType<typeof packageManifestSchema.parse>> {
+async function readManifest(
+  path: string,
+  signal?: AbortSignal,
+): Promise<ReturnType<typeof packageManifestSchema.parse>> {
+  throwIfCancelled({ signal });
   try {
     const pathStats = await lstat(path);
+    throwIfCancelled({ signal });
     if (!pathStats.isFile() || pathStats.isSymbolicLink()) {
       throw new DiffInputError("package.json must be a regular non-symlink file.");
     }
   } catch (error) {
+    if (signal?.aborted) throw cancellationError(signal);
+    if (isOperationCancelled(error)) throw error;
     if (error instanceof DiffInputError) throw error;
     throw new DiffInputError("Unable to open package.json.");
   }
   let handle: FileHandle;
   try {
     handle = await open(path, constants.O_RDONLY);
-  } catch {
+    throwIfCancelled({ signal });
+  } catch (error) {
+    if (signal?.aborted) throw cancellationError(signal);
+    if (isOperationCancelled(error)) throw error;
     throw new DiffInputError("Unable to open package.json.");
   }
   try {
     const stats = await handle.stat();
+    throwIfCancelled({ signal });
     if (!stats.isFile()) throw new DiffInputError("package.json must be a regular file.");
     if (stats.size > maximumManifestBytes)
       throw new DiffInputError("package.json exceeds the 1 MiB limit.");
     const buffer = Buffer.alloc(maximumManifestBytes + 1);
     let offset = 0;
     while (offset < buffer.length) {
+      throwIfCancelled({ signal });
       const chunk = await handle.read(buffer, offset, buffer.length - offset, offset);
       if (chunk.bytesRead === 0) break;
       offset += chunk.bytesRead;
     }
     if (offset > maximumManifestBytes)
       throw new DiffInputError("package.json exceeds the 1 MiB limit.");
+    throwIfCancelled({ signal });
     let source: string;
     try {
       source = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, offset));
@@ -197,24 +238,31 @@ async function readManifest(path: string): Promise<ReturnType<typeof packageMani
   }
 }
 
-async function presentLockfiles(repositoryRoot: string): Promise<string[]> {
-  const results = await Promise.all(
-    lockfileNames.map(async (name) => {
+async function presentLockfiles(
+  repositoryRoot: string,
+  signal?: AbortSignal,
+): Promise<(typeof lockfileNames)[number][]> {
+  const results: (typeof lockfileNames)[number][] = [];
+  for (const name of lockfileNames) {
+    throwIfCancelled({ signal });
+    try {
+      const pathStats = await lstat(join(repositoryRoot, name));
+      throwIfCancelled({ signal });
+      if (!pathStats.isFile() || pathStats.isSymbolicLink()) continue;
+      const handle = await open(join(repositoryRoot, name), constants.O_RDONLY);
       try {
-        const pathStats = await lstat(join(repositoryRoot, name));
-        if (!pathStats.isFile() || pathStats.isSymbolicLink()) return undefined;
-        const handle = await open(join(repositoryRoot, name), constants.O_RDONLY);
-        try {
-          return (await handle.stat()).isFile() ? name : undefined;
-        } finally {
-          await handle.close();
-        }
-      } catch {
-        return undefined;
+        throwIfCancelled({ signal });
+        if ((await handle.stat()).isFile()) results.push(name);
+        throwIfCancelled({ signal });
+      } finally {
+        await handle.close();
       }
-    }),
-  );
-  return results.filter((value) => value !== undefined);
+    } catch (error) {
+      if (signal?.aborted) throw cancellationError(signal);
+      if (isOperationCancelled(error)) throw error;
+    }
+  }
+  return results;
 }
 
 function parseNullSeparated(value: string): string[] {
@@ -279,8 +327,9 @@ function inputFailure(error: unknown, format: DiffOutputFormat): DiffResult {
 class DiffInputError extends Error {}
 
 const defaultGitRunner: GitRunner = {
-  run: async (args, cwd) =>
+  run: async (args, cwd, options = {}) =>
     await new Promise<string>((resolveOutput, reject) => {
+      if (options.signal?.aborted) throw cancellationError(options.signal);
       const environment = gitEnvironment();
       execFile(
         "git",
@@ -290,10 +339,15 @@ const defaultGitRunner: GitRunner = {
           encoding: "buffer",
           env: environment,
           maxBuffer: maximumGitOutputBytes,
+          signal: options.signal,
           timeout: gitTimeoutMilliseconds,
           windowsHide: true,
         },
         (error, stdout) => {
+          if (options.signal?.aborted) {
+            reject(cancellationError(options.signal));
+            return;
+          }
           if (error)
             reject(new DiffInputError("Git operation failed; verify the repository and base ref."));
           else {
@@ -308,8 +362,12 @@ const defaultGitRunner: GitRunner = {
     }),
 };
 
-export async function runBoundedGit(args: string[], cwd: string): Promise<string> {
-  return await defaultGitRunner.run(args, cwd);
+export async function runBoundedGit(
+  args: string[],
+  cwd: string,
+  options: OperationContext = {},
+): Promise<string> {
+  return await defaultGitRunner.run(args, cwd, options);
 }
 
 function gitEnvironment(): NodeJS.ProcessEnv {

@@ -7,6 +7,7 @@ import {
   cliErrorReportSchema,
   doctorReportSchema,
   MetadataCache,
+  type OperationContext,
   parseDoctorNodeMajor,
 } from "@agenthawk/core";
 import {
@@ -34,8 +35,12 @@ export interface DoctorDependencies {
   coreVersion?: string;
   probeCache?: () => Promise<"writable" | "unwritable" | "unsafe">;
   runGit?: () => Promise<string>;
-  readPolicy?: (path: string) => Promise<unknown | undefined>;
-  readApprovals?: (path: string, required: boolean) => Promise<unknown | undefined>;
+  readPolicy?: (path: string, options?: OperationContext) => Promise<unknown | undefined>;
+  readApprovals?: (
+    path: string,
+    required: boolean,
+    options?: OperationContext,
+  ) => Promise<unknown | undefined>;
   inspectFile?: (path: string) => Promise<"absent" | "present" | "invalid">;
 }
 

@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cacheKeyDigest, defaultCacheRoot, MetadataCache } from "../src/cache/metadata-cache.js";
+import { OperationCancelledError } from "../src/operation.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -30,6 +31,21 @@ function pathFor(cacheRoot: string, provider: "npm" | "osv", key: string): strin
 }
 
 describe("MetadataCache", () => {
+  it("does not touch disk when an operation is already cancelled", async () => {
+    const cacheRoot = await root();
+    const target = join(cacheRoot, "nested");
+    const controller = new AbortController();
+    controller.abort(new Error("untrusted"));
+    const cache = new MetadataCache({ root: target });
+
+    await expect(
+      cache.read("npm", "key", (value) => value, { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    await expect(
+      cache.write("npm", "key", {}, 1_000, { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    await expect(lstat(target)).rejects.toMatchObject({ code: "ENOENT" });
+  });
   it("probes actual cache writes and removes its sentinel", async () => {
     const parent = await root();
     const cacheRoot = join(parent, "new-cache");

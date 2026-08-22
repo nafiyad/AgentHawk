@@ -1,3 +1,9 @@
+import {
+  cancellationError,
+  isOperationCancelled,
+  type OperationContext,
+  throwIfCancelled,
+} from "../operation.js";
 import { AGENTHAWK_VERSION } from "../version.js";
 
 export type HttpErrorKind =
@@ -20,12 +26,14 @@ export class SafeHttpError extends Error {
 }
 
 export interface JsonHttpClient {
-  getJson(url: URL): Promise<unknown>;
+  getJson(url: URL, options?: HttpRequestOptions): Promise<unknown>;
 }
 
 export interface JsonRequestClient extends JsonHttpClient {
-  postJson(url: URL, body: unknown): Promise<unknown>;
+  postJson(url: URL, body: unknown, options?: HttpRequestOptions): Promise<unknown>;
 }
+
+export interface HttpRequestOptions extends OperationContext {}
 
 export interface SafeHttpClientOptions {
   fetch?: typeof globalThis.fetch;
@@ -75,41 +83,74 @@ export class SafeHttpClient implements JsonRequestClient {
     }
   }
 
-  async getJson(url: URL): Promise<unknown> {
-    return await this.#jsonWithRetry(url, { method: "GET" });
+  async getJson(url: URL, options: HttpRequestOptions = {}): Promise<unknown> {
+    return await this.#jsonWithRetry(url, { method: "GET" }, options.signal);
   }
 
-  async postJson(url: URL, body: unknown): Promise<unknown> {
-    return await this.#jsonWithRetry(url, {
-      body: encodeJsonBody(body, this.#maxRequestBytes),
-      followRedirects: false,
-      method: "POST",
-    });
+  async postJson(url: URL, body: unknown, options: HttpRequestOptions = {}): Promise<unknown> {
+    return await this.#jsonWithRetry(
+      url,
+      {
+        body: encodeJsonBody(body, this.#maxRequestBytes),
+        followRedirects: false,
+        method: "POST",
+      },
+      options.signal,
+    );
   }
 
-  async #jsonWithRetry(url: URL, request: JsonRequest): Promise<unknown> {
+  async #jsonWithRetry(
+    url: URL,
+    request: JsonRequest,
+    parentSignal?: AbortSignal,
+  ): Promise<unknown> {
     assertAllowedUrl(url);
+    throwIfCancelled({ signal: parentSignal });
 
     let lastError: SafeHttpError | undefined;
     for (let attempt = 0; attempt <= this.#maxRetries; attempt += 1) {
       try {
-        return await this.#jsonOnce(url, request);
+        return await this.#jsonOnce(url, request, parentSignal);
       } catch (error) {
+        if (isOperationCancelled(error)) throw error;
+        if (parentSignal?.aborted && !(error instanceof SafeHttpError && error.kind === "timeout"))
+          throw cancellationError(parentSignal);
         const mapped = mapUnknownError(error);
         lastError = mapped;
         if (attempt === this.#maxRetries || !isRetryable(mapped)) {
           throw mapped;
         }
-        await delay(this.#retryDelayMs * 2 ** attempt);
+        try {
+          await delay(this.#retryDelayMs * 2 ** attempt, parentSignal);
+        } catch (error) {
+          if (parentSignal?.aborted) throw cancellationError(parentSignal);
+          throw error;
+        }
       }
     }
 
     throw lastError ?? new SafeHttpError("network_error", "HTTP request failed.");
   }
 
-  async #jsonOnce(initialUrl: URL, request: JsonRequest): Promise<unknown> {
+  async #jsonOnce(
+    initialUrl: URL,
+    request: JsonRequest,
+    parentSignal?: AbortSignal,
+  ): Promise<unknown> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.#timeoutMs);
+    let abortCause: "parent" | "timeout" | undefined;
+    const onParentAbort = () => {
+      if (abortCause) return;
+      abortCause = "parent";
+      controller.abort();
+    };
+    if (parentSignal?.aborted) onParentAbort();
+    else parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+    const timer = setTimeout(() => {
+      if (abortCause) return;
+      abortCause = "timeout";
+      controller.abort();
+    }, this.#timeoutMs);
     let current = new URL(initialUrl);
     try {
       for (let redirects = 0; redirects <= this.#maxRedirects; redirects += 1) {
@@ -120,10 +161,12 @@ export class SafeHttpClient implements JsonRequestClient {
             throw new SafeHttpError("provider_error", "Provider POST must not redirect.");
           }
           if (redirects === this.#maxRedirects) {
+            await response.body?.cancel();
             throw new SafeHttpError("provider_error", "Provider exceeded the redirect limit.");
           }
           const location = response.headers.get("location");
           if (!location) {
+            await response.body?.cancel();
             throw new SafeHttpError("invalid_response", "Provider redirect omitted Location.");
           }
           await response.body?.cancel();
@@ -133,18 +176,22 @@ export class SafeHttpClient implements JsonRequestClient {
         }
 
         if (response.status === 404) {
+          await response.body?.cancel();
           throw new SafeHttpError("not_found", "Provider resource was not found.", 404);
         }
         if (response.status === 429) {
+          await response.body?.cancel();
           throw new SafeHttpError("rate_limited", "Provider rate limit was reached.", 429);
         }
         if (!response.ok) {
+          await response.body?.cancel();
           const message = `Provider returned HTTP ${response.status}.`;
           throw new SafeHttpError("provider_error", message, response.status);
         }
 
         const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
         if (!contentType.includes("application/json")) {
+          await response.body?.cancel();
           throw new SafeHttpError("invalid_response", "Provider did not return JSON content.");
         }
         return parseJson(await readBoundedBody(response, this.#maxBodyBytes, controller.signal));
@@ -152,12 +199,14 @@ export class SafeHttpClient implements JsonRequestClient {
 
       throw new SafeHttpError("provider_error", "Provider exceeded the redirect limit.");
     } catch (error) {
-      if (controller.signal.aborted) {
+      if (abortCause === "parent" && parentSignal) throw cancellationError(parentSignal);
+      if (abortCause === "timeout") {
         throw new SafeHttpError("timeout", "Provider request timed out.");
       }
       throw error;
     } finally {
       clearTimeout(timer);
+      parentSignal?.removeEventListener("abort", onParentAbort);
     }
   }
 
@@ -202,6 +251,7 @@ async function readBoundedBody(
 ): Promise<string> {
   const contentLength = response.headers.get("content-length");
   if (contentLength && Number(contentLength) > maximum) {
+    await response.body?.cancel();
     throw new SafeHttpError("invalid_response", "Provider response exceeded the body limit.");
   }
   if (!response.body) {
@@ -226,8 +276,8 @@ async function readBoundedBody(
     body += decoder.decode();
     return body;
   } catch (error) {
+    await reader.cancel().catch(() => undefined);
     if (signal.aborted) {
-      await reader.cancel().catch(() => undefined);
       throw new SafeHttpError("timeout", "Provider request timed out.");
     }
     if (error instanceof SafeHttpError) throw error;
@@ -244,6 +294,7 @@ async function readWithAbort(
   return await new Promise((resolve, reject) => {
     const onAbort = () => reject(signal.reason);
     signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
     reader
       .read()
       .then(resolve, reject)
@@ -290,7 +341,20 @@ function isRetryable(error: SafeHttpError): boolean {
   );
 }
 
-async function delay(milliseconds: number): Promise<void> {
+async function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  throwIfCancelled({ signal });
   if (milliseconds === 0) return;
-  await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal ? cancellationError(signal) : new Error("Retry delay was cancelled."));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
 }

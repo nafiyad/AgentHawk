@@ -34,6 +34,8 @@ export const packageSpecifications = [
       "dist/npm/spec.js",
       "dist/osv/provider.d.ts",
       "dist/osv/provider.js",
+      "dist/operation.d.ts",
+      "dist/operation.js",
       "dist/policy/engine.d.ts",
       "dist/policy/engine.js",
       "dist/scan/dependencies.d.ts",

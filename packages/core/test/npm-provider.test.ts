@@ -7,6 +7,7 @@ import {
   npmResultForCache,
   parseCachedNpmResult,
 } from "../src/npm/provider.js";
+import { OperationCancelledError } from "../src/operation.js";
 
 async function fixture(name: string): Promise<unknown> {
   const value = await readFile(new URL(`./fixtures/npm/${name}`, import.meta.url), "utf8");
@@ -23,6 +24,25 @@ function client(value: unknown, capture?: (url: URL) => void): JsonHttpClient {
 }
 
 describe("NpmRegistryProvider", () => {
+  it("forwards cancellation and does not downgrade it to provider failure", async () => {
+    const controller = new AbortController();
+    const provider = new NpmRegistryProvider({
+      httpClient: {
+        getJson: async (_url, options) => {
+          expect(options?.signal).toBe(controller.signal);
+          controller.abort(new Error("untrusted"));
+          return {};
+        },
+      },
+    });
+
+    await expect(
+      provider.getPackage(
+        { ecosystem: "npm", name: "example", requestedSpec: "latest" },
+        { signal: controller.signal },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+  });
   it("normalizes latest metadata without retaining arbitrary scripts", async () => {
     const provider = new NpmRegistryProvider({
       httpClient: client(await fixture("mature-package.json")),
