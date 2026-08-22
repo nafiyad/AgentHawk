@@ -57,10 +57,11 @@ See [the age-threshold decision](docs/adr/0007-policy-age-thresholds.md) for the
 ```bash
 npm install --global @agenthawk/cli@alpha
 agenthawk --version
-agenthawk init --integration codex
 ```
 
 Use `@alpha` or the exact `0.1.0-alpha.1` version in automation. npm requires every package to have a `latest` tag, so the first public alpha is also the current default install even though it remains prerelease software.
+
+The currently published `0.1.0-alpha.1` package does not include `agenthawk init`. Initialization is implemented in this source revision and will be available only in a package version released from it; use `agenthawk --help` to verify the commands present in an installed version.
 
 ## Check a proposed dependency
 
@@ -75,6 +76,7 @@ pnpm agenthawk check npm example-package@1.0.0 --no-cache
 pnpm agenthawk policy validate --file .agenthawk.yml --format json
 pnpm agenthawk approvals verify --file .agenthawk/approvals.yml --format json
 pnpm agenthawk doctor --format json
+# Available from this source revision; not in the published 0.1.0-alpha.1 package.
 pnpm agenthawk init --integration none --format json
 pnpm agenthawk scan --format json
 pnpm agenthawk diff --base origin/main --strict --format json
