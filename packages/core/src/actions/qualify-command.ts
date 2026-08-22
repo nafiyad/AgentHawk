@@ -203,7 +203,8 @@ function isAmbiguousCommand(command: string, words: readonly string[]): boolean 
     reservedWords.has(executableBase) ||
     ambiguousExecutables.has(executableBase) ||
     /^[a-z_][a-z0-9_]*\+?=/iu.test(executable) ||
-    isManagerLikeExecutable(executable)
+    isManagerLikeExecutable(executable) ||
+    words.slice(1).some(isManagerLikeExecutable)
   );
 }
 
@@ -258,6 +259,7 @@ export function qualifyCommand(
       reasonCode: simpleExecutable
         ? "unsupported_executable"
         : isManagerLikeExecutable(executable) ||
+            words.slice(1).some(isManagerLikeExecutable) ||
             ambiguousExecutables.has(executableBase) ||
             reservedWords.has(executableBase) ||
             /^[a-z_][a-z0-9_]*\+?=/iu.test(executable)
