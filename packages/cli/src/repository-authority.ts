@@ -195,6 +195,7 @@ async function inspectDirectoryPath(
     throwIfCancelled(options);
     current = join(current, segment);
     const stats = await inspectPath(current);
+    throwIfCancelled(options);
     if (!stats.isDirectory() || stats.isSymbolicLink()) {
       throw new RepositoryAuthorityError("Repository path must not use symbolic redirection.");
     }
@@ -225,6 +226,7 @@ async function readOptionalManifest(
   let initial: Stats;
   try {
     initial = await inspectRegularPath(path, inspectPath, options);
+    throwIfCancelled(options);
   } catch (error) {
     if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isMissing(error)) return undefined;
@@ -294,6 +296,7 @@ async function inspectRegularPath(
     throwIfCancelled(options);
     current = join(current, segment);
     stats = await inspectPath(current);
+    throwIfCancelled(options);
     const final = index === segments.length - 1;
     if (stats.isSymbolicLink() || (final ? !stats.isFile() : !stats.isDirectory())) {
       throw new RepositoryAuthorityError("Repository manifest is unsafe.");
@@ -366,6 +369,7 @@ async function assertStillAbsent(
   throwIfCancelled(options);
   try {
     await inspectPath(path);
+    throwIfCancelled(options);
   } catch (error) {
     if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isMissing(error)) return;

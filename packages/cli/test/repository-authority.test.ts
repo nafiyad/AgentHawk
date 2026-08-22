@@ -464,6 +464,72 @@ describe("loadRepositoryAuthority", { timeout: integrationTimeout }, () => {
     expect(gitCalled).toBe(false);
   });
 
+  it("starts no realpath or Git work after action-path inspection cancels", async () => {
+    const root = await repository();
+    const canonical = await realpath(root);
+    const controller = new AbortController();
+    let realCalls = 0;
+    let gitCalls = 0;
+    const inspectPath = (async (path: Parameters<typeof lstat>[0]) => {
+      const stats = await lstat(path);
+      if (path.toString() === canonical) controller.abort(new Error("untrusted"));
+      return stats;
+    }) as typeof lstat;
+    const realPath = (async (path: Parameters<typeof realpath>[0]) => {
+      realCalls += 1;
+      return await realpath(path);
+    }) as typeof realpath;
+    await expect(
+      loadRepositoryAuthority(
+        root,
+        { signal: controller.signal },
+        {
+          inspectPath,
+          realPath,
+          runGit: async () => {
+            gitCalls += 1;
+            return `${canonical}\n`;
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(realCalls).toBe(0);
+    expect(gitCalls).toBe(0);
+  });
+
+  it("does not open a manifest after its final inspection cancels", async () => {
+    const root = await repository();
+    const manifestPath = join(await realpath(root), "package.json");
+    await writeFile(manifestPath, "{}\n");
+    const controller = new AbortController();
+    let openCalls = 0;
+    const inspectPath = (async (path: Parameters<typeof lstat>[0]) => {
+      const stats = await lstat(path);
+      if (path.toString() === manifestPath) controller.abort(new Error("untrusted"));
+      return stats;
+    }) as typeof lstat;
+    const openFile = (async (
+      path: Parameters<typeof open>[0],
+      flags: Parameters<typeof open>[1],
+    ) => {
+      openCalls += 1;
+      return await open(path, flags);
+    }) as typeof open;
+    await expect(
+      loadRepositoryAuthority(
+        root,
+        { signal: controller.signal },
+        {
+          inspectPath,
+          openFile,
+          readApprovals: async () => undefined,
+          readPolicy: async () => undefined,
+        },
+      ),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(openCalls).toBe(0);
+  });
+
   it("uses fixed co-root paths that cannot be supplied by a hook payload", async () => {
     const root = await repository();
     const policyPaths: string[] = [];
