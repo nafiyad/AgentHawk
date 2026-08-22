@@ -44,6 +44,9 @@ export const agentActionSchema = z
           .string()
           .min(1)
           .max(16_384)
+          .refine((value) => Buffer.byteLength(value, "utf8") <= 16_384, {
+            message: "Command exceeds the 16384-byte UTF-8 limit.",
+          })
           .refine((value) => !value.includes("\u0000"), {
             message: "Command contains a NUL character.",
           }),

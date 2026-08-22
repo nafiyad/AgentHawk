@@ -98,6 +98,16 @@ describe("qualifyCommand", () => {
     ["FOO+=bar pnpm add zod", "unsupported_package_manager"],
     ["coproc npm add lodash", "unsupported_package_manager"],
     ["coproc pnpm add zod", "unsupported_package_manager"],
+    ["doas npm add lodash", "unsupported_package_manager"],
+    ["chroot /tmp npm add lodash", "unsupported_package_manager"],
+    ["runuser -u nobody -- npm add lodash", "unsupported_package_manager"],
+    ["stdbuf -oL npm add lodash", "unsupported_package_manager"],
+    ["taskset -c 0 npm add lodash", "unsupported_package_manager"],
+    ["ionice npm add lodash", "unsupported_package_manager"],
+    ["strace npm add lodash", "unsupported_package_manager"],
+    ["watch npm add lodash", "unsupported_package_manager"],
+    ["for item in one; do npm add lodash; done", "unsupported_package_manager"],
+    ["git status # comment", "shell_composition"],
     ["sudo echo npm", "unsupported_package_manager"],
     ["node print.js npm", "unsupported_package_manager"],
     ["python script.py pnpm", "unsupported_package_manager"],
@@ -141,6 +151,7 @@ describe("qualifyCommand", () => {
     ["npm add UPPERCASE", "invalid_operand"],
     [`npm add ${Array.from({ length: 9 }, (_, index) => `p-${index}`).join(" ")}`, "operand_limit"],
     ["x".repeat(16_385), "command_limit"],
+    ["é".repeat(8193), "command_limit"],
   ])("rejects invalid input without throwing %j", (command, reasonCode) => {
     expect(qualifyCommand(command)).toEqual({ category: "invalid", reasonCode });
   });
@@ -151,16 +162,27 @@ describe("qualifyCommand", () => {
       reasonCode: "shell_dialect_unsupported",
     });
     expect(qualifyCommand("Get-ChildItem", "powershell")).toEqual({
-      category: "unrelated",
-      reasonCode: "not_dependency_action",
+      category: "install_like_unsupported",
+      reasonCode: "shell_dialect_unsupported",
     });
     expect(qualifyCommand("Write-Output npm", "powershell")).toEqual({
-      category: "unrelated",
-      reasonCode: "not_dependency_action",
+      category: "install_like_unsupported",
+      reasonCode: "shell_dialect_unsupported",
     });
     expect(qualifyCommand("npm.cmd add lodash", "powershell")).toEqual({
       category: "install_like_unsupported",
       reasonCode: "shell_dialect_unsupported",
+    });
+    expect(qualifyCommand("Start-Process npm -ArgumentList add,lodash", "powershell")).toEqual({
+      category: "install_like_unsupported",
+      reasonCode: "shell_dialect_unsupported",
+    });
+  });
+
+  it("accepts exactly 16384 UTF-8 command bytes", () => {
+    expect(qualifyCommand("é".repeat(8192))).toEqual({
+      category: "unrelated",
+      reasonCode: "not_dependency_action",
     });
   });
 

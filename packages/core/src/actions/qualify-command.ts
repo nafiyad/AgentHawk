@@ -107,32 +107,50 @@ const managerExecutables = new Set(["npm", "pnpm", "npx", "pnpx", "yarn", "bun"]
 const ambiguousExecutables = new Set([
   "bash",
   "busybox",
+  "chroot",
   "cmd",
   "cmd.exe",
   "command",
   "corepack",
   "dash",
+  "daemon",
+  "daemonize",
+  "doas",
   "env",
   "eval",
   "exec",
   "fish",
+  "ionice",
   "ksh",
   "nice",
   "node",
   "nohup",
+  "nsenter",
   "perl",
   "powershell",
   "powershell.exe",
+  "prlimit",
   "pwsh",
   "pwsh.exe",
   "python",
   "python3",
+  "runuser",
   "ruby",
+  "s6-setuidgid",
+  "script",
   "setsid",
+  "setpriv",
   "sh",
+  "stdbuf",
+  "strace",
+  "su",
   "sudo",
+  "systemd-run",
+  "taskset",
   "time",
   "timeout",
+  "unshare",
+  "watch",
   "xargs",
   "zsh",
 ]);
@@ -141,16 +159,26 @@ const reservedWords = new Set([
   "case",
   "coproc",
   "do",
+  "done",
   "elif",
   "else",
+  "esac",
+  "fi",
+  "for",
+  "function",
   "if",
+  "in",
+  "select",
   "then",
   "until",
   "while",
 ]);
 
 function hasShellStructure(value: string): boolean {
-  return [...value].some((character) => shellStructureCharacters.has(character));
+  return (
+    [...value].some((character) => shellStructureCharacters.has(character)) ||
+    /(?:^| +)#/u.test(value)
+  );
 }
 
 function isManagerLikeExecutable(token: string): boolean {
@@ -189,6 +217,9 @@ export function qualifyCommand(
   if (command.length > 16_384) {
     return { category: "invalid", reasonCode: "command_limit" };
   }
+  if (Buffer.byteLength(command, "utf8") > 16_384) {
+    return { category: "invalid", reasonCode: "command_limit" };
+  }
   if (
     /\p{C}/u.test(command) ||
     /[\t\r\n\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/u.test(command)
@@ -196,10 +227,7 @@ export function qualifyCommand(
     return { category: "invalid", reasonCode: "control_character" };
   }
   if (shellDialectSchema.parse(dialect) !== "posix") {
-    const words = command.trim().split(/ +/u);
-    return isAmbiguousCommand(command, words)
-      ? { category: "install_like_unsupported", reasonCode: "shell_dialect_unsupported" }
-      : { category: "unrelated", reasonCode: "not_dependency_action" };
+    return { category: "install_like_unsupported", reasonCode: "shell_dialect_unsupported" };
   }
 
   const trimmed = command.trim();

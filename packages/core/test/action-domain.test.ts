@@ -47,6 +47,17 @@ describe("agent action contract", () => {
       }),
     ).toThrow();
   });
+
+  it("enforces the command limit in UTF-8 bytes", () => {
+    const atLimit = "é".repeat(8192);
+    expect(
+      agentActionSchema.parse({ ...action, tool: { ...action.tool, command: atLimit } }).tool
+        .command,
+    ).toBe(atLimit);
+    expect(() =>
+      agentActionSchema.parse({ ...action, tool: { ...action.tool, command: "é".repeat(8193) } }),
+    ).toThrow();
+  });
 });
 
 describe("agent decision contract", () => {
