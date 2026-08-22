@@ -90,13 +90,13 @@ Every extracted package operand is passed to the production npm-spec parser befo
 
 The following classifications are distinct:
 
-- `unrelated`: neutral result and zero policy, cache, or provider calls;
+- `unrelated`: a lexically simple non-manager command with no recognized wrapper, interpreter, assignment, reserved shell form, composition, substitution, quoting, escaping, or glob syntax; it produces a neutral result and zero policy, cache, or provider calls;
 - `dependency_add`: evaluate every bounded package coordinate and combine verdicts deterministically;
 - `ephemeral_execution`: deny in the first slice pending separate `npx`, `npm exec`, and `pnpm dlx` policy semantics;
 - `install_like_unsupported`: deny with a stable reason when wrappers, shell composition, unknown flags, workspace ambiguity, or unsupported package-manager grammar prevent exact qualification;
 - `invalid`: deny malformed or over-limit action input.
 
-No-operand install/restore commands are not dependency-add admissions. Package-manager calls hidden inside scripts, interpreters, nested shells, child processes, aliases, functions, build tools, or manually opened terminals are unsupported. Manifest edits remain covered by post-edit `scan`/`diff` and protected CI; a post-edit check is not described as pre-action prevention.
+No-operand install/restore commands are not dependency-add admissions. The qualifier does not parse arbitrary shell programs: recognized wrappers/interpreters and any shell composition, substitution, quoting, escaping, assignment, reserved form, or glob syntax are conservatively unsupported even when the text might be benign. This intentional false-positive boundary prevents syntax it does not understand from becoming neutral. Unknown aliases, functions, scripts, child processes, build tools, or manually opened terminals can still conceal package-manager execution and remain residual bypasses. Manifest edits remain covered by post-edit `scan`/`diff` and protected CI; a post-edit check is not described as pre-action prevention.
 
 ### Decision mapping and host authority
 

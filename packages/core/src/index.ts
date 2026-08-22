@@ -1,4 +1,29 @@
 export {
+  type AdapterId,
+  type AgentAction,
+  type AgentAdapter,
+  type AgentDecision,
+  adapterIdSchema,
+  agentActionSchema,
+  agentAdapterSchema,
+  agentDecisionSchema,
+  type DecisionReasonCode,
+  type DeploymentTrust,
+  decisionReasonCodeSchema,
+  deploymentTrustSchema,
+  type ShellDialect,
+  serializeAgentDecision,
+  shellDialectSchema,
+} from "./actions/domain.js";
+export {
+  type CommandQualification,
+  commandQualificationSchema,
+  type QualificationReason,
+  type QualifiedPackage,
+  qualificationReasonSchema,
+  qualifyCommand,
+} from "./actions/qualify-command.js";
+export {
   type ApprovalApplication,
   type ApprovalFile,
   type ApprovalRecord,
