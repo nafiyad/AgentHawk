@@ -1,9 +1,10 @@
+import { EventEmitter } from "node:events";
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, get } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   assertLoopbackUrl,
@@ -14,6 +15,7 @@ import {
   parseArguments,
   runBounded,
   selectCommandTool,
+  terminateChild,
 } from "./verify-codex-host.mjs";
 
 describe("Codex host hook command boundary", () => {
@@ -80,15 +82,63 @@ describe("Codex host process cleanup boundary", () => {
     async () => {
       const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
       if (!systemRoot) throw new Error("missing Windows system root");
-      await expect(
-        runBounded(join(systemRoot, "System32", "ping.exe"), ["-n", "10", "127.0.0.1"], {
-          cwd: tmpdir(),
-          env: process.env,
-          timeoutMs: 200,
-        }),
-      ).rejects.toThrowError(new HostHarnessError("host_process_timeout"));
+      const root = await mkdtemp(join(tmpdir(), "agenthawk-host-windows-tree-test-"));
+      const marker = join(root, "descendant-ran");
+      const childScript = join(root, "descendant.ps1");
+      const parentScript = join(root, "parent.ps1");
+      const powershell = join(
+        systemRoot,
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+      );
+      const powerShellLiteral = (value) => `'${value.replaceAll("'", "''")}'`;
+      try {
+        await writeFile(
+          childScript,
+          `Start-Sleep -Milliseconds 1200\nSet-Content -LiteralPath ${powerShellLiteral(marker)} -Value ran\n`,
+          "utf8",
+        );
+        await writeFile(
+          parentScript,
+          `Start-Process -FilePath ${powerShellLiteral(powershell)} -ArgumentList @('-NoProfile', '-File', ${powerShellLiteral(childScript)}) -WindowStyle Hidden\nStart-Sleep -Seconds 10\n`,
+          "utf8",
+        );
+        await expect(
+          runBounded(powershell, ["-NoProfile", "-File", parentScript], {
+            cwd: root,
+            env: process.env,
+            timeoutMs: 400,
+          }),
+        ).rejects.toThrowError(new HostHarnessError("host_process_timeout"));
+        await delay(1_500);
+        await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        await rm(root, { recursive: true, force: true, maxRetries: 3 });
+      }
     },
     5_000,
+  );
+
+  it.runIf(process.platform === "win32")(
+    "falls back to direct termination when taskkill exits unsuccessfully",
+    async () => {
+      const directKill = vi.fn(() => true);
+      const fakeChild = { exitCode: null, signalCode: null, pid: 4242, kill: directKill };
+      const spawnTreeKiller = vi.fn(() => {
+        const killer = Object.assign(new EventEmitter(), { kill: vi.fn(() => true) });
+        queueMicrotask(() => killer.emit("close", 1, null));
+        return killer;
+      });
+      await terminateChild(fakeChild, spawnTreeKiller);
+      expect(spawnTreeKiller).toHaveBeenCalledWith(
+        "taskkill",
+        ["/pid", "4242", "/t", "/f"],
+        expect.objectContaining({ windowsHide: true }),
+      );
+      expect(directKill).toHaveBeenCalledOnce();
+    },
   );
 
   it("closes active fixture connections without waiting indefinitely", async () => {

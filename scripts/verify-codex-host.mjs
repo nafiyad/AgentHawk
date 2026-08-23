@@ -321,13 +321,13 @@ function commandForEntry(entry, args) {
   return { file: entry, args };
 }
 
-export async function terminateChild(child) {
+export async function terminateChild(child, spawnTreeKiller = spawn) {
   if (child.exitCode !== null || child.signalCode !== null) {
     return;
   }
   if (process.platform === "win32" && child.pid) {
     const treeKillCompleted = await new Promise((resolveKill) => {
-      const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+      const killer = spawnTreeKiller("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
         windowsHide: true,
         stdio: "ignore",
       });
@@ -343,7 +343,7 @@ export async function terminateChild(child) {
         finish(false);
       }, TREE_KILL_TIMEOUT_MS);
       timer.unref();
-      killer.once("close", () => finish(true));
+      killer.once("close", (code, signal) => finish(code === 0 && signal === null));
       killer.once("error", () => finish(false));
     });
     if (!treeKillCompleted && child.exitCode === null && child.signalCode === null) child.kill();
