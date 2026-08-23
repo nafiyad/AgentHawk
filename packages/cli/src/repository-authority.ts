@@ -41,7 +41,15 @@ export interface RepositoryAuthorityDependencies {
   runGit?: typeof runBoundedGit;
 }
 
-export class RepositoryAuthorityError extends Error {}
+export class RepositoryAuthorityError extends Error {
+  constructor(
+    readonly code: "configuration" | "repository_identity",
+    message: string,
+  ) {
+    super(message);
+    this.name = "RepositoryAuthorityError";
+  }
+}
 
 export async function loadRepositoryAuthority(
   actionDirectory: string,
@@ -75,6 +83,7 @@ export async function loadRepositoryAuthority(
     const gitIdentity = await inspectDirectoryIdentity(repositoryRoot, inspectIdentity, options);
     if (repositoryRoot !== actionRoot || !sameDirectoryIdentity(initialIdentity, gitIdentity)) {
       throw new RepositoryAuthorityError(
+        "repository_identity",
         "Action directory must be the canonical Git worktree root.",
       );
     }
@@ -100,7 +109,13 @@ export async function loadRepositoryAuthority(
     const rejected = reads.find(
       (result): result is PromiseRejectedResult => result.status === "rejected",
     );
-    if (rejected) throw rejected.reason;
+    if (rejected) {
+      if (rejected.reason instanceof RepositoryAuthorityError) throw rejected.reason;
+      throw new RepositoryAuthorityError(
+        "configuration",
+        "Repository configuration could not be loaded.",
+      );
+    }
     const [policyDocument, approvalDocument, manifest] = reads.map(
       (result) => (result as PromiseFulfilledResult<unknown>).value,
     ) as [unknown | undefined, unknown | undefined, PackageManifest | undefined];
@@ -113,10 +128,19 @@ export async function loadRepositoryAuthority(
     throwIfCancelled(options);
     const finalIdentity = await inspectDirectoryIdentity(repositoryRoot, inspectIdentity, options);
     if (!sameDirectoryIdentity(initialIdentity, finalIdentity)) {
-      throw new RepositoryAuthorityError("Repository root changed during authority loading.");
+      throw new RepositoryAuthorityError(
+        "repository_identity",
+        "Repository root changed during authority loading.",
+      );
     }
-    const config = agentHawkConfigSchema.parse(policyDocument ?? { version: 1 });
-    const approvals = approvalFileSchema.parse(approvalDocument ?? { version: 1, approvals: [] });
+    let config: AgentHawkConfig;
+    let approvals: ApprovalFile;
+    try {
+      config = agentHawkConfigSchema.parse(policyDocument ?? { version: 1 });
+      approvals = approvalFileSchema.parse(approvalDocument ?? { version: 1, approvals: [] });
+    } catch {
+      throw new RepositoryAuthorityError("configuration", "Repository configuration is invalid.");
+    }
     const dependenciesList: DirectDependency[] = manifest ? directDependencies(manifest) : [];
     return {
       repositoryRoot,
@@ -128,7 +152,10 @@ export async function loadRepositoryAuthority(
   } catch (error) {
     if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isOperationCancelled(error) || error instanceof RepositoryAuthorityError) throw error;
-    throw new RepositoryAuthorityError("Repository authority could not be established.");
+    throw new RepositoryAuthorityError(
+      "repository_identity",
+      "Repository authority could not be established.",
+    );
   }
 }
 
@@ -141,7 +168,7 @@ function validateDirectoryInput(value: string): void {
     Buffer.byteLength(value, "utf8") > maximumDirectoryInputBytes ||
     hasControl(value)
   ) {
-    throw new RepositoryAuthorityError("Action directory is invalid.");
+    throw new RepositoryAuthorityError("repository_identity", "Action directory is invalid.");
   }
 }
 
@@ -153,10 +180,16 @@ function parseGitRoot(output: string): string {
     hasControl(root) ||
     !/^(?:[^\r\n]+)\r?\n$/u.test(output)
   ) {
-    throw new RepositoryAuthorityError("Git returned an invalid worktree root.");
+    throw new RepositoryAuthorityError(
+      "repository_identity",
+      "Git returned an invalid worktree root.",
+    );
   }
   if (!isAbsolute(root))
-    throw new RepositoryAuthorityError("Git returned an invalid worktree root.");
+    throw new RepositoryAuthorityError(
+      "repository_identity",
+      "Git returned an invalid worktree root.",
+    );
   return root;
 }
 
@@ -178,7 +211,10 @@ async function canonicalDirectory(
   } catch (error) {
     if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isOperationCancelled(error) || error instanceof RepositoryAuthorityError) throw error;
-    throw new RepositoryAuthorityError("Repository directory could not be resolved.");
+    throw new RepositoryAuthorityError(
+      "repository_identity",
+      "Repository directory could not be resolved.",
+    );
   }
 }
 
@@ -197,7 +233,10 @@ async function inspectDirectoryPath(
     const stats = await inspectPath(current);
     throwIfCancelled(options);
     if (!stats.isDirectory() || stats.isSymbolicLink()) {
-      throw new RepositoryAuthorityError("Repository path must not use symbolic redirection.");
+      throw new RepositoryAuthorityError(
+        "repository_identity",
+        "Repository path must not use symbolic redirection.",
+      );
     }
   }
 }
@@ -211,7 +250,10 @@ async function inspectDirectoryIdentity(
   const stats = await inspectIdentity(path);
   throwIfCancelled(options);
   if (!stats.isDirectory() || stats.isSymbolicLink()) {
-    throw new RepositoryAuthorityError("Repository root must remain a regular directory.");
+    throw new RepositoryAuthorityError(
+      "repository_identity",
+      "Repository root must remain a regular directory.",
+    );
   }
   return stats;
 }
@@ -238,7 +280,7 @@ async function readOptionalManifest(
   } catch (error) {
     if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isOperationCancelled(error)) throw error;
-    throw new RepositoryAuthorityError("Repository manifest could not be read.");
+    throw new RepositoryAuthorityError("configuration", "Repository manifest could not be read.");
   }
   try {
     throwIfCancelled(options);
@@ -248,7 +290,7 @@ async function readOptionalManifest(
       !sameFileIdentity(initial, opened) ||
       opened.size > maximumManifestBytes
     ) {
-      throw new RepositoryAuthorityError("Repository manifest is unsafe.");
+      throw new RepositoryAuthorityError("configuration", "Repository manifest is unsafe.");
     }
     const buffer = Buffer.alloc(maximumManifestBytes + 1);
     let offset = 0;
@@ -259,7 +301,10 @@ async function readOptionalManifest(
       offset += result.bytesRead;
     }
     if (offset > maximumManifestBytes) {
-      throw new RepositoryAuthorityError("Repository manifest exceeds the 1 MiB limit.");
+      throw new RepositoryAuthorityError(
+        "configuration",
+        "Repository manifest exceeds the 1 MiB limit.",
+      );
     }
     const final = await inspectRegularPath(path, inspectPath, options);
     throwIfCancelled(options);
@@ -268,13 +313,19 @@ async function readOptionalManifest(
       final.size !== initial.size ||
       offset !== initial.size
     ) {
-      throw new RepositoryAuthorityError("Repository manifest changed while it was being read.");
+      throw new RepositoryAuthorityError(
+        "configuration",
+        "Repository manifest changed while it was being read.",
+      );
     }
     let source: string;
     try {
       source = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, offset));
     } catch {
-      throw new RepositoryAuthorityError("Repository manifest must be valid UTF-8.");
+      throw new RepositoryAuthorityError(
+        "configuration",
+        "Repository manifest must be valid UTF-8.",
+      );
     }
     return packageManifestSchema.parse(parseManifest(source));
   } finally {
@@ -299,11 +350,11 @@ async function inspectRegularPath(
     throwIfCancelled(options);
     const final = index === segments.length - 1;
     if (stats.isSymbolicLink() || (final ? !stats.isFile() : !stats.isDirectory())) {
-      throw new RepositoryAuthorityError("Repository manifest is unsafe.");
+      throw new RepositoryAuthorityError("configuration", "Repository manifest is unsafe.");
     }
   }
   if (!stats || stats.size > maximumManifestBytes) {
-    throw new RepositoryAuthorityError("Repository manifest is unsafe.");
+    throw new RepositoryAuthorityError("configuration", "Repository manifest is unsafe.");
   }
   return stats;
 }
@@ -335,7 +386,8 @@ async function readAuthorityPolicy(
   const state = await inspectOptionalRegularFile(path, inspectPath);
   throwIfCancelled(options);
   if (state === "absent") return undefined;
-  if (state === "invalid") throw new RepositoryAuthorityError("Policy path is unsafe.");
+  if (state === "invalid")
+    throw new RepositoryAuthorityError("configuration", "Policy path is unsafe.");
   return await readPolicyFile(path, {
     inspectPath,
     openFile: dependencies.openFile ?? open,
@@ -352,7 +404,8 @@ async function readAuthorityApprovals(
   const state = await inspectOptionalRegularFile(path, inspectPath);
   throwIfCancelled(options);
   if (state === "absent") return undefined;
-  if (state === "invalid") throw new RepositoryAuthorityError("Approval path is unsafe.");
+  if (state === "invalid")
+    throw new RepositoryAuthorityError("configuration", "Approval path is unsafe.");
   return await readApprovalFile(path, true, {
     inspectPath,
     openFile: dependencies.openFile ?? open,
@@ -373,9 +426,12 @@ async function assertStillAbsent(
   } catch (error) {
     if (options.signal?.aborted) throw cancellationError(options.signal);
     if (isMissing(error)) return;
-    throw new RepositoryAuthorityError(`${kind} path could not be revalidated.`);
+    throw new RepositoryAuthorityError("configuration", `${kind} path could not be revalidated.`);
   }
-  throw new RepositoryAuthorityError(`${kind} path changed during authority loading.`);
+  throw new RepositoryAuthorityError(
+    "configuration",
+    `${kind} path changed during authority loading.`,
+  );
 }
 
 function hasControl(value: string): boolean {

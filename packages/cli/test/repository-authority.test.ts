@@ -310,7 +310,7 @@ describe("loadRepositoryAuthority", { timeout: integrationTimeout }, () => {
     } as unknown as FileHandle;
     await expect(
       loadRepositoryAuthority(root, {}, { openFile: async () => handle }),
-    ).rejects.toThrow("Repository authority could not be established.");
+    ).rejects.toThrow("Repository configuration could not be loaded.");
   });
 
   it("preserves cancellation that occurs while closing the manifest descriptor", async () => {

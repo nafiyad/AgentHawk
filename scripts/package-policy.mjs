@@ -55,6 +55,8 @@ export const packageSpecifications = [
       "DISCLOSURE",
       "LICENSE",
       "README.md",
+      "dist/action-evaluation.d.ts",
+      "dist/action-evaluation.js",
       "dist/approvals.d.ts",
       "dist/approvals.js",
       "dist/check.d.ts",
