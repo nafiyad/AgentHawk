@@ -20,7 +20,8 @@
     "node": "^22.0.0 || ^24.0.0"
   },
   "bin": {
-    "agenthawk": "./dist/index.js"
+    "agenthawk": "./dist/index.js",
+    "agenthawk-codex-pretooluse": "./dist/codex-pretooluse-entry.js"
   },
   "files": [
     "dist",
@@ -42,7 +43,8 @@
   "dependencies": {
     "@agenthawk/core": "workspace:*",
     "commander": "15.0.0",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "26.2.0",

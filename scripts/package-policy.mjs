@@ -50,7 +50,7 @@ export const packageSpecifications = [
   {
     name: "@agenthawk/cli",
     directory: "packages/cli",
-    maximumBytes: 150_000,
+    maximumBytes: 165_000,
     paths: [
       "DISCLOSURE",
       "LICENSE",
@@ -61,6 +61,10 @@ export const packageSpecifications = [
       "dist/approvals.js",
       "dist/check.d.ts",
       "dist/check.js",
+      "dist/codex-pretooluse-entry.d.ts",
+      "dist/codex-pretooluse-entry.js",
+      "dist/codex-pretooluse.d.ts",
+      "dist/codex-pretooluse.js",
       "dist/diff.d.ts",
       "dist/diff.js",
       "dist/doctor.d.ts",
@@ -71,6 +75,8 @@ export const packageSpecifications = [
       "dist/init-content.js",
       "dist/init.d.ts",
       "dist/init.js",
+      "dist/hook-json.d.ts",
+      "dist/hook-json.js",
       "dist/policy.d.ts",
       "dist/policy.js",
       "dist/program.d.ts",
@@ -163,12 +169,24 @@ export function validateReleaseManifest({ manifest, specification, packed = fals
       "Core export metadata is inconsistent",
     );
   } else {
-    assert(manifest.bin?.agenthawk === "./dist/index.js", "CLI binary metadata is inconsistent");
+    assert(
+      manifest.bin?.agenthawk === "./dist/index.js" &&
+        manifest.bin?.["agenthawk-codex-pretooluse"] === "./dist/codex-pretooluse-entry.js" &&
+        Object.keys(manifest.bin).length === 2,
+      "CLI binary metadata is inconsistent",
+    );
     assert(
       manifest.dependencies?.["@agenthawk/core"] === (packed ? releaseVersion : "workspace:*"),
       packed
         ? "Packed CLI must depend on the exact core release version"
         : "CLI source must retain its workspace dependency",
+    );
+    assert(
+      manifest.dependencies?.commander === "15.0.0" &&
+        manifest.dependencies?.yaml === "2.9.0" &&
+        manifest.dependencies?.zod === "4.4.3" &&
+        Object.keys(manifest.dependencies).length === 4,
+      "CLI runtime dependencies are inconsistent",
     );
   }
 }

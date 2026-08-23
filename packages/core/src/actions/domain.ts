@@ -7,7 +7,7 @@ export type AdapterId = z.infer<typeof adapterIdSchema>;
 export const deploymentTrustSchema = z.enum(["project", "user", "managed", "unknown"]);
 export type DeploymentTrust = z.infer<typeof deploymentTrustSchema>;
 
-export const shellDialectSchema = z.enum(["posix", "powershell"]);
+export const shellDialectSchema = z.enum(["portable", "posix", "powershell"]);
 export type ShellDialect = z.infer<typeof shellDialectSchema>;
 
 const printableAscii = /^[\x20-\x7e]+$/u;

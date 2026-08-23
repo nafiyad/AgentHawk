@@ -17,6 +17,10 @@ const action = {
 describe("agent action contract", () => {
   it("accepts the exact bounded v1 envelope", () => {
     expect(agentActionSchema.parse(action)).toEqual(action);
+    expect(
+      agentActionSchema.parse({ ...action, tool: { ...action.tool, dialect: "portable" } }).tool
+        .dialect,
+    ).toBe("portable");
   });
 
   it.each([

@@ -7,7 +7,9 @@ export default defineConfig({
       include: [
         "packages/core/src/**/*.ts",
         "packages/cli/src/action-evaluation.ts",
+        "packages/cli/src/codex-pretooluse.ts",
         "packages/cli/src/doctor.ts",
+        "packages/cli/src/hook-json.ts",
         "packages/cli/src/init-content.ts",
         "packages/cli/src/init.ts",
         "packages/cli/src/repository-authority.ts",

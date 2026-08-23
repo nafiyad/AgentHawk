@@ -60,11 +60,14 @@ describe("package content policy", () => {
     await expect(validate(specification.paths, directory)).rejects.toThrow("non-regular");
   });
 
-  it.each([-1, 0, 1.5, 150_001, "1", null])("rejects invalid unpacked size %s", async (size) => {
-    await expect(validate(specification.paths, regular, size)).rejects.toThrow(
-      "unexpectedly large",
-    );
-  });
+  it.each([-1, 0, 1.5, specification.maximumBytes + 1, "1", null])(
+    "rejects invalid unpacked size %s",
+    async (size) => {
+      await expect(validate(specification.paths, regular, size)).rejects.toThrow(
+        "unexpectedly large",
+      );
+    },
+  );
 });
 
 describe("release manifest policy", () => {
@@ -88,6 +91,18 @@ describe("release manifest policy", () => {
     expect(() =>
       validateReleaseManifest({ manifest: packed, specification, packed: true }),
     ).toThrow("exact core release version");
+  });
+
+  it.each([
+    ["missing direct Zod", (dependencies) => delete dependencies.zod],
+    ["ranged direct Zod", (dependencies) => (dependencies.zod = "^4.4.3")],
+    ["unexpected runtime", (dependencies) => (dependencies.unreviewed = "1.0.0")],
+  ])("rejects %s", async (_label, mutate) => {
+    const source = structuredClone(await sourceManifest(specification));
+    mutate(source.dependencies);
+    expect(() => validateReleaseManifest({ manifest: source, specification })).toThrow(
+      "runtime dependencies",
+    );
   });
 
   it.each([
