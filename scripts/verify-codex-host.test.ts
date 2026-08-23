@@ -44,6 +44,9 @@ describe("Codex host sandbox configuration", () => {
   it("activates the supported unelevated Windows sandbox without weakening policy", () => {
     const config = buildCodexConfig(providerUrl, "win32");
     expect(config).toContain('approval_policy = "never"\nsandbox_mode = "workspace-write"');
+    expect(config).toContain(
+      "[sandbox_workspace_write]\nnetwork_access = false\nexclude_tmpdir_env_var = true\nexclude_slash_tmp = true",
+    );
     expect(config).toContain('[windows]\nsandbox = "unelevated"\n\n[features]');
     expect(config).toContain("unified_exec = false");
     expect(config).not.toMatch(
@@ -54,6 +57,7 @@ describe("Codex host sandbox configuration", () => {
   it("does not add Windows sandbox configuration on other platforms", () => {
     const config = buildCodexConfig(providerUrl, "linux");
     expect(config).not.toContain("[windows]");
+    expect(config).toContain("exclude_tmpdir_env_var = true");
     expect(config).toContain("unified_exec = true");
   });
 });
