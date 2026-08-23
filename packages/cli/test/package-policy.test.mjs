@@ -94,6 +94,18 @@ describe("release manifest policy", () => {
   });
 
   it.each([
+    ["missing direct Zod", (dependencies) => delete dependencies.zod],
+    ["ranged direct Zod", (dependencies) => (dependencies.zod = "^4.4.3")],
+    ["unexpected runtime", (dependencies) => (dependencies.unreviewed = "1.0.0")],
+  ])("rejects %s", async (_label, mutate) => {
+    const source = structuredClone(await sourceManifest(specification));
+    mutate(source.dependencies);
+    expect(() => validateReleaseManifest({ manifest: source, specification })).toThrow(
+      "runtime dependencies",
+    );
+  });
+
+  it.each([
     ["private flag", (value) => (value.private = true)],
     ["wrong version", (value) => (value.version = "0.1.0-alpha.2")],
     ["missing disclosure", (value) => value.files.pop()],

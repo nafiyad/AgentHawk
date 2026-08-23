@@ -304,7 +304,7 @@ async function verifyPackedCodexHook(consumerDirectory) {
 
 async function installedRuntimeSpecifiers() {
   const packages = [
-    { directory: "packages/cli", names: ["commander", "yaml"] },
+    { directory: "packages/cli", names: ["commander", "yaml", "zod"] },
     { directory: "packages/core", names: ["semver", "zod"] },
   ];
   const specifiers = {};

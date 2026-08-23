@@ -181,6 +181,13 @@ export function validateReleaseManifest({ manifest, specification, packed = fals
         ? "Packed CLI must depend on the exact core release version"
         : "CLI source must retain its workspace dependency",
     );
+    assert(
+      manifest.dependencies?.commander === "15.0.0" &&
+        manifest.dependencies?.yaml === "2.9.0" &&
+        manifest.dependencies?.zod === "4.4.3" &&
+        Object.keys(manifest.dependencies).length === 4,
+      "CLI runtime dependencies are inconsistent",
+    );
   }
 }
 
