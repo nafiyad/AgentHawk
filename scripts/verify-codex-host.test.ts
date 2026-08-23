@@ -35,41 +35,61 @@ describe("Codex host hook command boundary", () => {
 });
 
 describe("Codex host process cleanup boundary", () => {
-  it("terminates descendant processes when the host times out", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agenthawk-host-process-test-"));
-    const marker = join(root, "descendant-ran");
-    const descendant = join(root, "descendant.mjs");
-    const parent = join(root, "parent.mjs");
-    try {
-      await writeFile(
-        descendant,
-        `import { writeFileSync } from "node:fs"; setTimeout(() => writeFileSync(${JSON.stringify(marker)}, "ran"), 800);`,
-        "utf8",
-      );
-      await writeFile(
-        parent,
-        `import { spawn } from "node:child_process"; spawn(process.execPath, [${JSON.stringify(descendant)}], { stdio: "ignore" }); setTimeout(() => {}, 10_000);`,
-        "utf8",
-      );
-      const childEnvironment = Object.fromEntries(
-        Object.entries(process.env).filter(
-          ([key]) =>
-            key !== "NODE_OPTIONS" && key !== "NODE_V8_COVERAGE" && !key.startsWith("VITEST"),
-        ),
-      );
+  it.skipIf(process.platform === "win32")(
+    "terminates descendant processes when the host times out",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "agenthawk-host-process-test-"));
+      const marker = join(root, "descendant-ran");
+      const descendant = join(root, "descendant.mjs");
+      const parent = join(root, "parent.mjs");
+      try {
+        await writeFile(
+          descendant,
+          `import { writeFileSync } from "node:fs"; setTimeout(() => writeFileSync(${JSON.stringify(marker)}, "ran"), 800);`,
+          "utf8",
+        );
+        await writeFile(
+          parent,
+          `import { spawn } from "node:child_process"; spawn(process.execPath, [${JSON.stringify(descendant)}], { stdio: "ignore" }); setTimeout(() => {}, 10_000);`,
+          "utf8",
+        );
+        const childEnvironment = Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([key]) =>
+              key !== "NODE_OPTIONS" && key !== "NODE_V8_COVERAGE" && !key.startsWith("VITEST"),
+          ),
+        );
+        await expect(
+          runBounded(process.execPath, [parent], {
+            cwd: root,
+            env: childEnvironment,
+            timeoutMs: 200,
+          }),
+        ).rejects.toThrowError(new HostHarnessError("host_process_timeout"));
+        await delay(1_000);
+        await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
+      } finally {
+        await rm(root, { recursive: true, force: true, maxRetries: 3 });
+      }
+    },
+    5_000,
+  );
+
+  it.runIf(process.platform === "win32")(
+    "terminates the Windows host process tree when the host times out",
+    async () => {
+      const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
+      if (!systemRoot) throw new Error("missing Windows system root");
       await expect(
-        runBounded(process.execPath, [parent], {
-          cwd: root,
-          env: childEnvironment,
+        runBounded(join(systemRoot, "System32", "ping.exe"), ["-n", "10", "127.0.0.1"], {
+          cwd: tmpdir(),
+          env: process.env,
           timeoutMs: 200,
         }),
       ).rejects.toThrowError(new HostHarnessError("host_process_timeout"));
-      await delay(1_000);
-      await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
-    } finally {
-      await rm(root, { recursive: true, force: true, maxRetries: 3 });
-    }
-  }, 5_000);
+    },
+    5_000,
+  );
 
   it("closes active fixture connections without waiting indefinitely", async () => {
     const server = createServer((_request, _response) => {});
@@ -82,6 +102,16 @@ describe("Codex host process cleanup boundary", () => {
     await closeServer(server);
     request.destroy();
     expect(server.listening).toBe(false);
+  });
+
+  it("keeps the output-limit failure authoritative while terminating the host", async () => {
+    await expect(
+      runBounded(process.execPath, ["-e", 'process.stdout.write("x".repeat(200000))'], {
+        cwd: tmpdir(),
+        env: process.env,
+        timeoutMs: 5_000,
+      }),
+    ).rejects.toThrowError(new HostHarnessError("host_output_too_large"));
   });
 });
 

@@ -12,6 +12,7 @@ const MAX_CAPTURE_BYTES = 128 * 1024;
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const CHILD_TIMEOUT_MS = 45_000;
 const SERVER_CLOSE_TIMEOUT_MS = 2_000;
+const TREE_KILL_TIMEOUT_MS = 5_000;
 
 export class HostHarnessError extends Error {
   constructor(code) {
@@ -325,14 +326,27 @@ export async function terminateChild(child) {
     return;
   }
   if (process.platform === "win32" && child.pid) {
-    await new Promise((resolveKill) => {
+    const treeKillCompleted = await new Promise((resolveKill) => {
       const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
         windowsHide: true,
         stdio: "ignore",
       });
-      killer.once("close", resolveKill);
-      killer.once("error", resolveKill);
+      let settled = false;
+      const finish = (completed) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolveKill(completed);
+      };
+      const timer = setTimeout(() => {
+        killer.kill();
+        finish(false);
+      }, TREE_KILL_TIMEOUT_MS);
+      timer.unref();
+      killer.once("close", () => finish(true));
+      killer.once("error", () => finish(false));
     });
+    if (!treeKillCompleted && child.exitCode === null && child.signalCode === null) child.kill();
     return;
   }
   if (child.pid) {
@@ -359,6 +373,7 @@ export async function runBounded(entry, args, options) {
     });
     const output = { stdout: [], stderr: [], bytes: 0 };
     let settled = false;
+    let terminating = false;
     let timer;
     const finish = (callback) => {
       if (settled) return;
@@ -369,6 +384,8 @@ export async function runBounded(entry, args, options) {
     const capture = (target) => (chunk) => {
       output.bytes += chunk.length;
       if (output.bytes > MAX_CAPTURE_BYTES) {
+        if (terminating) return;
+        terminating = true;
         void terminateChild(child).then(() =>
           finish(() => rejectRun(new HostHarnessError("host_output_too_large"))),
         );
@@ -378,20 +395,24 @@ export async function runBounded(entry, args, options) {
     };
     child.stdout.on("data", capture(output.stdout));
     child.stderr.on("data", capture(output.stderr));
-    child.once("error", () =>
-      finish(() => rejectRun(new HostHarnessError("host_process_start_failed"))),
-    );
-    child.once("close", (code, signal) =>
-      finish(() =>
-        resolveRun({
-          code,
-          signal,
-          stdout: Buffer.concat(output.stdout).toString("utf8"),
-          stderr: Buffer.concat(output.stderr).toString("utf8"),
-        }),
-      ),
-    );
+    child.once("error", () => {
+      if (!terminating) finish(() => rejectRun(new HostHarnessError("host_process_start_failed")));
+    });
+    child.once("close", (code, signal) => {
+      if (!terminating) {
+        finish(() =>
+          resolveRun({
+            code,
+            signal,
+            stdout: Buffer.concat(output.stdout).toString("utf8"),
+            stderr: Buffer.concat(output.stderr).toString("utf8"),
+          }),
+        );
+      }
+    });
     timer = setTimeout(() => {
+      if (terminating) return;
+      terminating = true;
       void terminateChild(child).then(() =>
         finish(() => rejectRun(new HostHarnessError("host_process_timeout"))),
       );
