@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -56,7 +56,19 @@ async function verifyConsumerEntrypoints() {
     { cwd: root, encoding: "utf8", maxBuffer: 65_536, timeout: 10_000, windowsHide: true },
   );
   assert(stdout.includes("Usage: agenthawk"), "CLI entrypoint smoke failed");
-  process.stdout.write("Verified core import and CLI startup entrypoints.\n");
+  const hookEntrypoint = join(root, "packages", "cli", "dist", "codex-pretooluse-entry.js");
+  const malformed = await executeWithInput(process.execPath, [hookEntrypoint], {
+    cwd: root,
+    input: "not-json",
+    timeout: 10_000,
+  });
+  assert(malformed.code === 2, "Codex hook malformed-input exit code is inconsistent");
+  assert(malformed.stdout === "", "Codex hook emergency path wrote stdout");
+  assert(
+    malformed.stderr === "AgentHawk denied the tool call because security evaluation failed.\n",
+    "Codex hook emergency denial is inconsistent",
+  );
+  process.stdout.write("Verified core import and CLI/hook startup entrypoints.\n");
 }
 
 async function verifyRuntimeVersion() {
@@ -211,9 +223,83 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       },
     );
     assert(JSON.parse(validated.stdout).valid === true, "Packed initialized policy is invalid");
+    await verifyPackedCodexHook(consumerDirectory);
   } finally {
     await rm(consumerDirectory, { force: true, recursive: true });
   }
+}
+
+async function verifyPackedCodexHook(consumerDirectory) {
+  const hookEntrypoint = join(
+    consumerDirectory,
+    "node_modules",
+    "@agenthawk",
+    "cli",
+    "dist",
+    "codex-pretooluse-entry.js",
+  );
+  const malformed = await executeWithInput(process.execPath, [hookEntrypoint], {
+    cwd: consumerDirectory,
+    input: "not-json",
+    timeout: 10_000,
+  });
+  assert(malformed.code === 2, "Packed Codex hook did not fail closed on malformed input");
+  assert(malformed.stdout === "", "Packed Codex hook emergency path wrote stdout");
+  assert(
+    malformed.stderr === "AgentHawk denied the tool call because security evaluation failed.\n",
+    "Packed Codex hook emergency denial is inconsistent",
+  );
+  const privateCommand = "npm add packed-private-fixture";
+  const privatePath = join(consumerDirectory, "private-transcript.jsonl");
+  const denied = await executeWithInput(process.execPath, [hookEntrypoint], {
+    cwd: consumerDirectory,
+    input: JSON.stringify({
+      cwd: consumerDirectory,
+      hook_event_name: "PreToolUse",
+      model: "packed-fixture-model",
+      permission_mode: "default",
+      session_id: "packed-private-session",
+      tool_input: { command: privateCommand },
+      tool_name: "Bash",
+      tool_use_id: "packed-private-tool",
+      transcript_path: privatePath,
+      turn_id: "packed-private-turn",
+    }),
+    timeout: 10_000,
+  });
+  assert(denied.code === 0, "Packed Codex hook ordinary denial exit code is inconsistent");
+  assert(denied.stderr === "", "Packed Codex hook ordinary denial wrote stderr");
+  const denial = JSON.parse(denied.stdout);
+  assert(
+    denial.hookSpecificOutput?.permissionDecision === "deny",
+    "Packed Codex hook ordinary denial is inconsistent",
+  );
+  assert(
+    !denied.stdout.includes("allow") && !denied.stdout.includes("updatedInput"),
+    "Packed Codex hook emitted forbidden host authority",
+  );
+  for (const privateValue of [privateCommand, privatePath, "packed-private"]) {
+    assert(!denied.stdout.includes(privateValue), "Packed Codex hook leaked private input");
+  }
+  const neutral = await executeWithInput(process.execPath, [hookEntrypoint], {
+    cwd: consumerDirectory,
+    input: JSON.stringify({
+      cwd: consumerDirectory,
+      hook_event_name: "PreToolUse",
+      model: "packed-fixture-model",
+      permission_mode: "default",
+      session_id: "packed-neutral-session",
+      tool_input: { command: "git status" },
+      tool_name: "Bash",
+      tool_use_id: "packed-neutral-tool",
+      transcript_path: null,
+      turn_id: "packed-neutral-turn",
+    }),
+    timeout: 10_000,
+  });
+  assert(neutral.code === 0, "Packed Codex hook neutral exit code is inconsistent");
+  assert(neutral.stdout === "", "Packed Codex hook neutral path wrote stdout");
+  assert(neutral.stderr === "", "Packed Codex hook neutral path wrote stderr");
 }
 
 async function installedRuntimeSpecifiers() {
@@ -253,4 +339,53 @@ async function installedRuntimeSpecifiers() {
     }
   }
   return specifiers;
+}
+
+async function executeWithInput(file, args, { cwd, input, timeout }) {
+  return await new Promise((resolvePromise, reject) => {
+    const child = spawn(file, args, {
+      cwd,
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    const stdout = [];
+    const stderr = [];
+    let total = 0;
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      fail(new Error("Hook consumer smoke timed out"));
+    }, timeout);
+    timer.unref();
+    const collect = (target) => (chunk) => {
+      total += chunk.length;
+      if (total > 65_536) {
+        child.kill();
+        fail(new Error("Hook consumer smoke output exceeded its limit"));
+        return;
+      }
+      target.push(chunk);
+    };
+    child.stdout.on("data", collect(stdout));
+    child.stderr.on("data", collect(stderr));
+    child.once("error", fail);
+    child.once("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise({
+        code,
+        stderr: Buffer.concat(stderr).toString("utf8"),
+        stdout: Buffer.concat(stdout).toString("utf8"),
+      });
+    });
+    child.stdin.end(input);
+  });
 }

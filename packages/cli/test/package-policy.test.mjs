@@ -60,11 +60,14 @@ describe("package content policy", () => {
     await expect(validate(specification.paths, directory)).rejects.toThrow("non-regular");
   });
 
-  it.each([-1, 0, 1.5, 150_001, "1", null])("rejects invalid unpacked size %s", async (size) => {
-    await expect(validate(specification.paths, regular, size)).rejects.toThrow(
-      "unexpectedly large",
-    );
-  });
+  it.each([-1, 0, 1.5, specification.maximumBytes + 1, "1", null])(
+    "rejects invalid unpacked size %s",
+    async (size) => {
+      await expect(validate(specification.paths, regular, size)).rejects.toThrow(
+        "unexpectedly large",
+      );
+    },
+  );
 });
 
 describe("release manifest policy", () => {

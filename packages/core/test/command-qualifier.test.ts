@@ -189,6 +189,27 @@ describe("qualifyCommand", () => {
     });
   });
 
+  it("uses a deliberately restricted cross-shell grammar when dialect is unauthenticated", () => {
+    expect(qualifyCommand("npm add lodash@1.0.0", "portable")).toMatchObject({
+      category: "dependency_add",
+      packages: [{ name: "lodash", requestedSpec: "1.0.0" }],
+    });
+    expect(qualifyCommand("git status", "portable")).toEqual({
+      category: "unrelated",
+      reasonCode: "not_dependency_action",
+    });
+    for (const command of ["n^pm add lodash", "%MANAGER% add lodash", "!MANAGER! add lodash"]) {
+      expect(qualifyCommand(command, "portable")).toEqual({
+        category: "install_like_unsupported",
+        reasonCode: "shell_composition",
+      });
+    }
+    expect(qualifyCommand("npm add lodash@^1", "portable")).toEqual({
+      category: "install_like_unsupported",
+      reasonCode: "shell_composition",
+    });
+  });
+
   it("accepts exactly 16384 UTF-8 command bytes", () => {
     expect(qualifyCommand("é".repeat(8192))).toEqual({
       category: "unrelated",

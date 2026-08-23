@@ -101,6 +101,7 @@ const shellStructureCharacters = new Set([
   "]",
   "?",
 ]);
+const portableStructureCharacters = new Set(["!", "%", "^"]);
 const unsupportedManagerExecutablePattern =
   /^(?:.*[\\/])?(?:npm|pnpm|npx|pnpx)(?:\.(?:cmd|exe))?$/iu;
 const managerExecutables = new Set(["npm", "pnpm", "npx", "pnpx", "yarn", "bun"]);
@@ -174,9 +175,11 @@ const reservedWords = new Set([
   "while",
 ]);
 
-function hasShellStructure(value: string): boolean {
+function hasShellStructure(value: string, dialect: ShellDialect): boolean {
   return (
     [...value].some((character) => shellStructureCharacters.has(character)) ||
+    (dialect === "portable" &&
+      [...value].some((character) => portableStructureCharacters.has(character))) ||
     /(?:^| +)#/u.test(value)
   );
 }
@@ -194,11 +197,15 @@ function executableBaseName(token: string): string {
   return (token.split(/[\\/]/u).pop() ?? token).toLowerCase();
 }
 
-function isAmbiguousCommand(command: string, words: readonly string[]): boolean {
+function isAmbiguousCommand(
+  command: string,
+  words: readonly string[],
+  dialect: ShellDialect,
+): boolean {
   const executable = words[0] ?? "";
   const executableBase = executableBaseName(executable);
   return (
-    hasShellStructure(command) ||
+    hasShellStructure(command, dialect) ||
     command.includes("*") ||
     reservedWords.has(executableBase) ||
     ambiguousExecutables.has(executableBase) ||
@@ -227,7 +234,7 @@ export function qualifyCommand(
   ) {
     return { category: "invalid", reasonCode: "control_character" };
   }
-  if (shellDialectSchema.parse(dialect) !== "posix") {
+  if (shellDialectSchema.parse(dialect) === "powershell") {
     return { category: "install_like_unsupported", reasonCode: "shell_dialect_unsupported" };
   }
 
@@ -249,7 +256,7 @@ export function qualifyCommand(
 
   const exactManager = executable === "npm" || executable === "pnpm";
   if (!exactManager) {
-    if (!isAmbiguousCommand(trimmed, words)) {
+    if (!isAmbiguousCommand(trimmed, words, dialect)) {
       return { category: "unrelated", reasonCode: "not_dependency_action" };
     }
     const simpleExecutable = /^(?:npm|pnpm)$/iu.test(executable);
@@ -268,7 +275,7 @@ export function qualifyCommand(
     };
   }
 
-  if (hasShellStructure(trimmed)) {
+  if (hasShellStructure(trimmed, dialect)) {
     return { category: "install_like_unsupported", reasonCode: "shell_composition" };
   }
 

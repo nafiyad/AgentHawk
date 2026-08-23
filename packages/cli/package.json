@@ -20,7 +20,8 @@
     "node": "^22.0.0 || ^24.0.0"
   },
   "bin": {
-    "agenthawk": "./dist/index.js"
+    "agenthawk": "./dist/index.js",
+    "agenthawk-codex-pretooluse": "./dist/codex-pretooluse-entry.js"
   },
   "files": [
     "dist",

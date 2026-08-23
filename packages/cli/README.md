@@ -11,6 +11,8 @@ agenthawk --version
 
 The currently published `0.1.0-alpha.1` package does not include `agenthawk init`. Initialization is implemented in the source revision that contains this README and is available only after that revision is released. Check `agenthawk --help` for the commands present in your installed version.
 
+This source revision also packages `agenthawk-codex-pretooluse` as a release-pinned compatibility candidate. It records a deliberately restricted `portable` grammar rather than inferring a target shell from the local operating system. It is not present in `0.1.0-alpha.1`, is not installed into Codex configuration, and is not yet a supported enforcement integration because named local and remote Codex v0.149.0 host surfaces have not passed.
+
 ```bash
 agenthawk check npm example-package@1.0.0 --strict --format json
 agenthawk policy validate --file .agenthawk.yml --format json
