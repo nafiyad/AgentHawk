@@ -11,6 +11,7 @@ const EXPECTED_CODEX_VERSION = "0.149.0";
 const MAX_CAPTURE_BYTES = 128 * 1024;
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const CHILD_TIMEOUT_MS = 45_000;
+const SERVER_CLOSE_TIMEOUT_MS = 2_000;
 
 export class HostHarnessError extends Error {
   constructor(code) {
@@ -71,8 +72,8 @@ function tomlLiteral(value) {
   return `'${value}'`;
 }
 
-function quoteWindowsArgument(value) {
-  return `"${value.replaceAll('"', '\\"')}"`;
+function quotePowerShellLiteral(value) {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function quotePosixArgument(value) {
@@ -82,7 +83,7 @@ function quotePosixArgument(value) {
 export function hookCommands(executable, script) {
   return {
     posix: `${quotePosixArgument(executable)} ${quotePosixArgument(script)}`,
-    windows: `& ${quoteWindowsArgument(executable)} ${quoteWindowsArgument(script)}`,
+    windows: `& ${quotePowerShellLiteral(executable)} ${quotePowerShellLiteral(script)}`,
   };
 }
 
@@ -269,9 +270,26 @@ async function listenLoopback(server) {
   return assertLoopbackUrl(`http://127.0.0.1:${address.port}/v1`);
 }
 
-async function closeServer(server) {
+export async function closeServer(server) {
   await new Promise((resolveClose, rejectClose) => {
-    server.close((error) => (error ? rejectClose(error) : resolveClose()));
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
+    const timer = setTimeout(
+      () => finish(() => rejectClose(new HostHarnessError("provider_close_timeout"))),
+      SERVER_CLOSE_TIMEOUT_MS,
+    );
+    timer.unref();
+    server.close((error) =>
+      finish(() =>
+        error ? rejectClose(new HostHarnessError("provider_close_failed")) : resolveClose(),
+      ),
+    );
+    server.closeAllConnections();
   });
 }
 
@@ -302,7 +320,7 @@ function commandForEntry(entry, args) {
   return { file: entry, args };
 }
 
-async function terminateChild(child) {
+export async function terminateChild(child) {
   if (child.exitCode !== null || child.signalCode !== null) {
     return;
   }
@@ -317,16 +335,25 @@ async function terminateChild(child) {
     });
     return;
   }
+  if (child.pid) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // Fall back to the direct child when the process group has already exited.
+    }
+  }
   child.kill("SIGKILL");
 }
 
-async function runBounded(entry, args, options) {
+export async function runBounded(entry, args, options) {
   const command = commandForEntry(entry, args);
   return await new Promise((resolveRun, rejectRun) => {
     const child = spawn(command.file, command.args, {
       cwd: options.cwd,
       env: options.env,
       shell: false,
+      detached: process.platform !== "win32",
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });

@@ -1,20 +1,87 @@
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer, get } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 
 import {
   assertLoopbackUrl,
+  closeServer,
   encodeSse,
   HostHarnessError,
   hookCommands,
   parseArguments,
+  runBounded,
   selectCommandTool,
 } from "./verify-codex-host.mjs";
 
 describe("Codex host hook command boundary", () => {
-  it("uses the PowerShell call operator for an absolute executable", () => {
-    expect(hookCommands("C:\\Program Files\\node.exe", "C:\\fixture path\\hook.mjs")).toEqual({
-      posix: "'C:\\Program Files\\node.exe' 'C:\\fixture path\\hook.mjs'",
-      windows: '& "C:\\Program Files\\node.exe" "C:\\fixture path\\hook.mjs"',
+  it("uses inert PowerShell literals for adversarial absolute paths", () => {
+    expect(
+      hookCommands(
+        "C:\\Program Files\\$runtime`$(ignored)\\node.exe",
+        "C:\\fixture path\\owner's $hook`$(ignored).mjs",
+      ),
+    ).toEqual({
+      posix:
+        `'C:\\Program Files\\$runtime\`$(ignored)\\node.exe' ` +
+        `'C:\\fixture path\\owner'"'"'s $hook\`$(ignored).mjs'`,
+      windows:
+        "& 'C:\\Program Files\\$runtime`$(ignored)\\node.exe' " +
+        "'C:\\fixture path\\owner''s $hook`$(ignored).mjs'",
     });
+  });
+});
+
+describe("Codex host process cleanup boundary", () => {
+  it("terminates descendant processes when the host times out", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-host-process-test-"));
+    const marker = join(root, "descendant-ran");
+    const descendant = join(root, "descendant.mjs");
+    const parent = join(root, "parent.mjs");
+    try {
+      await writeFile(
+        descendant,
+        `import { writeFileSync } from "node:fs"; setTimeout(() => writeFileSync(${JSON.stringify(marker)}, "ran"), 800);`,
+        "utf8",
+      );
+      await writeFile(
+        parent,
+        `import { spawn } from "node:child_process"; spawn(process.execPath, [${JSON.stringify(descendant)}], { stdio: "ignore" }); setTimeout(() => {}, 10_000);`,
+        "utf8",
+      );
+      const childEnvironment = Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([key]) =>
+            key !== "NODE_OPTIONS" && key !== "NODE_V8_COVERAGE" && !key.startsWith("VITEST"),
+        ),
+      );
+      await expect(
+        runBounded(process.execPath, [parent], {
+          cwd: root,
+          env: childEnvironment,
+          timeoutMs: 200,
+        }),
+      ).rejects.toThrowError(new HostHarnessError("host_process_timeout"));
+      await delay(1_000);
+      await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }, 5_000);
+
+  it("closes active fixture connections without waiting indefinitely", async () => {
+    const server = createServer((_request, _response) => {});
+    await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing fixture address");
+    const request = get(`http://127.0.0.1:${address.port}/`);
+    request.on("error", () => {});
+    await new Promise((resolveSocket) => request.once("socket", resolveSocket));
+    await closeServer(server);
+    request.destroy();
+    expect(server.listening).toBe(false);
   });
 });
 
