@@ -1,6 +1,6 @@
 # Support matrix
 
-Support snapshot: 2026-08-21 UTC
+Support snapshot: 2026-08-23 UTC
 
 AgentHawk separates declared compatibility, upstream lifecycle status, and direct CI evidence. A compatible or tested environment is not a claim that the host or a dependency is secure.
 
@@ -24,12 +24,12 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 | Integration | Current status |
 | --- | --- |
-| Codex | Advisory repository instruction template |
+| Codex | Advisory repository instruction template; `0.149.0` `PreToolUse` compatibility candidate implemented but unsupported |
 | Claude Code | Advisory project instruction template |
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |
 | GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
-| Native pre-action hooks | Milestone 17 threat model and ADR complete; no adapter implemented or supported yet |
+| Native pre-action hooks | Codex candidate and isolated host harness implemented; first Windows CLI run proved denial but not neutral execution, so no native adapter is supported |
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 
