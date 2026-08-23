@@ -4,6 +4,7 @@ import { type FileHandle, lstat, open, realpath } from "node:fs/promises";
 import { join, parse, resolve, sep } from "node:path";
 import {
   AGENTHAWK_VERSION,
+  type AgentHawkConfig,
   type ApprovalFile,
   agentHawkConfigSchema,
   applyApprovals,
@@ -21,6 +22,7 @@ import {
   type OperationContext,
   OsvProvider,
   type OsvProviderResult,
+  type ParsedNpmSpec,
   type ProviderStatus,
   parseCachedNpmResult,
   parseCachedOsvResult,
@@ -76,6 +78,18 @@ export interface CheckDependencies {
   ) => Promise<unknown | undefined>;
 }
 
+export interface PreparedNpmEvaluation {
+  approvals: ApprovalFile;
+  cache: MetadataCache;
+  config: AgentHawkConfig;
+  existingDependencies?: readonly string[];
+  noCache?: boolean;
+  now: Date;
+  offline?: boolean;
+  registryUrl?: string;
+  signal?: AbortSignal;
+}
+
 export async function checkNpmPackage(
   rawSpec: string,
   options: CheckOptions,
@@ -120,97 +134,36 @@ export async function checkNpmPackage(
     const cache =
       dependencies.cache ??
       new MetadataCache({ ...(dependencies.now ? { now: dependencies.now } : {}) });
-    const providerOptions: CheckOptions =
-      !dependencies.cache && (dependencies.getPackage || dependencies.queryOsv)
-        ? { ...options, noCache: true }
-        : options;
-    const npmResolution =
-      spec.type === "registry"
-        ? await resolveNpmResult(
-            spec.name,
-            spec.requestedSpec,
-            providerOptions,
-            dependencies,
-            cache,
-            now,
-          )
-        : {};
-    const providerResult = npmResolution.result;
-    const osvResolution = await resolveOsvResult(
-      config.registries.osv.enabled,
-      providerResult,
-      providerOptions,
-      dependencies,
-      cache,
-      now,
-    );
-    const osvResult = osvResolution.result;
-    throwIfCancelled({ signal: options.signal });
-    const evaluation = requireLiveVerification(
-      evaluatePolicy({
+    const report = await evaluatePreparedNpmPackage(
+      spec,
+      {
+        approvals,
+        cache,
         config,
         ...(options.existingDependencies
           ? { existingDependencies: options.existingDependencies }
           : {}),
+        ...((options.noCache ||
+          (!dependencies.cache && (dependencies.getPackage || dependencies.queryOsv))) && {
+          noCache: true,
+        }),
         now,
-        ...(isOsvProviderResult(osvResult) ? { osvResult } : {}),
-        ...(providerResult ? { providerResult } : {}),
-        spec,
-      }),
-      config,
-      npmResolution.cached === true || osvResolution.cached === true,
+        ...(options.offline ? { offline: true } : {}),
+        ...(options.registryUrl ? { registryUrl: options.registryUrl } : {}),
+        ...(options.signal ? { signal: options.signal } : {}),
+      },
+      dependencies,
     );
-    const target =
-      spec.type === "registry"
-        ? {
-            ecosystem: "npm" as const,
-            name: spec.name,
-            requestedSpec: spec.requestedSpec,
-            ...(providerResult?.ok ? { resolvedVersion: providerResult.data.resolvedVersion } : {}),
-          }
-        : {
-            ecosystem: "npm" as const,
-            name: spec.name ?? "non-registry",
-            requestedSpec: spec.raw,
-          };
-    const approvalApplication = applyApprovals({
-      approvals,
-      config,
-      errors: evaluation.errors,
-      findings: evaluation.findings,
-      now,
-      target,
-    });
     const exitCode =
-      approvalApplication.verdict === "error"
-        ? 3
-        : strictExitCode(approvalApplication.verdict, options.strict);
-    const report = evaluationReportSchema.parse({
-      schemaVersion: "1.0",
-      toolVersion: AGENTHAWK_VERSION,
-      generatedAt: now.toISOString(),
-      target,
-      verdict: approvalApplication.verdict,
-      originalVerdict: approvalApplication.originalVerdict,
-      findings: evaluation.findings,
-      providerStatus: providerStatuses(
-        providerResult,
-        osvResult,
-        npmResolution.stale,
-        osvResolution.stale,
-        npmResolution.cached,
-        osvResolution.cached,
-      ),
-      policyDigest: stableDigest(config),
-      evidenceDigest: stableDigest(
-        normalizedEvidenceForDigest(providerResult, osvResult, spec.type),
-      ),
-      ...(approvalApplication.approval ? { approval: approvalApplication.approval } : {}),
+      report.verdict === "error" ? 3 : strictExitCode(report.verdict, options.strict);
+    const renderedReport = evaluationReportSchema.parse({
+      ...report,
       exitCodeMeaning: exitMeaning(exitCode),
     });
     return {
       exitCode,
-      output: options.format === "json" ? renderJson(report) : renderTerminal(report),
+      output:
+        options.format === "json" ? renderJson(renderedReport) : renderTerminal(renderedReport),
     };
   } catch (error) {
     if (options.signal?.aborted) throw cancellationError(options.signal);
@@ -234,6 +187,103 @@ export async function checkNpmPackage(
   }
 }
 
+export async function evaluatePreparedNpmPackage(
+  spec: ParsedNpmSpec,
+  prepared: PreparedNpmEvaluation,
+  dependencies: CheckDependencies = {},
+): Promise<EvaluationReport> {
+  throwIfCancelled({ signal: prepared.signal });
+  if (prepared.offline && prepared.noCache) {
+    throw new PolicyInputError("--offline and --no-cache cannot be used together.");
+  }
+  const config = agentHawkConfigSchema.parse(prepared.config);
+  const approvals = approvalFileSchema.parse(prepared.approvals);
+  const providerOptions: ProviderEvaluationOptions = {
+    ...(prepared.noCache ? { noCache: true } : {}),
+    ...(prepared.offline ? { offline: true } : {}),
+    ...(prepared.registryUrl ? { registryUrl: prepared.registryUrl } : {}),
+    ...(prepared.signal ? { signal: prepared.signal } : {}),
+  };
+  const npmResolution =
+    spec.type === "registry"
+      ? await resolveNpmResult(
+          spec.name,
+          spec.requestedSpec,
+          providerOptions,
+          dependencies,
+          prepared.cache,
+          prepared.now,
+        )
+      : {};
+  const providerResult = npmResolution.result;
+  const osvResolution = await resolveOsvResult(
+    config.registries.osv.enabled,
+    providerResult,
+    providerOptions,
+    dependencies,
+    prepared.cache,
+    prepared.now,
+  );
+  const osvResult = osvResolution.result;
+  throwIfCancelled({ signal: prepared.signal });
+  const evaluation = requireLiveVerification(
+    evaluatePolicy({
+      config,
+      ...(prepared.existingDependencies
+        ? { existingDependencies: prepared.existingDependencies }
+        : {}),
+      now: prepared.now,
+      ...(isOsvProviderResult(osvResult) ? { osvResult } : {}),
+      ...(providerResult ? { providerResult } : {}),
+      spec,
+    }),
+    config,
+    npmResolution.cached === true || osvResolution.cached === true,
+  );
+  const target =
+    spec.type === "registry"
+      ? {
+          ecosystem: "npm" as const,
+          name: spec.name,
+          requestedSpec: spec.requestedSpec,
+          ...(providerResult?.ok ? { resolvedVersion: providerResult.data.resolvedVersion } : {}),
+        }
+      : {
+          ecosystem: "npm" as const,
+          name: spec.name ?? "non-registry",
+          requestedSpec: spec.raw,
+        };
+  const approvalApplication = applyApprovals({
+    approvals,
+    config,
+    errors: evaluation.errors,
+    findings: evaluation.findings,
+    now: prepared.now,
+    target,
+  });
+  return evaluationReportSchema.parse({
+    schemaVersion: "1.0",
+    toolVersion: AGENTHAWK_VERSION,
+    generatedAt: prepared.now.toISOString(),
+    target,
+    verdict: approvalApplication.verdict,
+    originalVerdict: approvalApplication.originalVerdict,
+    findings: evaluation.findings,
+    providerStatus: providerStatuses(
+      providerResult,
+      osvResult,
+      npmResolution.stale,
+      osvResolution.stale,
+      npmResolution.cached,
+      osvResolution.cached,
+    ),
+    policyDigest: stableDigest(config),
+    evidenceDigest: stableDigest(normalizedEvidenceForDigest(providerResult, osvResult, spec.type)),
+    ...(approvalApplication.approval ? { approval: approvalApplication.approval } : {}),
+    exitCodeMeaning: "prepared evaluation; caller assigns the stable exit meaning",
+  });
+}
+
 function defaultGetPackage(registryUrl?: string) {
   let provider: NpmRegistryProvider;
   try {
@@ -253,6 +303,12 @@ function defaultQueryOsv() {
 
 type ResolvedOsvResult = OsvProviderResult | { status: "disabled" } | undefined;
 
+interface ProviderEvaluationOptions extends OperationContext {
+  noCache?: boolean;
+  offline?: boolean;
+  registryUrl?: string;
+}
+
 interface CacheResolution<T> {
   cached?: boolean;
   result?: T;
@@ -262,7 +318,7 @@ interface CacheResolution<T> {
 async function resolveNpmResult(
   name: string,
   requestedSpec: string,
-  options: CheckOptions,
+  options: ProviderEvaluationOptions,
   dependencies: CheckDependencies,
   cache: MetadataCache,
   now: Date,
@@ -297,7 +353,7 @@ async function resolveNpmResult(
 async function resolveOsvResult(
   enabled: boolean,
   providerResult: NpmProviderResult | undefined,
-  options: CheckOptions,
+  options: ProviderEvaluationOptions,
   dependencies: CheckDependencies,
   cache: MetadataCache,
   now: Date,
