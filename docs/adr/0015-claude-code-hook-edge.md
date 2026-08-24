@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted as a research and implementation proposal. No Claude Code native adapter
-or installation lifecycle is supported by this decision.
+Accepted. The closed fixture adapter is implemented; no Claude Code installation
+lifecycle, host compatibility row, or native support is authorized by this decision.
 
 ## Context
 
@@ -132,8 +132,8 @@ exit-2 emergency denial. It will reuse the vendor-neutral action/evaluation
 contracts but inherit no Codex parser, serializer, configuration, lifecycle,
 host result, timeout claim, or support status.
 
-Every Claude native surface remains unsupported. The next slice is the fixture
-adapter only; configuration mutation waits for its own ownership decision.
+Every Claude native surface remains unsupported. The closed fixture adapter is
+implemented; configuration mutation still waits for its own ownership decision.
 
 ## Alternatives
 
@@ -173,7 +173,7 @@ interception, malware detection, tamper resistance, or proof of package safety.
 ## Consequences
 
 This decision corrects the roadmap's older trust summary, fixes the version and
-artifact candidate, and provides a bounded next implementation slice without
-changing production behavior. It deliberately postpones PowerShell admission,
+artifact candidate, and bounds the implemented fixture edge without activating a
+host integration. It deliberately postpones PowerShell admission,
 configuration ownership, host activation, and support claims until their own
 evidence gates pass.

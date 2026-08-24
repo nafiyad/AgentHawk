@@ -21,6 +21,7 @@
   },
   "bin": {
     "agenthawk": "./dist/index.js",
+    "agenthawk-claude-pretooluse": "./dist/claude-pretooluse-entry.js",
     "agenthawk-codex-pretooluse": "./dist/codex-pretooluse-entry.js"
   },
   "files": [

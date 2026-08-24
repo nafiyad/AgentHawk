@@ -50,7 +50,7 @@ export const packageSpecifications = [
   {
     name: "@agenthawk/cli",
     directory: "packages/cli",
-    maximumBytes: 235_000,
+    maximumBytes: 250_000,
     paths: [
       "DISCLOSURE",
       "LICENSE",
@@ -61,6 +61,10 @@ export const packageSpecifications = [
       "dist/approvals.js",
       "dist/check.d.ts",
       "dist/check.js",
+      "dist/claude-pretooluse-entry.d.ts",
+      "dist/claude-pretooluse-entry.js",
+      "dist/claude-pretooluse.d.ts",
+      "dist/claude-pretooluse.js",
       "dist/codex-project-hook-format.d.ts",
       "dist/codex-project-hook-format.js",
       "dist/codex-project-hook-status.d.ts",
@@ -177,8 +181,9 @@ export function validateReleaseManifest({ manifest, specification, packed = fals
   } else {
     assert(
       manifest.bin?.agenthawk === "./dist/index.js" &&
+        manifest.bin?.["agenthawk-claude-pretooluse"] === "./dist/claude-pretooluse-entry.js" &&
         manifest.bin?.["agenthawk-codex-pretooluse"] === "./dist/codex-pretooluse-entry.js" &&
-        Object.keys(manifest.bin).length === 2,
+        Object.keys(manifest.bin).length === 3,
       "CLI binary metadata is inconsistent",
     );
     assert(

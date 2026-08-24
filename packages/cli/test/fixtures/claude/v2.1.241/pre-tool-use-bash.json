@@ -1,0 +1,15 @@
+{
+  "cwd": "/workspace/agenthawk",
+  "hook_event_name": "PreToolUse",
+  "permission_mode": "default",
+  "session_id": "session-fixture",
+  "tool_input": {
+    "command": "npm add example@1.0.0",
+    "description": "Add an example package",
+    "timeout": 120000,
+    "run_in_background": false
+  },
+  "tool_name": "Bash",
+  "tool_use_id": "tool-fixture",
+  "transcript_path": "/private/transcript.jsonl"
+}
