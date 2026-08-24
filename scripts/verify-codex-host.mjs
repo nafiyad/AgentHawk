@@ -212,11 +212,24 @@ export function classifyFunctionOutput(value, callId) {
 }
 
 const ADMINISTRATOR_EVIDENCE_MARKERS = Object.freeze({
+  check_user_administrator: "Couldn't check if user is an administrator",
+  contact_workspace_administrator: "Contact your workspace administrator",
+  dev_drive_administrator: "ask your administrator to trust the Windows Dev Drive",
+  helper_non_elevated: "failed to launch setup helper (non-elevated)",
   managed_deny_read: "managed denied-read requirements need the elevated Windows sandbox backend",
   managed_network: "managed networking requires the elevated Windows sandbox backend",
   read_only: "Restricted read-only access requires the elevated Windows sandbox backend",
   deny_read: "deny-read overrides require the elevated Windows sandbox backend",
   legacy_preflight: "failed to preflight non-admin Windows sandbox setup",
+  provisioning_requires_elevated: "sandbox provisioning setup must be run from an elevated process",
+  unelevated_deny_read:
+    "windows unelevated restricted-token sandbox cannot enforce deny-read restrictions directly; refusing to run unsandboxed",
+  unelevated_reopen:
+    "windows unelevated restricted-token sandbox cannot reopen writable descendants under read-only carveouts directly; refusing to run unsandboxed",
+  unelevated_split_filesystem:
+    "windows unelevated restricted-token sandbox cannot enforce split filesystem read restrictions directly; refusing to run unsandboxed",
+  unelevated_split_writable:
+    "windows unelevated restricted-token sandbox cannot enforce split writable root sets directly; refusing to run unsandboxed",
 });
 
 export function describeFunctionOutputEvidence(value, callId) {
