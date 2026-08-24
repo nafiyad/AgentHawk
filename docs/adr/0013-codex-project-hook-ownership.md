@@ -81,10 +81,10 @@ never removes these parent directories or any unrelated child.
 
 The exclusive staging directory contains exactly two bounded regular files,
 `codex-v1.json` and `hooks.json`, plus no user-controlled names. Its 256-bit
-operation identifier comes from the operating system CSPRNG and is lowercase
-base64url without padding. The lock is an exclusively created bounded regular
-file containing that operation identifier and a closed schema version. Neither
-identifier is a credential or authority proof.
+operation identifier comes from the operating system CSPRNG and is encoded as
+exactly 64 lowercase hexadecimal characters. The lock is an exclusively
+created bounded regular file containing that operation identifier and a closed
+schema version. Neither identifier is a credential or authority proof.
 
 The generated `hooks.json` contains exactly one synchronous `PreToolUse` command
 hook matching `Bash`, with a ten-second host timeout and a visible status
@@ -92,11 +92,22 @@ message. Its command uses the canonical absolute current Node executable and
 the canonical absolute packaged `codex-pretooluse-entry.js` sibling, with
 platform-correct quoting and trusted fixed launch arguments declaring
 `deploymentTrust=project`, the installation identifier, and the root binding.
-The installation identifier is 256 CSPRNG bits encoded as lowercase base64url
-without padding. The root binding is a domain-separated SHA-256 digest over the
-identifier, canonical root bytes, and the repository authority loader's exact
-bigint filesystem-identity tuple. Both values appear in the generated hook and
-receipt. At invocation, the adapter re-establishes repository authority and
+The installation identifier is 256 CSPRNG bits encoded as exactly 64 lowercase
+hexadecimal characters. Both identifiers must reject mixed case, prefixes,
+padding, separators, and all other lengths or alphabets.
+
+The root binding is lowercase hexadecimal SHA-256 over one canonical binary
+sequence. It starts with ASCII `AgentHawk Codex root binding v1` followed by one
+zero byte. Each remaining field is encoded as an unsigned 64-bit big-endian byte
+length followed by its bytes, in this exact order: the raw 32 installation-ID
+bytes; the canonical-root UTF-8 bytes; canonical ASCII decimal `dev`; and
+canonical ASCII decimal `ino`. Decimal zero is `0`; other values have no sign or
+leading zero. Invalid UTF-8, lengths outside the implementation bounds,
+`dev < 0`, or `ino <= 0` fail closed. The implementation must include a fixed
+known-vector test for this serialization and digest.
+
+The installation identifier and root binding appear in both the generated hook
+and receipt. At invocation, the adapter re-establishes repository authority and
 must match the recomputed binding and paired receipt before evaluation; a copied
 pair therefore fails in a different root. The binding exposes no raw path and
 is not authentication against a same-account writer.
@@ -158,6 +169,12 @@ checks produces `record_collision`; a valid receipt with no hook produces
 `owned_inactive`; a valid receipt with its exact recorded hook bytes produces
 `owned_exact`; and any other present hook paired with a valid receipt produces
 `owned_modified`.
+
+Because canonical root bytes participate in the binding, moving or renaming a
+repository invalidates the old receipt even when its filesystem identity is
+unchanged. The old pair becomes `record_collision`, is not invoked by
+AgentHawk, and requires human review/removal; automatic rebinding or deletion
+would be implicit adoption and is outside this decision.
 
 | State | Meaning | Safe next operation |
 | --- | --- | --- |
@@ -247,7 +264,7 @@ startup failure occurs.
 The implementation is not complete until an isolated exact-version project-hook
 harness proves these states: installed but untrusted, manually trusted exact
 definition, neutral command, denied dependency add with no fake-package-manager
-marker, definition mutation becoming untrusted/drifted, disabled hooks, and
+marker, definition mutation becoming untrusted/`owned_modified`, disabled hooks, and
 managed-only rejection. The harness must use temporary roots and configuration;
 it must never modify the maintainer's real Codex home or trust state.
 
