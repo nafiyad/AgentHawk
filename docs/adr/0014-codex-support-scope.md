@@ -107,6 +107,7 @@ Public guidance names only the exact supported row and keeps every other Codex
 surface, version, operating system, authority, sandbox, and tool configuration
 unsupported. The checksum-pinned official archive is exercised in a dedicated
 GitHub-hosted Windows workflow. The harness inventories the enabled tool set,
-uses ordinary `codex exec`, and records live-evidence time without changing the
-decision when the target is missed. Claude Code is the next dependency-ordered
+uses ordinary `codex exec`, records each host scenario's live-evidence time, and
+measures controlled nearest-rank p95 unrelated qualification, fresh cache-hit,
+and loopback live-evidence targets without changing verdicts. Claude Code is the next dependency-ordered
 adapter research target; it inherits no Codex evidence.

@@ -6,6 +6,7 @@ import {
   createMatrixProviderServer,
   MATRIX_SCENARIOS,
   matrixPolicy,
+  percentile95,
   validateCliToolSet,
   validateScenarioFunctionOutput,
 } from "./verify-codex-cli-project-matrix.mjs";
@@ -18,6 +19,12 @@ afterEach(async () => {
 });
 
 describe("Codex CLI project-hook matrix contract", () => {
+  it("uses the nearest-rank p95 without averaging away tail latency", () => {
+    expect(percentile95(Array.from({ length: 20 }, (_value, index) => index + 1))).toBe(19);
+    expect(() => percentile95([])).toThrow("cli_matrix_performance_samples_invalid");
+    expect(() => percentile95([1, -1])).toThrow("cli_matrix_performance_samples_invalid");
+  });
+
   it("accepts only shell_command without alternate execution tools", () => {
     expect(
       validateCliToolSet({

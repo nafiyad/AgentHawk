@@ -3,13 +3,13 @@
 import { access, lstat, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
+import { performance } from "node:perf_hooks";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { prepareTrustedProjectHookScenario } from "./verify-codex-app-server.mjs";
 import {
   assertExactVersion,
   closeServer,
-  codexHostPlatform,
   createFixtureServer,
   EXPECTED_CODEX_VERSION,
   HostHarnessError,
@@ -23,6 +23,7 @@ import {
 const MAX_PROVIDER_REQUEST_BYTES = 64 * 1024;
 const FIXTURE_VERSION = "1.0.0";
 const FIXTURE_TIMESTAMP = "2020-01-01T00:00:00.000Z";
+const PERFORMANCE_SAMPLES = 25;
 
 export const MATRIX_SCENARIOS = Object.freeze({
   allow: Object.freeze({
@@ -66,6 +67,24 @@ function matrixError(code) {
 
 function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function percentile95(samples) {
+  if (!Array.isArray(samples) || samples.length < 1 || samples.some((value) => value < 0)) {
+    throw matrixError("performance_samples_invalid");
+  }
+  const sorted = [...samples].sort((left, right) => left - right);
+  return sorted[Math.ceil(sorted.length * 0.95) - 1];
+}
+
+function roundedMilliseconds(value) {
+  return Math.round(value * 1_000) / 1_000;
+}
+
+async function timed(operation) {
+  const started = performance.now();
+  await operation();
+  return performance.now() - started;
 }
 
 export function validateCliToolSet(requestBody) {
@@ -257,6 +276,138 @@ export function createMatrixProviderServer() {
   return { server, state };
 }
 
+async function assertAllowedCheck(checkNpmPackage, options, dependencies) {
+  const result = await checkNpmPackage(
+    `${MATRIX_SCENARIOS.allow.name}@${FIXTURE_VERSION}`,
+    options,
+    dependencies,
+  );
+  let report;
+  try {
+    report = JSON.parse(result.output);
+  } catch {
+    throw matrixError("performance_report_invalid");
+  }
+  if (result.exitCode !== 0 || report?.verdict !== "allow") {
+    throw matrixError(
+      `performance_verdict_changed:${String(result.exitCode)}:${typeof report?.verdict === "string" ? report.verdict : "unknown"}`,
+    );
+  }
+}
+
+async function measureControlledPerformance(root) {
+  const [
+    { MetadataCache, agentHawkConfigSchema, parseCachedNpmResult, qualifyCommand },
+    { checkNpmPackage },
+  ] = await Promise.all([
+    import("../packages/core/dist/index.js"),
+    import("../packages/cli/dist/check.js"),
+  ]);
+  const config = agentHawkConfigSchema.parse({
+    registries: { osv: { enabled: false } },
+    version: 1,
+  });
+  const now = () => new Date("2026-08-24T00:00:00.000Z");
+  const commonDependencies = {
+    now,
+    readApprovals: async () => ({ approvals: [], version: 1 }),
+    readPolicy: async () => config,
+  };
+  const unrelatedSamples = [];
+  for (let index = 0; index < 100; index += 1) qualifyCommand("git status", "portable");
+  for (let index = 0; index < 1_000; index += 1) {
+    const started = performance.now();
+    const qualification = qualifyCommand("git status", "portable");
+    unrelatedSamples.push(performance.now() - started);
+    if (qualification.category !== "unrelated") throw matrixError("performance_verdict_changed");
+  }
+
+  const cacheFixture = createMatrixProviderServer();
+  const cacheUrl = await listenLoopback(cacheFixture.server);
+  const cache = new MetadataCache({ root: join(root, "performance-cache"), now });
+  const cacheOptions = {
+    cwd: root,
+    format: "json",
+    registryUrl: new URL("/npm/", cacheUrl).href,
+    strict: true,
+  };
+  try {
+    await assertAllowedCheck(checkNpmPackage, cacheOptions, {
+      ...commonDependencies,
+      cache,
+    });
+    if (cacheFixture.state.error || cacheFixture.state.npm !== 1) {
+      throw matrixError("performance_cache_warmup_invalid");
+    }
+    const cacheKey = JSON.stringify({
+      name: MATRIX_SCENARIOS.allow.name,
+      registry: cacheOptions.registryUrl,
+      requestedSpec: FIXTURE_VERSION,
+    });
+    const cacheSamples = [];
+    for (let index = 0; index < PERFORMANCE_SAMPLES; index += 1) {
+      cacheSamples.push(
+        await timed(async () => {
+          const result = await cache.read("npm", cacheKey, parseCachedNpmResult);
+          if (result.status !== "fresh" || !result.value.ok) {
+            throw matrixError("performance_cache_hit_invalid");
+          }
+        }),
+      );
+    }
+    if (cacheFixture.state.error || cacheFixture.state.npm !== 1) {
+      throw matrixError("performance_cache_provider_request_observed");
+    }
+
+    const liveFixture = createMatrixProviderServer();
+    const liveUrl = await listenLoopback(liveFixture.server);
+    try {
+      const liveOptions = {
+        ...cacheOptions,
+        noCache: true,
+        registryUrl: new URL("/npm/", liveUrl).href,
+      };
+      const liveSamples = [];
+      for (let index = 0; index < PERFORMANCE_SAMPLES; index += 1) {
+        liveSamples.push(
+          await timed(
+            async () => await assertAllowedCheck(checkNpmPackage, liveOptions, commonDependencies),
+          ),
+        );
+      }
+      if (
+        liveFixture.state.error ||
+        liveFixture.state.npm !== PERFORMANCE_SAMPLES ||
+        liveFixture.state.osv !== 0
+      ) {
+        throw matrixError("performance_live_request_count_invalid");
+      }
+      const measurements = {
+        cacheHitP95Milliseconds: roundedMilliseconds(percentile95(cacheSamples)),
+        liveEvidenceP95Milliseconds: roundedMilliseconds(percentile95(liveSamples)),
+        samples: {
+          cacheHit: cacheSamples.length,
+          liveEvidence: liveSamples.length,
+          unrelatedQualification: unrelatedSamples.length,
+        },
+        unrelatedQualificationP95Milliseconds: roundedMilliseconds(percentile95(unrelatedSamples)),
+      };
+      if (
+        measurements.unrelatedQualificationP95Milliseconds >= 50 ||
+        measurements.cacheHitP95Milliseconds >= 150 ||
+        measurements.liveEvidenceP95Milliseconds >= 5_000
+      ) {
+        throw matrixError("performance_target_exceeded");
+      }
+      return measurements;
+    } finally {
+      await closeServer(liveFixture.server).catch(() => undefined);
+    }
+  } finally {
+    await closeServer(cacheFixture.server).catch(() => undefined);
+  }
+}
+
 async function replaceModelProvider(configPath, providerUrl) {
   const config = await readFile(configPath, "utf8");
   const replaced = config.replace(
@@ -389,9 +540,14 @@ async function runUnrelatedScenario({
 }) {
   const marker = join(repository, "agenthawk-neutral.marker");
   await rm(marker, { force: true });
+  await writeFile(
+    join(fakeBin, "agenthawk-neutral.cmd"),
+    '@echo off\r\n> "%~dp0..\\agenthawk-neutral.marker" <nul set /p "=executed"\r\nexit /b 0\r\n',
+    "utf8",
+  );
   const providerFixture = createMatrixProviderServer();
   const providerUrl = await listenLoopback(providerFixture.server);
-  const modelFixture = createFixtureServer(codexHostPlatform().neutralCommand, "shell_command", {
+  const modelFixture = createFixtureServer("agenthawk-neutral.cmd", "shell_command", {
     validateToolSet: validateCliToolSet,
   });
   const modelUrl = await listenLoopback(modelFixture.server);
@@ -503,6 +659,7 @@ export async function verifyCodexCliProjectMatrix({ codexEntry }) {
       minimalEnvironment(codexHome, root, fakeBin),
       repository,
     );
+    const performance = await measureControlledPerformance(root);
     const { removeCodexProjectHook } = await import(
       "../packages/cli/dist/codex-project-hook-transaction.js"
     );
@@ -531,6 +688,7 @@ export async function verifyCodexCliProjectMatrix({ codexEntry }) {
         error: "passed",
       },
       emergencyDenial: "passed",
+      performance,
       removal: "passed",
       liveEvidenceMilliseconds,
       isolation: "temporary-repository-codex-home-loopback-model-and-provider-fixtures",
