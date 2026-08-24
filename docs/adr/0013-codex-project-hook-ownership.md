@@ -349,9 +349,11 @@ policy installation, then creates the previously absent machine requirements
 file with exactly `allow_managed_hooks_only = true`. Acceptance requires
 `configRequirements/read` to report the literal managed value, `hooks/list` to
 return one warning-free empty inventory, and the loopback fixture provider to
-receive zero requests. Cleanup verifies the policy bytes are unchanged before
-removing only the exact file and empty directories created by the job. No raw
-requirements, hook definition, provider payload, or temporary path is uploaded.
+receive zero requests. Policy publication uses a same-directory staged file and
+an atomic no-replace hard link; cleanup verifies exact file and directory
+identities plus unchanged policy bytes before removing only state created by
+the job. No raw requirements, hook definition, provider payload, or temporary
+path is uploaded.
 
 This is intentionally a disposable-runner evidence path, not a reusable policy
 installer. Pull-request code has administrator authority inside the ephemeral

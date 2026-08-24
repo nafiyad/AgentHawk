@@ -632,6 +632,7 @@ async function runSuppressedProjectHookScenario({
   parseJson,
   hooksEnabled,
   expectManagedOnly,
+  expectProjectHook = false,
 }) {
   const root = await mkdtemp(join(tmpdir(), "agenthawk-codex-project-suppressed-"));
   const fixture = createFixtureServer(
@@ -674,12 +675,13 @@ async function runSuppressedProjectHookScenario({
         ),
       );
     }
-    const disabled = validateDisabledHookInventory(
-      await client.request("agenthawk-hooks-suppressed", "hooks/list", {
-        cwds: [configured.repository],
-      }),
-    );
-    if (!(await sameCanonicalPath(disabled.cwd, configured.repository))) {
+    const inventory = await client.request("agenthawk-hooks-inventory", "hooks/list", {
+      cwds: [configured.repository],
+    });
+    const observed = expectProjectHook
+      ? selectExpectedHook(inventory, "project")
+      : validateDisabledHookInventory(inventory);
+    if (!(await sameCanonicalPath(observed.cwd, configured.repository))) {
       throw appServerError("hook_path_mismatch");
     }
     await client.close();
@@ -828,6 +830,7 @@ export async function verifyCodexProjectActivation({ codexEntry }) {
       parseJson: parseStrictJson,
       hooksEnabled: false,
       expectManagedOnly: false,
+      expectProjectHook: false,
     });
     return {
       schemaVersion: "1.0",
@@ -875,6 +878,7 @@ export async function verifyCodexManagedOnly({ codexEntry }) {
     parseJson: parseStrictJson,
     hooksEnabled: true,
     expectManagedOnly: true,
+    expectProjectHook: false,
   });
   return {
     schemaVersion: "1.0",
@@ -887,16 +891,56 @@ export async function verifyCodexManagedOnly({ codexEntry }) {
   };
 }
 
+export async function verifyCodexProjectDiscovery({ codexEntry }) {
+  codexHostPlatform();
+  await access(codexEntry);
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const adapterEntry = join(projectRoot, "packages", "cli", "dist", "codex-pretooluse-entry.js");
+  await access(adapterEntry);
+  const { parseStrictJson } = await import("../packages/cli/dist/hook-json.js");
+  const versionRoot = await mkdtemp(join(tmpdir(), "agenthawk-codex-discovery-version-"));
+  try {
+    const version = await runBounded(codexEntry, ["--version"], {
+      cwd: versionRoot,
+      env: minimalEnvironment(versionRoot, versionRoot, versionRoot),
+      timeoutMs: 10_000,
+    });
+    assertExactVersion(version);
+  } finally {
+    await rm(versionRoot, { recursive: true, force: true, maxRetries: 3 });
+  }
+  await runSuppressedProjectHookScenario({
+    codexEntry,
+    adapterEntry,
+    parseJson: parseStrictJson,
+    hooksEnabled: true,
+    expectManagedOnly: false,
+    expectProjectHook: true,
+  });
+  return {
+    schemaVersion: "1.0",
+    host: "codex-app-server-project-hook",
+    version: EXPECTED_CODEX_VERSION,
+    sourceCommit: EXPECTED_TAG_COMMIT,
+    surface: appServerSurface(),
+    projectDiscovery: "passed",
+    isolation: "temporary-repository-codex-home-loopback-provider",
+  };
+}
+
 async function main() {
   try {
     const argv = process.argv.slice(2);
     const projectActivation = argv[0] === "--project-activation";
     const managedOnly = argv[0] === "--managed-only";
+    const projectDiscovery = argv[0] === "--project-discovery";
     const result = projectActivation
       ? await verifyCodexProjectActivation(parseArguments(argv.slice(1)))
       : managedOnly
         ? await verifyCodexManagedOnly(parseArguments(argv.slice(1)))
-        : await verifyCodexAppServer(parseArguments(argv));
+        : projectDiscovery
+          ? await verifyCodexProjectDiscovery(parseArguments(argv.slice(1)))
+          : await verifyCodexAppServer(parseArguments(argv));
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
     const code = error instanceof HostHarnessError ? error.code : "unexpected_failure";

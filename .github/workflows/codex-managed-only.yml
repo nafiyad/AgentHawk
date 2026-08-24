@@ -7,9 +7,12 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "scripts/bounded-jsonl-process.mjs"
+      - "scripts/codex-managed-policy.mjs"
+      - "scripts/codex-managed-policy.test.ts"
       - "scripts/verify-codex-app-server.mjs"
       - "scripts/verify-codex-app-server.test.ts"
       - "scripts/verify-codex-host.mjs"
+      - "scripts/verify-codex-managed-policy.mjs"
       - "packages/cli/**"
   push:
     branches:
@@ -19,9 +22,12 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "scripts/bounded-jsonl-process.mjs"
+      - "scripts/codex-managed-policy.mjs"
+      - "scripts/codex-managed-policy.test.ts"
       - "scripts/verify-codex-app-server.mjs"
       - "scripts/verify-codex-app-server.test.ts"
       - "scripts/verify-codex-host.mjs"
+      - "scripts/verify-codex-managed-policy.mjs"
       - "packages/cli/**"
   workflow_dispatch:
 
@@ -74,8 +80,8 @@ jobs:
           }
           "CODEX_ENTRY=$entry" >> $env:GITHUB_ENV
 
-      - name: Prove ordinary project activation baseline
-        run: node scripts/verify-codex-app-server.mjs --project-activation --codex-entry "$env:CODEX_ENTRY"
+      - name: Prove exact project-hook discovery before policy
+        run: node scripts/verify-codex-app-server.mjs --project-discovery --codex-entry "$env:CODEX_ENTRY"
 
       - name: Prove managed-only project-hook suppression
         shell: pwsh
@@ -85,48 +91,4 @@ jobs:
           if ($env:RUNNER_OS -cne 'Windows') { throw 'Refusing non-Windows runner.' }
           $commonData = [Environment]::GetFolderPath('CommonApplicationData')
           if (-not [IO.Path]::IsPathFullyQualified($commonData)) { throw 'Invalid machine-data root.' }
-          $openAi = Join-Path $commonData 'OpenAI'
-          $codex = Join-Path $openAi 'Codex'
-          $requirements = Join-Path $codex 'requirements.toml'
-          if (Test-Path -LiteralPath $codex) { throw 'Refusing pre-existing Codex policy directory.' }
-          $createdOpenAi = -not (Test-Path -LiteralPath $openAi)
-          if (-not $createdOpenAi) {
-            $openAiItem = Get-Item -LiteralPath $openAi -Force
-            if (-not $openAiItem.PSIsContainer -or ($openAiItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-              throw 'Unsafe pre-existing OpenAI policy parent.'
-            }
-          }
-          $policy = [Text.Encoding]::UTF8.GetBytes("allow_managed_hooks_only = true`n")
-          $policyBase64 = [Convert]::ToBase64String($policy)
-          $exitCode = 1
-          try {
-            New-Item -ItemType Directory -Path $codex | Out-Null
-            $codexItem = Get-Item -LiteralPath $codex -Force
-            if ($codexItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-              throw 'Unsafe Codex policy directory.'
-            }
-            [IO.File]::WriteAllBytes($requirements, $policy)
-            node scripts/verify-codex-app-server.mjs --managed-only --codex-entry "$env:CODEX_ENTRY"
-            $exitCode = $LASTEXITCODE
-          } finally {
-            if (Test-Path -LiteralPath $requirements) {
-              $afterBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($requirements))
-              if ($afterBase64 -cne $policyBase64) {
-                throw 'Managed requirements changed during verification; refusing cleanup.'
-              }
-              Remove-Item -LiteralPath $requirements -Force
-            }
-            if (Test-Path -LiteralPath $codex) {
-              if (@(Get-ChildItem -LiteralPath $codex -Force).Count -ne 0) {
-                throw 'Codex policy directory is not empty; refusing cleanup.'
-              }
-              Remove-Item -LiteralPath $codex
-            }
-            if ($createdOpenAi -and (Test-Path -LiteralPath $openAi)) {
-              if (@(Get-ChildItem -LiteralPath $openAi -Force).Count -ne 0) {
-                throw 'OpenAI policy directory is not empty; refusing cleanup.'
-              }
-              Remove-Item -LiteralPath $openAi
-            }
-          }
-          if ($exitCode -ne 0) { throw 'Managed-only harness failed.' }
+          node scripts/verify-codex-managed-policy.mjs --common-data-root $commonData --codex-entry "$env:CODEX_ENTRY"
