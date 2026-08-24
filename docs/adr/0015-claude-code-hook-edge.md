@@ -89,10 +89,10 @@ PowerShell command as unrelated.
 ### Configuration and ownership proposal
 
 The first fixture adapter is a dedicated binary with no Commander preprocessing.
-A later, separately reviewed project lifecycle may target only the fixed pair
-`.claude/settings.json` and an AgentHawk receipt/runtime location after deciding
-how to coexist with maintainer-owned settings. This ADR does not authorize
-overwriting, whole-file ownership, automatic merging, implicit trust, or automatic
+[ADR 0016](0016-claude-project-hook-ownership.md) subsequently selects only a
+previously absent machine-local `.claude/settings.local.json` as the exclusive
+future candidate and keeps shareable `.claude/settings.json` maintainer-owned.
+Neither decision authorizes overwriting, automatic merging, implicit trust, or
 installation.
 
 The proposed handler is synchronous `type: "command"`, matches
@@ -109,10 +109,10 @@ Implementation proceeds in reviewable slices:
 
 1. closed Claude payload parser, output serializer, emergency path, golden
    `Bash`/`PowerShell` fixtures, and adversarial process tests;
-2. an explicit collision/ownership ADR and status-only inspection before any
+2. the accepted collision ADR followed by status-only preflight before any
    configuration mutation;
-3. collision-safe install/remove and invocation-time verification, if the
-   ownership decision is accepted;
+3. a root-bound format/transaction amendment, then collision-safe install/remove
+   and invocation-time verification if every prerequisite is accepted;
 4. an isolated exact-artifact CLI harness proving loaded source, effective tool
    inventory, neutral execution, every denial outcome, malformed denial, timeout
    behavior, credential-scrub sentinels, direct `!` shell behavior, zero-provider
@@ -137,7 +137,9 @@ contracts but inherit no Codex parser, serializer, configuration, lifecycle,
 host result, timeout claim, or support status.
 
 Every Claude native surface remains unsupported. The closed fixture adapter is
-implemented; configuration mutation still waits for its own ownership decision.
+implemented; configuration mutation still waits for root-bound format,
+transaction, recovery, invocation-verification, and exact-host gates after ADR
+0016's read-only preflight.
 
 ## Alternatives
 
@@ -154,8 +156,9 @@ implemented; configuration mutation still waits for its own ownership decision.
 - SDK callback hooks were deferred as a separate surface. Their in-process
   timeout behavior must not be generalized to ordinary CLI settings command
   hooks, whose startup and timeout failures are non-blocking.
-- Immediate project installation was rejected because `.claude/settings.json`
-  is commonly maintainer-owned JSON and requires a collision/ownership design.
+- Immediate project installation was rejected because Claude settings are
+  commonly maintainer-owned JSON. ADR 0016 now defines a read-only collision
+  preflight and defers every mutation prerequisite.
 
 ## Security implications
 
@@ -179,5 +182,5 @@ interception, malware detection, tamper resistance, or proof of package safety.
 This decision corrects the roadmap's older trust summary, fixes the version and
 artifact candidate, and bounds the implemented fixture edge without activating a
 host integration. It deliberately postpones PowerShell admission,
-configuration ownership, host activation, and support claims until their own
-evidence gates pass.
+root-bound ownership artifacts, transactional lifecycle, host activation, and
+support claims until their own evidence gates pass.
