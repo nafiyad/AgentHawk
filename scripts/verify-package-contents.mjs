@@ -68,6 +68,19 @@ async function verifyConsumerEntrypoints() {
     malformed.stderr === "AgentHawk denied the tool call because security evaluation failed.\n",
     "Codex hook emergency denial is inconsistent",
   );
+  const claudeHookEntrypoint = join(root, "packages", "cli", "dist", "claude-pretooluse-entry.js");
+  const claudeMalformed = await executeWithInput(process.execPath, [claudeHookEntrypoint], {
+    cwd: root,
+    input: "not-json",
+    timeout: 10_000,
+  });
+  assert(claudeMalformed.code === 2, "Claude hook malformed-input exit code is inconsistent");
+  assert(claudeMalformed.stdout === "", "Claude hook emergency path wrote stdout");
+  assert(
+    claudeMalformed.stderr ===
+      "AgentHawk denied the tool call because security evaluation failed.\n",
+    "Claude hook emergency denial is inconsistent",
+  );
   process.stdout.write("Verified core import and CLI/hook startup entrypoints.\n");
 }
 
@@ -336,9 +349,72 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       "Packed Codex project-hook remove smoke failed",
     );
     await verifyPackedCodexHook(consumerDirectory);
+    await verifyPackedClaudeHook(consumerDirectory);
   } finally {
     await rm(consumerDirectory, { force: true, recursive: true });
   }
+}
+
+async function verifyPackedClaudeHook(consumerDirectory) {
+  const hookEntrypoint = join(
+    consumerDirectory,
+    "node_modules",
+    "@agenthawk",
+    "cli",
+    "dist",
+    "claude-pretooluse-entry.js",
+  );
+  const malformed = await executeWithInput(process.execPath, [hookEntrypoint], {
+    cwd: consumerDirectory,
+    input: "not-json",
+    timeout: 10_000,
+  });
+  assert(malformed.code === 2, "Packed Claude hook did not deny malformed input");
+  assert(malformed.stdout === "", "Packed Claude hook emergency path wrote stdout");
+  assert(
+    malformed.stderr === "AgentHawk denied the tool call because security evaluation failed.\n",
+    "Packed Claude hook emergency denial is inconsistent",
+  );
+  const privateCommand = "npm add packed-private-fixture";
+  const denied = await executeWithInput(process.execPath, [hookEntrypoint], {
+    cwd: consumerDirectory,
+    input: JSON.stringify({
+      cwd: consumerDirectory,
+      hook_event_name: "PreToolUse",
+      permission_mode: "default",
+      session_id: "packed-private-session",
+      tool_input: { command: privateCommand },
+      tool_name: "PowerShell",
+      tool_use_id: "packed-private-tool",
+      transcript_path: join(consumerDirectory, "private-transcript.jsonl"),
+    }),
+    timeout: 10_000,
+  });
+  assert(
+    denied.code === 0 &&
+      denied.stderr === "" &&
+      JSON.parse(denied.stdout).hookSpecificOutput?.permissionDecision === "deny",
+    "Packed Claude hook ordinary denial is inconsistent",
+  );
+  assert(!denied.stdout.includes(privateCommand), "Packed Claude hook leaked private input");
+  const neutral = await executeWithInput(process.execPath, [hookEntrypoint], {
+    cwd: consumerDirectory,
+    input: JSON.stringify({
+      cwd: consumerDirectory,
+      hook_event_name: "PreToolUse",
+      permission_mode: "default",
+      session_id: "packed-neutral-session",
+      tool_input: { command: "git status" },
+      tool_name: "Bash",
+      tool_use_id: "packed-neutral-tool",
+      transcript_path: join(consumerDirectory, "neutral-transcript.jsonl"),
+    }),
+    timeout: 10_000,
+  });
+  assert(
+    neutral.code === 0 && neutral.stdout === "" && neutral.stderr === "",
+    "Packed Claude hook neutral result is inconsistent",
+  );
 }
 
 async function verifyPackedCodexHook(consumerDirectory) {

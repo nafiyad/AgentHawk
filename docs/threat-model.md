@@ -22,14 +22,14 @@ Policy configuration is also untrusted input. Strict schemas reject unknown nest
 
 The Codex hook request path treats the complete payload, declared working directory, raw shell command text, host configuration, hook environment, and vendor failure behavior as untrusted. Only a release-pinned, bounded `PreToolUse` `Bash` shape reaches the transient action contract. Project deployment trust is recorded only after invocation-time verification of the exact current root-bound hook/receipt/runtime pair and no foreign lock; a project hook remains repository-controlled code, not an administrator boundary. Exact local Windows CLI and app-server real-host harnesses pass, and [ADR 0013](adr/0013-codex-project-hook-ownership.md) accepts an exclusive project-hook ownership design. The local ordinary CLI matrix additionally proves unrelated zero-provider behavior, allow execution, visible warn denial, distinct review/block/error denial, malformed emergency denial, exact tool-set binding, removal, and controlled performance. The pinned hosted Windows environment rejects the restricted-token split writable-root projection before execution; its gate pins the normalized output digest and exact tagged-source reason, requires true marker absence, observes zero provider traffic, and verifies removal. [ADR 0014](adr/0014-codex-support-scope.md) therefore keeps the row unsupported. Exact tagged source also shows Code Mode's execute handler does not expose a pre-tool payload. Future vendor edges remain untrusted independent boundaries. [ADR 0012](adr/0012-native-hook-enforcement-boundary.md) defines the complete native gate.
 
-The Claude Code proposal is a separate untrusted edge. Canonical `Bash` and
+The Claude Code fixture adapter is a separate untrusted edge. Canonical `Bash` and
 `PowerShell` payloads, settings sources, shell grammars, host modes, and failure
 semantics cannot inherit Codex evidence. Interactive settings hooks wait for
 current-folder trust or previously accepted parent trust that extends to the
 folder; `-p`/SDK has no trust dialog. Hooks execute with the user's authority and
 inherited environment. Bare mode, settings-source selection, managed-only policy,
 or hook disabling can exclude them. [ADR 0015](adr/0015-claude-code-hook-edge.md)
-pins the research candidate but installs nothing and keeps every Claude row
+pins the research candidate, validates only the closed process boundary, installs nothing, and keeps every Claude row
 unsupported.
 
 ## Abuse cases and mitigations

@@ -42,6 +42,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Read-only GitHub pull-request evaluation with an isolated opt-in write commenter
 - Fail-closed advisory templates for Codex, Claude Code, Cursor, and generic agents
 - A packaged, release-pinned Codex `PreToolUse` compatibility candidate with exact local Windows CLI and app-server host evidence, root-bound hook/receipt lifecycle commands, and invocation-time pair verification; activation and support remain gated
+- A packaged, release-pinned Claude Code `PreToolUse` fixture edge for strict `Bash`/`PowerShell` framing and deny-only output; configuration and native support remain gated
 - Exact release-package manifests, dual-use disclosure, checksummed CI artifacts, and protected stage-only trusted publishing for future versions
 - Offline fixtures and security regression tests
 
@@ -94,9 +95,9 @@ Native enforcement remains unsupported. The exact Codex CLI `0.149.0` Windows
 x64 project-hook row has strong local compatibility evidence, but the pinned
 GitHub-hosted Windows environment rejects the exact restricted-token filesystem
 projection before the complete matrix can run. See the [support
-matrix](docs/support-matrix.md). Claude Code `2.1.241` currently has only an
-independent [research proposal](docs/adr/0015-claude-code-hook-edge.md), not an
-adapter. The published `0.1.0-alpha.1` package also
+matrix](docs/support-matrix.md). Claude Code `2.1.241` has a packaged, closed
+fixture adapter but no settings lifecycle, exact-host compatibility evidence, or
+supported native row. See [ADR 0015](docs/adr/0015-claude-code-hook-edge.md). The published `0.1.0-alpha.1` package also
 predates these lifecycle commands; protected `scan`/`diff` CI remains the final
 repository gate.
 

@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted as a research and implementation proposal. No Claude Code native adapter
-or installation lifecycle is supported by this decision.
+Accepted. The closed fixture adapter is implemented; no Claude Code installation
+lifecycle, host compatibility row, or native support is authorized by this decision.
 
 ## Context
 
@@ -66,7 +66,7 @@ only the current common fields required for framing plus:
 - `tool_use_id` as a bounded framing identifier that is never reported;
 - `cwd` as the untrusted action-directory candidate.
 
-Optional documented fields such as `prompt_id`, `permission_mode`, `effort`,
+Optional documented fields such as `prompt_id`, `effort`,
 `agent_id`, `agent_type`, `description`, tool timeout, and background state may
 be validated and discarded only when exact fixtures require them. Transcript
 paths, session identifiers, prompts, descriptions, environment values, and
@@ -74,6 +74,10 @@ unrelated tool input never enter evaluation, reports, digests, or diagnostics.
 Unknown top-level and tool-input fields remain closed unless an exact current
 fixture demonstrates a compatibility requirement and the security review accepts
 the field.
+
+The fixture edge validates every current documented `permission_mode`, including
+`auto`, and the optional closed `effort.level` enum, then discards both. They do
+not influence security policy or appear in output.
 
 `Bash` maps to the existing restricted `posix` qualifier only on an exact
 surface that proves Bash is the invoked shell. `PowerShell` maps to
@@ -132,8 +136,8 @@ exit-2 emergency denial. It will reuse the vendor-neutral action/evaluation
 contracts but inherit no Codex parser, serializer, configuration, lifecycle,
 host result, timeout claim, or support status.
 
-Every Claude native surface remains unsupported. The next slice is the fixture
-adapter only; configuration mutation waits for its own ownership decision.
+Every Claude native surface remains unsupported. The closed fixture adapter is
+implemented; configuration mutation still waits for its own ownership decision.
 
 ## Alternatives
 
@@ -173,7 +177,7 @@ interception, malware detection, tamper resistance, or proof of package safety.
 ## Consequences
 
 This decision corrects the roadmap's older trust summary, fixes the version and
-artifact candidate, and provides a bounded next implementation slice without
-changing production behavior. It deliberately postpones PowerShell admission,
+artifact candidate, and bounds the implemented fixture edge without activating a
+host integration. It deliberately postpones PowerShell admission,
 configuration ownership, host activation, and support claims until their own
 evidence gates pass.

@@ -1,0 +1,12 @@
+{
+  "cwd": "C:\\workspace\\agenthawk",
+  "hook_event_name": "PreToolUse",
+  "permission_mode": "default",
+  "session_id": "session-fixture",
+  "tool_input": {
+    "command": "npm add example@1.0.0"
+  },
+  "tool_name": "PowerShell",
+  "tool_use_id": "tool-fixture",
+  "transcript_path": "C:\\private\\transcript.jsonl"
+}
