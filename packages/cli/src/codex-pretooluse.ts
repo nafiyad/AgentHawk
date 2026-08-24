@@ -4,6 +4,8 @@ import {
   type AgentDecision,
   agentActionSchema,
   agentDecisionSchema,
+  type OperationContext,
+  throwIfCancelled,
 } from "@agenthawk/core";
 import { z } from "zod";
 import {
@@ -13,6 +15,7 @@ import {
   type OwnedActionDeadline,
 } from "./action-evaluation.js";
 import { readBoundedJsonInput } from "./hook-json.js";
+import type { RepositoryAuthority } from "./repository-authority.js";
 import { AGENTHAWK_CLI_VERSION } from "./version.js";
 
 export const CODEX_CONTRACT_RELEASE = "rust-v0.149.0";
@@ -68,23 +71,40 @@ const codexDenialSchema = z
 export interface CodexHookDependencies extends ActionEvaluationDependencies {
   readonly createDeadline?: typeof createActionDeadline;
   readonly evaluateAction?: typeof evaluateAgentAction;
+  readonly parseProjectLaunchArguments?: (
+    arguments_: readonly string[],
+  ) => CodexProjectLaunchContext;
   readonly readInput?: typeof readBoundedJsonInput;
   readonly serializeDecision?: typeof serializeCodexPreToolUseDecision;
+  readonly verifyProjectInvocation?: (
+    authority: RepositoryAuthority,
+    context: CodexProjectLaunchContext,
+    options?: OperationContext,
+  ) => Promise<boolean>;
   readonly writeError: (text: string) => Promise<void> | void;
   readonly writeOutput: (text: string) => Promise<void> | void;
+}
+
+export interface CodexProjectLaunchContext {
+  readonly deploymentTrust: "project";
+  readonly installationId: string;
+  readonly rootBinding: string;
 }
 
 export function parseCodexPreToolUseInput(input: unknown): CodexPreToolUseInput {
   return codexPreToolUseInputSchema.parse(input);
 }
 
-export function translateCodexPreToolUse(input: CodexPreToolUseInput): AgentAction {
+export function translateCodexPreToolUse(
+  input: CodexPreToolUseInput,
+  deploymentTrust: "project" | "unknown" = "unknown",
+): AgentAction {
   return agentActionSchema.parse({
     adapter: {
       id: "codex",
       version: `contract-${CODEX_CONTRACT_RELEASE}/agenthawk-${AGENTHAWK_CLI_VERSION}`,
     },
-    deploymentTrust: "unknown",
+    deploymentTrust,
     event: "pre_tool_use",
     repositoryRoot: input.cwd,
     schemaVersion: "1.0",
@@ -116,17 +136,51 @@ export function serializeCodexPreToolUseDecision(rawDecision: AgentDecision): st
 export async function runCodexPreToolUse(
   input: Readable,
   dependencies: CodexHookDependencies,
+  launchArguments: readonly string[] = [],
 ): Promise<number> {
   let deadline: OwnedActionDeadline | undefined;
   try {
     deadline = (dependencies.createDeadline ?? createActionDeadline)();
     const rawInput = await (dependencies.readInput ?? readBoundedJsonInput)(input, deadline.signal);
     const parsed = parseCodexPreToolUseInput(rawInput);
-    const action = translateCodexPreToolUse(parsed);
+    let authority: RepositoryAuthority | undefined;
+    let deploymentTrust: "project" | "unknown" = "unknown";
+    if (launchArguments.length > 0) {
+      if (
+        !dependencies.parseProjectLaunchArguments ||
+        !dependencies.verifyProjectInvocation ||
+        !dependencies.loadAuthority
+      ) {
+        throw new Error("Codex project-hook verification is unavailable.");
+      }
+      const context = dependencies.parseProjectLaunchArguments(launchArguments);
+      authority = await dependencies.loadAuthority(parsed.cwd, { signal: deadline.signal });
+      if (
+        !(await dependencies.verifyProjectInvocation(authority, context, {
+          signal: deadline.signal,
+        }))
+      ) {
+        throw new Error("Codex project-hook verification failed.");
+      }
+      deploymentTrust = "project";
+    }
+    const action = translateCodexPreToolUse(parsed, deploymentTrust);
+    const evaluationDependencies: ActionEvaluationDependencies = authority
+      ? {
+          ...dependencies,
+          loadAuthority: async (actionDirectory, options = {}) => {
+            throwIfCancelled(options);
+            if (actionDirectory !== authority.repositoryRoot) {
+              throw new Error("Codex project authority does not match the action root.");
+            }
+            return authority;
+          },
+        }
+      : dependencies;
     const decision = await (dependencies.evaluateAction ?? evaluateAgentAction)(
       action,
       deadline,
-      dependencies,
+      evaluationDependencies,
     );
     const output = (dependencies.serializeDecision ?? serializeCodexPreToolUseDecision)(decision);
     if (output.length > 0) {

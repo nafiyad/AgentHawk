@@ -17,9 +17,17 @@ import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildCodexProjectHookArtifacts } from "../src/codex-project-hook-format.js";
-import { statusCodexProjectHook } from "../src/codex-project-hook-status.js";
+import {
+  buildCodexProjectHookArtifacts,
+  buildCodexProjectHookLockBytes,
+} from "../src/codex-project-hook-format.js";
+import {
+  observeCodexProjectHook,
+  statusCodexProjectHook,
+  verifyCodexProjectHookInvocation,
+} from "../src/codex-project-hook-status.js";
 import { createProgram } from "../src/program.js";
+import { loadRepositoryAuthority } from "../src/repository-authority.js";
 
 const run = promisify(execFile);
 const roots: string[] = [];
@@ -51,7 +59,7 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
     await writeFile(join(fixture.root, ".codex", "config.toml"), "[features]\nhooks = true\n");
     await writeFile(
       join(fixture.root, ".agenthawk-codex-integration.lock"),
-      `${JSON.stringify({ operationId: "cd".repeat(32), schemaVersion: "1.0" })}\n`,
+      buildCodexProjectHookLockBytes("cd".repeat(32)),
     );
     const report = await status(fixture);
     expect(report).toMatchObject({
@@ -102,6 +110,63 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
       ownership: "owned_exact",
       readiness: "artifact_unavailable",
     });
+  });
+
+  it("verifies only the exact current root-bound invocation without an operation lock", async () => {
+    const fixture = await ownedFixture();
+    const authority = await loadRepositoryAuthority(fixture.root);
+    const context = {
+      deploymentTrust: "project" as const,
+      installationId: fixture.artifacts.receipt.installationId,
+      rootBinding: fixture.artifacts.receipt.rootBinding,
+    };
+    await expect(
+      verifyCodexProjectHookInvocation(authority, context, {}, fixture.dependencies),
+    ).resolves.toBe(true);
+    await expect(
+      verifyCodexProjectHookInvocation(
+        authority,
+        { ...context, installationId: "cd".repeat(32) },
+        {},
+        fixture.dependencies,
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      verifyCodexProjectHookInvocation(
+        authority,
+        { ...context, rootBinding: "dc".repeat(32) },
+        {},
+        fixture.dependencies,
+      ),
+    ).resolves.toBe(false);
+
+    const operationId = "ef".repeat(32);
+    await writeFile(
+      join(fixture.root, ".agenthawk-codex-integration.lock"),
+      buildCodexProjectHookLockBytes(operationId),
+    );
+    await expect(
+      verifyCodexProjectHookInvocation(authority, context, {}, fixture.dependencies),
+    ).resolves.toBe(false);
+    await expect(
+      observeCodexProjectHook(authority, { ownedOperationId: operationId }, fixture.dependencies),
+    ).resolves.toMatchObject({ ownership: "owned_exact", blockers: [] });
+
+    await writeFile(join(fixture.root, ".agenthawk-codex-integration.lock"), "not-json");
+    await expect(
+      observeCodexProjectHook(authority, { ownedOperationId: operationId }, fixture.dependencies),
+    ).rejects.toThrow("Unsafe Codex operation lock");
+
+    await rm(join(fixture.root, ".agenthawk-codex-integration.lock"));
+    await writeFile(join(fixture.root, ".codex", "hooks.json"), '{"hooks":{}}\n');
+    await expect(
+      verifyCodexProjectHookInvocation(authority, context, {}, fixture.dependencies),
+    ).resolves.toBe(false);
+    await writeFile(join(fixture.root, ".codex", "hooks.json"), fixture.artifacts.hookBytes);
+    await rm(join(fixture.root, ".agenthawk", "integrations", "codex-v1.json"));
+    await expect(
+      verifyCodexProjectHookInvocation(authority, context, {}, fixture.dependencies),
+    ).resolves.toBe(false);
   });
 
   it("reports malformed and copied receipts as collisions without disclosing them", async () => {

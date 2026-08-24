@@ -256,13 +256,29 @@ filesystem claims to the publication primitives it proves.
 The implementation must acquire a fixed exclusive lock, re-establish root and
 target identities, construct bounded files in its exclusive staging directory,
 and validate the staged bytes before publication. Publication uses same-volume
-no-replace operations whose behavior is proven on supported local filesystems;
+no-replace operations whose behavior is capability-tested on the actual filesystem;
 an existence check followed by an overwriting rename is insufficient.
 
-The supported primitive must be demonstrated by adversarial tests on each
-claimed local filesystem and operating system. Network, virtual, or other
-filesystems without a proven exclusive same-volume publication primitive fail
-closed before receipt publication.
+The required behavior must be demonstrated by adversarial tests on each claimed
+operating system and capability-tested again on the repository's actual
+filesystem before receipt publication. The probe races two different synced
+staged regular files to one absent fixed name, requires exactly one winner and
+one `EEXIST`, verifies winner identity and bytes, then separately proves an
+occupied fixed target rejects another link without mutation. It removes only
+verified probe files. The real receipt and hook links remain authoritative,
+repeat the identity fences, and treat any foreign occupied destination as a
+collision. A failed or unprovable probe fails closed.
+
+This is a publication-capability boundary, not a locality classifier. Node's
+[`fs.statfs()`](https://nodejs.org/download/release/v22.18.0/docs/api/fs.html#fspromisesstatfspath-options)
+does not define a portable local-versus-network result, and Node warns that
+exclusive creation [may not work on network filesystems](https://nodejs.org/download/release/v22.18.0/docs/api/fs.html#file-system-flags).
+POSIX `link()` does not overwrite an existing destination, and the supported
+platform implementations must prove the same observed behavior through the
+probe and six-job test matrix. AgentHawk does not claim the filesystem is local,
+conforming under every adversarial race, or power-loss durable. Node's
+`filehandle.sync()` only requests an operating-system/device-specific flush;
+crash leftovers remain bounded recovery states rather than a durability promise.
 
 Installation publishes the receipt first and the hook second. Interruption can
 therefore leave `owned_inactive`, but must never leave an enabled-looking
@@ -356,16 +372,12 @@ quotes every launch argument for the named POSIX and Windows PowerShell forms,
 and strictly parses only the three fixed ordered launch declarations. This does
 not write configuration or activate the adapter.
 
-The next implementation slice adds only project-scoped, read-only `status`,
-including fixed-target observation, linked-worktree classification, strict
-ownership verification, separate readiness/blockers, and bounded redacted
-terminal/JSON output. A later slice can add `install` and `remove`, transactional
-filesystem helpers, invocation-time pair verification, and the exact project-hook
-host harness. Those slices must add adversarial tests for collisions,
-links and reparse points, identity races, cancellation at every publication
-boundary, abandoned locks, changed artifacts, interrupted install/removal, hostile
-file contents, and bounded redacted output on Windows, Linux, and macOS where
-the local-filesystem primitives are claimed.
+Project-scoped fixed-target `status`, collision-safe `install`, exact-owned
+`remove`, transactional filesystem helpers, and invocation-time root-bound pair
+verification are implemented. Publication is capability-tested on the actual
+filesystem and makes no locality or power-loss-durability claim. The next slice
+is the exact project-hook host activation harness, including untrusted, manually
+trusted exact definition, mutation, disabled-hooks, and managed-only states.
 
 User/managed/plugin installation, portable committed configuration, trust
 automation, merge/adopt/force/repair/upgrade operations, arbitrary paths,

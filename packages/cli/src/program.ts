@@ -6,6 +6,10 @@ import {
   type CodexProjectHookStatusDependencies,
   statusCodexProjectHook,
 } from "./codex-project-hook-status.js";
+import {
+  installCodexProjectHook,
+  removeCodexProjectHook,
+} from "./codex-project-hook-transaction.js";
 import { diffDependencies } from "./diff.js";
 import { type DoctorDependencies, runDoctor } from "./doctor.js";
 import { type InitDependencies, initializeRepository } from "./init.js";
@@ -199,6 +203,26 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     const format = parseOutputFormat(options.format, dependencies);
     if (!format) return;
     writeResult(await statusCodexProjectHook({ format }, dependencies), dependencies);
+  });
+  const codexInstall = codexIntegration
+    .command("install")
+    .description("Install the exact AgentHawk-owned Codex project hook without replacement.")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  codexInstall.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    writeResult(await installCodexProjectHook({ format }, dependencies), dependencies);
+  });
+  const codexRemove = codexIntegration
+    .command("remove")
+    .description("Remove only an exact AgentHawk-owned Codex project hook pair.")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  codexRemove.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    writeResult(await removeCodexProjectHook({ format }, dependencies), dependencies);
   });
 
   const diff = program

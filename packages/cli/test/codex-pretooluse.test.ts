@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { PassThrough, Readable } from "node:stream";
-import { type AgentDecision, agentDecisionSchema } from "@agenthawk/core";
+import {
+  type AgentDecision,
+  agentDecisionSchema,
+  agentHawkConfigSchema,
+  OperationCancelledError,
+} from "@agenthawk/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CODEX_CONTRACT_RELEASE,
@@ -12,6 +17,8 @@ import {
   serializeCodexPreToolUseDecision,
   translateCodexPreToolUse,
 } from "../src/codex-pretooluse.js";
+import { parseCodexProjectHookLaunchArguments } from "../src/codex-project-hook-format.js";
+import type { RepositoryAuthority } from "../src/repository-authority.js";
 
 const fixtureDirectory = resolve("packages/cli/test/fixtures/codex/v0.149.0");
 const fixture = JSON.parse(
@@ -124,6 +131,104 @@ describe("Codex PreToolUse output", () => {
     expect(writes).toEqual([]);
   });
 
+  it("authenticates an exact project launch once and reuses that authority for evaluation", async () => {
+    const writes: string[] = [];
+    const loadedAuthority = authority();
+    const installationId = "ab".repeat(32);
+    const rootBinding = "cd".repeat(32);
+    let authorityLoads = 0;
+    let invocationChecks = 0;
+    const exitCode = await runCodexPreToolUse(
+      stream("git status"),
+      {
+        evaluateAction: async (action, _deadline, evaluationDependencies) => {
+          expect(action.deploymentTrust).toBe("project");
+          expect(evaluationDependencies).toBeDefined();
+          if (!evaluationDependencies) throw new Error("missing dependencies");
+          const reused = await evaluationDependencies.loadAuthority?.(fixtureRoot);
+          expect(reused).toBe(loadedAuthority);
+          expect(authorityLoads).toBe(1);
+          return decision("unrelated", "project");
+        },
+        loadAuthority: async () => {
+          authorityLoads += 1;
+          return loadedAuthority;
+        },
+        parseProjectLaunchArguments: parseCodexProjectHookLaunchArguments,
+        verifyProjectInvocation: async (receivedAuthority, context) => {
+          invocationChecks += 1;
+          expect(receivedAuthority).toBe(loadedAuthority);
+          expect(context).toEqual({ deploymentTrust: "project", installationId, rootBinding });
+          return true;
+        },
+        writeError: (text) => {
+          writes.push(text);
+        },
+        writeOutput: (text) => {
+          writes.push(text);
+        },
+      },
+      [
+        "--agenthawk-deployment-trust=project",
+        `--agenthawk-installation-id=${installationId}`,
+        `--agenthawk-root-binding=${rootBinding}`,
+      ],
+    );
+    expect(exitCode).toBe(0);
+    expect(authorityLoads).toBe(1);
+    expect(invocationChecks).toBe(1);
+    expect(writes).toEqual([]);
+  });
+
+  it.each([
+    ["malformed launch arguments", ["--agenthawk-deployment-trust=project"], undefined],
+    [
+      "rejected project pair",
+      [
+        "--agenthawk-deployment-trust=project",
+        `--agenthawk-installation-id=${"ab".repeat(32)}`,
+        `--agenthawk-root-binding=${"cd".repeat(32)}`,
+      ],
+      false,
+    ],
+    [
+      "cancelled project verification",
+      [
+        "--agenthawk-deployment-trust=project",
+        `--agenthawk-installation-id=${"ab".repeat(32)}`,
+        `--agenthawk-root-binding=${"cd".repeat(32)}`,
+      ],
+      "cancelled",
+    ],
+  ])("fails closed with fixed output for %s", async (_label, launchArguments, verification) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = await runCodexPreToolUse(
+      stream("git status"),
+      {
+        loadAuthority: async () => authority(),
+        parseProjectLaunchArguments: parseCodexProjectHookLaunchArguments,
+        verifyProjectInvocation: async () => {
+          if (verification === "cancelled") {
+            throw new OperationCancelledError();
+          }
+          return verification === true;
+        },
+        writeError: (text) => {
+          stderr.push(text);
+        },
+        writeOutput: (text) => {
+          stdout.push(text);
+        },
+      },
+      launchArguments,
+    );
+    expect(exitCode).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr).toEqual([CODEX_EMERGENCY_DENIAL]);
+    expect(stderr.join("")).not.toMatch(/private|cancelled-root|git status/u);
+  });
+
   it("denies shell-specific syntax because target dialect is not authenticated", async () => {
     const writes: string[] = [];
     const exitCode = await runCodexPreToolUse(stream("n^pm add example"), {
@@ -234,10 +339,13 @@ function stream(command: string): Readable {
   return Readable.from([JSON.stringify(payload(command))]);
 }
 
-function decision(reason: "dependency_review" | "unrelated"): AgentDecision {
+function decision(
+  reason: "dependency_review" | "unrelated",
+  deploymentTrust: "project" | "unknown" = "unknown",
+): AgentDecision {
   const base = {
     adapter: { id: "codex", version: "rust-v0.149.0/0.1.0-alpha.1" },
-    deploymentTrust: "unknown",
+    deploymentTrust,
     schemaVersion: "1.0",
   } as const;
   return agentDecisionSchema.parse(
@@ -259,4 +367,14 @@ function decision(reason: "dependency_review" | "unrelated"): AgentDecision {
           verdict: "review",
         },
   );
+}
+
+function authority(): RepositoryAuthority {
+  return {
+    approvals: { approvals: [], version: 1 },
+    config: agentHawkConfigSchema.parse({ version: 1 }),
+    directDependencyNames: [],
+    repositoryIdentity: { dev: 1n, ino: 2n },
+    repositoryRoot: fixtureRoot,
+  };
 }

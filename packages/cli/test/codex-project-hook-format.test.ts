@@ -3,11 +3,13 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildCodexProjectHookArtifacts,
+  buildCodexProjectHookLockBytes,
   codexProjectHookLockSchema,
   codexProjectHookReceiptSchema,
   computeCodexProjectRootBinding,
   createCodexProjectHookIdentifier,
   parseCodexProjectHookLaunchArguments,
+  parseCodexProjectHookLockBytes,
   parseCodexProjectHookReceiptBytes,
   quotePosixArgument,
   quotePowerShellLiteral,
@@ -193,6 +195,15 @@ describe("Codex project-hook format", () => {
         pid: 1,
       }),
     ).toThrow();
+    const bytes = buildCodexProjectHookLockBytes("ab".repeat(32));
+    expect(parseCodexProjectHookLockBytes(bytes)).toEqual({
+      operationId: "ab".repeat(32),
+      schemaVersion: "1.0",
+    });
+    expect(
+      parseCodexProjectHookLockBytes(Buffer.concat([Buffer.from(" "), bytes])),
+    ).toBeUndefined();
+    expect(parseCodexProjectHookLockBytes(Buffer.from([0xff]))).toBeUndefined();
   });
 
   it.each(["space value", "quote'value", "dollar$value", "tick`value", "%!^value"])(

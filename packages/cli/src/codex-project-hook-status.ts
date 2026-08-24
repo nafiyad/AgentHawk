@@ -16,14 +16,14 @@ import {
 import type { CheckResult, OutputFormat } from "./check.js";
 import {
   buildCodexProjectHookArtifacts,
+  type CodexProjectHookLaunchContext,
   type CodexProjectHookReceipt,
-  codexProjectHookLockSchema,
+  parseCodexProjectHookLockBytes,
   parseCodexProjectHookReceiptBytes,
   verifyCodexProjectHookBytes,
   verifyCodexProjectHookReceiptBinding,
 } from "./codex-project-hook-format.js";
 import { runBoundedGit } from "./diff.js";
-import { parseStrictJson } from "./hook-json.js";
 import {
   loadRepositoryAuthority,
   type RepositoryAuthority,
@@ -46,8 +46,18 @@ const topologyArguments = [
   "--git-common-dir",
 ] as const;
 
-export interface CodexProjectHookStatusOptions extends OperationContext {
+export interface CodexProjectHookStatusOptions extends CodexProjectHookObservationOptions {
   readonly format: OutputFormat;
+}
+
+export interface CodexProjectHookObservationOptions extends OperationContext {
+  readonly ownedOperationId?: string | undefined;
+}
+
+export interface CodexProjectHookObservation {
+  readonly blockers: readonly CodexProjectHookBlocker[];
+  readonly ownership: CodexProjectHookOwnership;
+  readonly readiness: CodexProjectHookReadiness;
 }
 
 export interface CodexProjectHookStatusDependencies {
@@ -144,6 +154,44 @@ export async function statusCodexProjectHook(
   }
 }
 
+export async function observeCodexProjectHook(
+  authority: RepositoryAuthority,
+  options: CodexProjectHookObservationOptions = {},
+  dependencies: CodexProjectHookStatusDependencies = {},
+): Promise<CodexProjectHookObservation> {
+  const snapshot = await observeStableSnapshot(authority, options, dependencies);
+  const result = classifySnapshot(authority, snapshot, dependencies, options);
+  return {
+    blockers: result.blockers,
+    ownership: result.ownership,
+    readiness: await result.readiness,
+  };
+}
+
+export async function verifyCodexProjectHookInvocation(
+  authority: RepositoryAuthority,
+  launchContext: CodexProjectHookLaunchContext,
+  options: OperationContext = {},
+  dependencies: CodexProjectHookStatusDependencies = {},
+): Promise<boolean> {
+  if (launchContext.deploymentTrust !== "project") return false;
+  const snapshot = await observeStableSnapshot(authority, options, dependencies);
+  const receipt = parseReceipt(snapshot.receipt);
+  if (
+    !receipt ||
+    receipt.installationId !== launchContext.installationId ||
+    receipt.rootBinding !== launchContext.rootBinding
+  ) {
+    return false;
+  }
+  const result = classifySnapshot(authority, snapshot, dependencies, options);
+  return (
+    result.ownership === "owned_exact" &&
+    !result.blockers.includes("operation_locked") &&
+    (await result.readiness) === "current"
+  );
+}
+
 function unsafeResult(format: OutputFormat): CheckResult {
   const report = codexProjectHookStatusReportSchema.parse({
     schemaVersion: "1.0",
@@ -162,7 +210,7 @@ function unsafeResult(format: OutputFormat): CheckResult {
 
 async function observeStableSnapshot(
   authority: RepositoryAuthority,
-  options: OperationContext,
+  options: CodexProjectHookObservationOptions,
   dependencies: CodexProjectHookStatusDependencies,
 ): Promise<Snapshot> {
   const first = await observeSnapshot(authority, options, dependencies);
@@ -231,7 +279,7 @@ function classifySnapshot(
   authority: RepositoryAuthority,
   snapshot: Snapshot,
   dependencies: CodexProjectHookStatusDependencies,
-  options: OperationContext,
+  options: CodexProjectHookObservationOptions,
 ): {
   ownership: CodexProjectHookOwnership;
   blockers: CodexProjectHookBlocker[];
@@ -241,8 +289,9 @@ function classifySnapshot(
   if (snapshot.config.state === "present") blockers.push("config_collision");
   if (snapshot.config.state === "oversize") throw new Error("Unsafe Codex configuration.");
   if (snapshot.lock.state !== "absent") {
-    if (!parseLock(snapshot.lock)) throw new Error("Unsafe Codex operation lock.");
-    blockers.push("operation_locked");
+    const lock = parseLock(snapshot.lock);
+    if (!lock) throw new Error("Unsafe Codex operation lock.");
+    if (lock.operationId !== options.ownedOperationId) blockers.push("operation_locked");
   }
   if (snapshot.linkedWorktree) blockers.push("linked_worktree");
 
@@ -621,15 +670,9 @@ function parseReceipt(observation: FixedFileObservation): CodexProjectHookReceip
   return parseCodexProjectHookReceiptBytes(observation.bytes);
 }
 
-function parseLock(observation: FixedFileObservation): boolean {
-  if (observation.state !== "present" || !observation.bytes) return false;
-  try {
-    const source = new TextDecoder("utf-8", { fatal: true }).decode(observation.bytes);
-    codexProjectHookLockSchema.parse(parseStrictJson(source));
-    return true;
-  } catch {
-    return false;
-  }
+function parseLock(observation: FixedFileObservation) {
+  if (observation.state !== "present" || !observation.bytes) return undefined;
+  return parseCodexProjectHookLockBytes(observation.bytes);
 }
 
 function snapshotSignature(snapshot: Snapshot): string {
