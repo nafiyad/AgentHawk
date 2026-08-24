@@ -358,7 +358,7 @@ export const claudeProjectHookStatusReportSchema = z
 
     const healthy =
       report.localSettings === "absent" &&
-      report.sharedSettings === "absent" &&
+      report.sharedSettings !== "unsafe" &&
       report.sharedPreToolUse === "absent" &&
       report.sharedDisableAllHooks === false &&
       report.localSettingsIgnored === "ignored" &&

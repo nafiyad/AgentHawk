@@ -20,9 +20,9 @@ import type { CheckResult, OutputFormat } from "./check.js";
 import { runBoundedGit } from "./diff.js";
 import { parseStrictJson } from "./hook-json.js";
 import {
-  loadRepositoryAuthority,
-  type RepositoryAuthority,
+  loadRepositoryRootAuthority,
   RepositoryAuthorityError,
+  type RepositoryRootAuthority,
 } from "./repository-authority.js";
 import { escapeTerminal } from "./terminal.js";
 import { AGENTHAWK_CLI_VERSION } from "./version.js";
@@ -49,7 +49,7 @@ export interface ClaudeProjectHookStatusOptions extends OperationContext {
 export interface ClaudeProjectHookStatusDependencies {
   readonly cwd?: string;
   readonly inspectPath?: (path: string) => Promise<BigIntStats>;
-  readonly loadAuthority?: typeof loadRepositoryAuthority;
+  readonly loadRootAuthority?: typeof loadRepositoryRootAuthority;
   readonly observeIgnore?: (
     root: string,
     options: OperationContext,
@@ -58,6 +58,7 @@ export interface ClaudeProjectHookStatusDependencies {
   readonly openFile?: typeof open;
   readonly realPath?: typeof realpath;
   readonly runTopologyGit?: typeof runBoundedGit;
+  readonly spawnProcess?: typeof spawn;
 }
 
 interface DirectoryReader {
@@ -86,7 +87,7 @@ export async function statusClaudeProjectHook(
   dependencies: ClaudeProjectHookStatusDependencies = {},
 ): Promise<CheckResult> {
   try {
-    const authority = await (dependencies.loadAuthority ?? loadRepositoryAuthority)(
+    const authority = await (dependencies.loadRootAuthority ?? loadRepositoryRootAuthority)(
       dependencies.cwd ?? process.cwd(),
       { signal: options.signal },
     );
@@ -124,7 +125,7 @@ function statusResult(snapshot: Snapshot, format: OutputFormat): CheckResult {
   const blockers = blockersFor(snapshot);
   const healthy =
     snapshot.localSettings === "absent" &&
-    snapshot.sharedSettings === "absent" &&
+    snapshot.sharedSettings !== "unsafe" &&
     snapshot.sharedPreToolUse === "absent" &&
     snapshot.sharedDisableAllHooks === false &&
     snapshot.localSettingsIgnored === "ignored" &&
@@ -150,7 +151,7 @@ function statusResult(snapshot: Snapshot, format: OutputFormat): CheckResult {
 }
 
 async function observeStableSnapshot(
-  authority: RepositoryAuthority,
+  authority: RepositoryRootAuthority,
   options: OperationContext,
   dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<Snapshot> {
@@ -164,7 +165,7 @@ async function observeStableSnapshot(
 }
 
 async function observeSnapshot(
-  authority: RepositoryAuthority,
+  authority: RepositoryRootAuthority,
   options: OperationContext,
   dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<Snapshot> {
@@ -457,7 +458,9 @@ async function observeIgnoreStatus(
 ): Promise<ClaudeLocalSettingsIgnored> {
   try {
     throwIfCancelled(options);
-    const result = await (dependencies.observeIgnore ?? observeQuietGitIgnore)(root, options);
+    const result = dependencies.observeIgnore
+      ? await dependencies.observeIgnore(root, options)
+      : await observeQuietGitIgnore(root, options, dependencies);
     throwIfCancelled(options);
     return result;
   } catch (error) {
@@ -469,6 +472,7 @@ async function observeIgnoreStatus(
 async function observeQuietGitIgnore(
   root: string,
   options: OperationContext,
+  dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<ClaudeLocalSettingsIgnored> {
   throwIfCancelled(options);
   const environment = { ...process.env };
@@ -477,7 +481,9 @@ async function observeQuietGitIgnore(
   }
   return await new Promise<ClaudeLocalSettingsIgnored>((resolvePromise, reject) => {
     let settled = false;
-    const child = spawn(
+    let failed = false;
+    let cancelled = false;
+    const child = (dependencies.spawnProcess ?? spawn)(
       "git",
       [
         "-c",
@@ -510,28 +516,25 @@ async function observeQuietGitIgnore(
       resolvePromise(value);
     };
     child.once("error", () => {
-      if (options.signal?.aborted) {
-        if (!settled) {
-          settled = true;
-          reject(cancellationError(options.signal));
-        }
-      } else settle("unknown");
+      failed = true;
+      if (options.signal?.aborted) cancelled = true;
     });
     child.once("close", (code) => {
-      if (options.signal?.aborted) {
+      const signal = options.signal;
+      if ((cancelled || signal?.aborted) && signal) {
         if (!settled) {
           settled = true;
-          reject(cancellationError(options.signal));
+          reject(cancellationError(signal));
         }
         return;
       }
-      settle(code === 0 ? "ignored" : code === 1 ? "not_ignored" : "unknown");
+      settle(failed ? "unknown" : code === 0 ? "ignored" : code === 1 ? "not_ignored" : "unknown");
     });
   });
 }
 
 async function detectLinkedWorktree(
-  authority: RepositoryAuthority,
+  authority: RepositoryRootAuthority,
   options: OperationContext,
   dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<{ linkedWorktree: boolean; signature: string }> {
@@ -593,7 +596,7 @@ async function stableContainedDirectory(
 }
 
 async function assertRootIdentity(
-  authority: RepositoryAuthority,
+  authority: RepositoryRootAuthority,
   options: OperationContext,
   dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<string> {

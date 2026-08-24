@@ -37,7 +37,7 @@ Only exit `0` plus an explicitly acceptable parsed verdict permits an automated 
 
 For `integrations codex status`, exit `0` means either no owned state exists and no mutation blocker was observed, or an exact owned pair has current local artifacts and no blocker. Exit `1` means the completed snapshot requires attention; exit `4` is an unexpected reporting failure. The report is not an admission verdict and never proves Codex loaded, trusted, enabled, or executed a hook.
 
-For `integrations claude status`, exit `0` means only that both fixed settings files are absent, the exact future local settings path is currently ignored, and no repository-visible blocker was observed. Exit `1` means the preflight requires attention; exit `4` is an unexpected redacted reporting failure. Activation is always `unproven`; the report is neither an admission verdict nor proof that Claude would load or enforce a hook.
+For `integrations claude status`, exit `0` means only that local settings are absent, shared settings were safely absent or contained no relevant blocker, the exact future local settings path is currently ignored, and no repository-visible blocker was observed. Exit `1` means the preflight requires attention; exit `4` is an unexpected redacted reporting failure. Activation is always `unproven`; the report is neither an admission verdict nor proof that Claude would load or enforce a hook.
 
 ## Report families
 

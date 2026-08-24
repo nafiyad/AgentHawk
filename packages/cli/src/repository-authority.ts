@@ -35,6 +35,14 @@ export interface RepositoryAuthority {
   readonly directDependencyNames: readonly string[];
 }
 
+export interface RepositoryRootAuthority {
+  readonly repositoryRoot: string;
+  readonly repositoryIdentity: {
+    readonly dev: bigint;
+    readonly ino: bigint;
+  };
+}
+
 export interface RepositoryAuthorityDependencies {
   inspectPath?: typeof lstat;
   inspectIdentity?: (path: string) => Promise<BigIntStats>;
@@ -52,6 +60,63 @@ export class RepositoryAuthorityError extends Error {
   ) {
     super(message);
     this.name = "RepositoryAuthorityError";
+  }
+}
+
+export async function loadRepositoryRootAuthority(
+  actionDirectory: string,
+  options: OperationContext = {},
+  dependencies: RepositoryAuthorityDependencies = {},
+): Promise<RepositoryRootAuthority> {
+  const inspectPath = dependencies.inspectPath ?? lstat;
+  const inspectIdentity =
+    dependencies.inspectIdentity ?? (async (path: string) => await lstat(path, { bigint: true }));
+  const resolveRealPath = dependencies.realPath ?? realpath;
+  const runGit = dependencies.runGit ?? runBoundedGit;
+  try {
+    throwIfCancelled(options);
+    validateDirectoryInput(actionDirectory);
+    const actionRoot = await canonicalDirectory(
+      actionDirectory,
+      resolveRealPath,
+      inspectPath,
+      options,
+    );
+    const initialIdentity = await inspectDirectoryIdentity(actionRoot, inspectIdentity, options);
+    const rootOutput = await runGit(["rev-parse", "--show-toplevel"], actionRoot, options);
+    throwIfCancelled(options);
+    const declaredRoot = parseGitRoot(rootOutput);
+    const repositoryRoot = await canonicalDirectory(
+      declaredRoot,
+      resolveRealPath,
+      inspectPath,
+      options,
+    );
+    const gitIdentity = await inspectDirectoryIdentity(repositoryRoot, inspectIdentity, options);
+    if (repositoryRoot !== actionRoot || !sameDirectoryIdentity(initialIdentity, gitIdentity)) {
+      throw new RepositoryAuthorityError(
+        "repository_identity",
+        "Action directory must be the canonical Git worktree root.",
+      );
+    }
+    const finalIdentity = await inspectDirectoryIdentity(repositoryRoot, inspectIdentity, options);
+    if (!sameDirectoryIdentity(initialIdentity, finalIdentity)) {
+      throw new RepositoryAuthorityError(
+        "repository_identity",
+        "Repository root changed during authority loading.",
+      );
+    }
+    return {
+      repositoryRoot,
+      repositoryIdentity: { dev: finalIdentity.dev, ino: finalIdentity.ino },
+    };
+  } catch (error) {
+    if (options.signal?.aborted) throw cancellationError(options.signal);
+    if (isOperationCancelled(error) || error instanceof RepositoryAuthorityError) throw error;
+    throw new RepositoryAuthorityError(
+      "repository_identity",
+      "Repository authority could not be established.",
+    );
   }
 }
 

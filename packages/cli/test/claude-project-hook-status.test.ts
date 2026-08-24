@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process";
+import { type ChildProcess, execFile } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   link,
   lstat,
@@ -100,10 +101,29 @@ describe("Claude project-hook status", { timeout: integrationTimeout }, () => {
       join(root, ".claude", "settings.json"),
       '{"hooks":{"PreToolUse":[]},"disableAllHooks":false,"other":{"value":true}}\n',
     );
-    expect(await status(root)).toMatchObject({
+    const harmless = await statusClaudeProjectHook({ format: "json" }, { cwd: root });
+    expect(harmless.exitCode).toBe(0);
+    expect(JSON.parse(harmless.output)).toMatchObject({
       sharedSettings: "present",
       sharedPreToolUse: "absent",
       sharedDisableAllHooks: false,
+      blockers: [],
+      exitCodeMeaning: "future_installation_precondition_met",
+    });
+  });
+
+  it("does not read or validate unrelated AgentHawk configuration", async () => {
+    const root = await gitRoot();
+    await writeFile(join(root, ".agenthawk.yml"), "not: valid: yaml\n");
+    await writeFile(join(root, "package.json"), "not-json\n");
+    const result = await statusClaudeProjectHook(
+      { format: "json" },
+      { cwd: root, observeIgnore: async () => "ignored" },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.output)).toMatchObject({
+      localSettings: "absent",
+      sharedSettings: "absent",
       blockers: [],
     });
   });
@@ -273,6 +293,45 @@ describe("Claude project-hook status", { timeout: integrationTimeout }, () => {
     ).rejects.toThrow();
   });
 
+  it("waits for an active quiet Git child to close before propagating cancellation", async () => {
+    const root = await gitRoot();
+    const controller = new AbortController();
+    const child = new EventEmitter();
+    let notifyError!: () => void;
+    const errorObserved = new Promise<void>((resolvePromise) => {
+      notifyError = resolvePromise;
+    });
+    const pending = statusClaudeProjectHook(
+      { format: "json", signal: controller.signal },
+      {
+        cwd: root,
+        spawnProcess: (() => {
+          queueMicrotask(() => {
+            controller.abort(new Error("private cancellation"));
+            child.emit("error", new Error("private abort detail"));
+            notifyError();
+          });
+          return child as ChildProcess;
+        }) as typeof import("node:child_process").spawn,
+      },
+    );
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await errorObserved;
+    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+    expect(settled).toBe(false);
+    child.emit("close", null, "SIGTERM");
+    await expect(pending).rejects.toThrow();
+    expect(settled).toBe(true);
+  });
+
   it("bounds oversized directory enumeration and closes the reader", async () => {
     const root = await gitRoot();
     let reads = 0;
@@ -298,7 +357,7 @@ describe("Claude project-hook status", { timeout: integrationTimeout }, () => {
     const failed = await statusClaudeProjectHook(
       { format: "json" },
       {
-        loadAuthority: async () => {
+        loadRootAuthority: async () => {
           throw new Error("private authority failure");
         },
       },

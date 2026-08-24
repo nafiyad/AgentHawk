@@ -14,7 +14,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { OperationCancelledError } from "@agenthawk/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadRepositoryAuthority, RepositoryAuthorityError } from "../src/repository-authority.js";
+import {
+  loadRepositoryAuthority,
+  loadRepositoryRootAuthority,
+  RepositoryAuthorityError,
+} from "../src/repository-authority.js";
 
 const roots: string[] = [];
 const integrationTimeout = 20_000;
@@ -28,6 +32,54 @@ afterEach(async () => {
 }, integrationTimeout);
 
 describe("loadRepositoryAuthority", { timeout: integrationTimeout }, () => {
+  it("loads only canonical root identity without reading repository configuration", async () => {
+    const root = await repository();
+    await writeFile(join(root, ".agenthawk.yml"), "not: valid: yaml\n");
+    await writeFile(join(root, "package.json"), "not-json\n");
+    let configurationRead = false;
+    const result = await loadRepositoryRootAuthority(
+      root,
+      {},
+      {
+        readApprovals: async () => {
+          configurationRead = true;
+          throw new Error("must not run");
+        },
+        readPolicy: async () => {
+          configurationRead = true;
+          throw new Error("must not run");
+        },
+      },
+    );
+    const identity = await lstat(root, { bigint: true });
+    expect(result).toEqual({
+      repositoryRoot: await realpath(root),
+      repositoryIdentity: { dev: identity.dev, ino: identity.ino },
+    });
+    expect(configurationRead).toBe(false);
+  });
+
+  it("keeps root-only authority fail-closed for invalid roots and cancellation", async () => {
+    const root = await repository();
+    const nested = join(root, "nested");
+    await mkdir(nested);
+    await expect(loadRepositoryRootAuthority(nested)).rejects.toThrow(
+      "Action directory must be the canonical Git worktree root.",
+    );
+    await expect(loadRepositoryRootAuthority("relative/path")).rejects.toThrow(
+      "Action directory is invalid.",
+    );
+    await expect(
+      loadRepositoryRootAuthority(root, {}, { runGit: async () => "relative\n" }),
+    ).rejects.toBeInstanceOf(RepositoryAuthorityError);
+
+    const controller = new AbortController();
+    controller.abort(new Error("private cancellation"));
+    await expect(
+      loadRepositoryRootAuthority(root, { signal: controller.signal }),
+    ).rejects.toBeInstanceOf(OperationCancelledError);
+  });
+
   it("loads only co-root defaults and derives direct dependency names", async () => {
     const root = await repository();
     await mkdir(join(root, ".agenthawk"));

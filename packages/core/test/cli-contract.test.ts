@@ -30,6 +30,12 @@ describe("CLI JSON contract", () => {
       exitCodeMeaning: "future_installation_precondition_met",
     } as const;
     expect(claudeProjectHookStatusReportSchema.parse(healthy)).toEqual(healthy);
+    expect(
+      claudeProjectHookStatusReportSchema.parse({
+        ...healthy,
+        sharedSettings: "present",
+      }),
+    ).toEqual({ ...healthy, sharedSettings: "present" });
 
     const blocked = {
       ...healthy,
