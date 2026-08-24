@@ -61,6 +61,8 @@ export const packageSpecifications = [
       "dist/approvals.js",
       "dist/check.d.ts",
       "dist/check.js",
+      "dist/codex-project-hook-format.d.ts",
+      "dist/codex-project-hook-format.js",
       "dist/codex-pretooluse-entry.d.ts",
       "dist/codex-pretooluse-entry.js",
       "dist/codex-pretooluse.d.ts",

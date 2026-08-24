@@ -27,6 +27,9 @@ This decision uses public primary sources, accessed 2026-08-24:
   were reviewed at commit `758ef40f50c1a458425c7cfbf1eb12cbc07af0b0`
   to bound the compatibility candidate. Source review informs exact-version
   tests; it does not replace the public contract or prove another host version.
+- The same pinned loader [redirects linked-worktree hook declarations to the
+  root checkout](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/config/src/loader/mod.rs#L1083-L1093)
+  and [replaces worktree-local hooks with that root-checkout source](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/config/src/loader/mod.rs#L1590-L1613).
 
 Codex combines matching hooks from multiple sources. A higher-precedence source
 does not replace a lower-precedence hook, and project `hooks.json` can coexist
@@ -55,6 +58,13 @@ canonical root through the existing repository-authority loader. Nested action
 directories, path overrides, user-home installation, `CODEX_HOME` mutation,
 plugins, session hooks, managed requirements, trust-store writes, and Git
 ignore changes are outside this decision.
+
+The first installer also rejects linked Git worktrees. AgentHawk correctly
+treats each linked worktree as an independent repository authority, but Codex
+`0.149.0` deliberately loads its project hooks from the root checkout instead.
+Writing the linked worktree's `.codex/hooks.json` would therefore create an
+apparently owned but inactive control. A later design may coordinate root
+checkout ownership; this version must detect and fail before any mutation.
 
 The installer owns only these fixed targets:
 
@@ -305,9 +315,17 @@ existing configuration is dangerous.
 
 ## Consequences
 
+The root-bound artifact-format prerequisite is implemented. It exposes the
+authority loader's already verified exact bigint root identity, generates
+canonical 256-bit identifiers, uses the fixed length-framed root-binding vector,
+creates one deterministic synchronous hook plus strict path-redacted receipt,
+quotes every launch argument for the named POSIX and Windows PowerShell forms,
+and strictly parses only the three fixed ordered launch declarations. This does
+not write configuration or activate the adapter.
+
 The next implementation slice can add only project-scoped `status`, `install`,
-and `remove`, the strict receipt, transactional filesystem helpers, and the
-exact project-hook host harness. It must add adversarial tests for collisions,
+and `remove`, transactional filesystem helpers, invocation-time pair
+verification, and the exact project-hook host harness. It must add adversarial tests for collisions,
 links and reparse points, identity races, cancellation at every publication
 boundary, abandoned locks, changed artifacts, interrupted install/removal, hostile
 file contents, and bounded redacted output on Windows, Linux, and macOS where
