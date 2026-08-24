@@ -2,9 +2,9 @@
 
 ## Status
 
-Accepted as the design boundary for read-only status. No Claude Code settings
-mutation, installation, removal, activation, or native support is authorized by
-this decision.
+Accepted and implemented for read-only status. No Claude Code settings mutation,
+installation, removal, activation, or native support is authorized by this
+decision.
 
 ## Context
 

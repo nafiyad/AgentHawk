@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   approvalValidationReportSchema,
+  claudeProjectHookStatusReportSchema,
   cliErrorReportSchema,
   codexProjectHookLifecycleReportSchema,
   codexProjectHookStatusReportSchema,
@@ -13,6 +14,52 @@ import {
 } from "../src/index.js";
 
 describe("CLI JSON contract", () => {
+  it("enforces closed and internally consistent Claude project-hook preflight reports", () => {
+    const healthy = {
+      schemaVersion: "1.0",
+      toolVersion: "0.1.0-alpha.1",
+      command: "integrations_claude_status",
+      localSettings: "absent",
+      sharedSettings: "absent",
+      sharedPreToolUse: "absent",
+      sharedDisableAllHooks: false,
+      localSettingsIgnored: "ignored",
+      blockers: [],
+      activation: "unproven",
+      providersContacted: false,
+      exitCodeMeaning: "future_installation_precondition_met",
+    } as const;
+    expect(claudeProjectHookStatusReportSchema.parse(healthy)).toEqual(healthy);
+
+    const blocked = {
+      ...healthy,
+      localSettings: "unsafe",
+      sharedSettings: "unsafe",
+      sharedPreToolUse: "unknown",
+      sharedDisableAllHooks: "unknown",
+      localSettingsIgnored: "unknown",
+      blockers: [
+        "local_settings_unsafe",
+        "shared_settings_unsafe",
+        "ignore_status_unavailable",
+        "linked_worktree",
+      ],
+      exitCodeMeaning: "attention_required",
+    } as const;
+    expect(claudeProjectHookStatusReportSchema.parse(blocked)).toEqual(blocked);
+    for (const candidate of [
+      { ...healthy, privatePath: "/private" },
+      { ...healthy, activation: "active" },
+      { ...healthy, blockers: ["local_settings_not_ignored"] },
+      { ...healthy, exitCodeMeaning: "attention_required" },
+      { ...blocked, blockers: [...blocked.blockers].reverse() },
+      { ...blocked, blockers: [...blocked.blockers, "linked_worktree"] },
+      { ...blocked, sharedPreToolUse: "absent" },
+    ]) {
+      expect(claudeProjectHookStatusReportSchema.safeParse(candidate).success).toBe(false);
+    }
+  });
+
   it("enforces closed and internally consistent Codex project-hook lifecycle reports", () => {
     const installed = {
       schemaVersion: "1.0",

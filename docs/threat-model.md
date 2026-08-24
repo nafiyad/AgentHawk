@@ -2,7 +2,7 @@
 
 ## Scope
 
-This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation and validation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, Git diff analysis, GitHub pull-request reporting, agent instruction templates, the planned native pre-tool enforcement boundary, release-package verification, and npm staging.
+This threat model covers npm request parsing, registry and OSV evidence retrieval, deterministic policy evaluation and validation, exact expiring approvals, the bounded public-metadata cache, direct dependency inventory, Git diff analysis, GitHub pull-request reporting, agent instruction templates, native pre-tool compatibility candidates and read-only integration preflights, release-package verification, and npm staging.
 
 ## Assets
 
@@ -29,8 +29,7 @@ current-folder trust or previously accepted parent trust that extends to the
 folder; `-p`/SDK has no trust dialog. Hooks execute with the user's authority and
 inherited environment. Bare mode, settings-source selection, managed-only policy,
 or hook disabling can exclude them. [ADR 0015](adr/0015-claude-code-hook-edge.md)
-pins the research candidate, validates only the closed process boundary, installs nothing, and keeps every Claude row
-unsupported.
+pins the research candidate, validates the closed process boundary, and keeps every Claude row unsupported. [ADR 0016](adr/0016-claude-project-hook-ownership.md) adds only a two-snapshot, minimum-disclosure project-settings preflight. It does not mutate settings, prove activation, or establish ownership/readiness.
 
 ## Abuse cases and mitigations
 

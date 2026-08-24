@@ -243,6 +243,31 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       timeout: 10_000,
       windowsHide: true,
     });
+    await writeFile(join(initDirectory, ".gitignore"), ".claude/settings.local.json\n", {
+      encoding: "utf8",
+      flag: "wx",
+    });
+    const claudeStatus = await execute(
+      process.execPath,
+      [cliEntrypoint, "integrations", "claude", "status", "--format", "json"],
+      {
+        cwd: initDirectory,
+        encoding: "utf8",
+        maxBuffer: 65_536,
+        timeout: 15_000,
+        windowsHide: true,
+      },
+    );
+    const claudeStatusReport = JSON.parse(claudeStatus.stdout);
+    assert(
+      claudeStatusReport.command === "integrations_claude_status" &&
+        claudeStatusReport.localSettings === "absent" &&
+        claudeStatusReport.sharedSettings === "absent" &&
+        claudeStatusReport.localSettingsIgnored === "ignored" &&
+        claudeStatusReport.activation === "unproven" &&
+        claudeStatusReport.providersContacted === false,
+      "Packed Claude project-hook status smoke failed",
+    );
     const status = await execute(
       process.execPath,
       [cliEntrypoint, "integrations", "codex", "status", "--format", "json"],
