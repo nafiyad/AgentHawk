@@ -49,6 +49,7 @@ export interface InitDependencies {
     path: string,
     inspect: () => Promise<Stats>,
   ) => Promise<Stats>;
+  readDirectory?: (path: string) => Promise<string[]>;
   uuid?: () => string;
 }
 
@@ -81,7 +82,7 @@ export async function initializeRepository(
     const bundledAssets = (dependencies.assets ?? initAssets)(options.integration);
     let assets = await prepareAssets(root, bundledAssets, dependencies);
     const lockPath = join(root, lockName);
-    await assertNameAvailable(root, lockName, true);
+    await assertNameAvailable(root, lockName, true, dependencies);
     let lockHandle: FileHandle;
     try {
       lockHandle = await open(lockPath, "wx", 0o600);
@@ -117,7 +118,7 @@ export async function initializeRepository(
     const stagingName = `.agenthawk-init-${(dependencies.uuid ?? randomUUID)()}`;
     validateSegment(stagingName);
     const stagingPath = join(root, stagingName);
-    await assertNameAvailable(root, stagingName, false);
+    await assertNameAvailable(root, stagingName, false, dependencies);
     await mkdir(stagingPath, { mode: 0o700 });
     let stagingStats: Stats;
     try {
@@ -164,7 +165,7 @@ export async function initializeRepository(
         await handle.close();
       }
       await dependencies.beforePublish?.(asset.target);
-      await assertPublishTarget(root, asset);
+      await assertPublishTarget(root, asset, dependencies);
       await dependencies.beforeLink?.(asset.target, asset.path);
       try {
         await link(stagePath, asset.path);
@@ -305,7 +306,7 @@ async function existingTargetState(
   const parentState = await inspectParents(root, segments.slice(0, -1));
   if (parentState === "missing") return "absent";
   const parent = segments.slice(0, -1).reduce((current, segment) => join(current, segment), root);
-  await assertNameAvailable(parent, name, true);
+  await assertNameAvailable(parent, name, true, dependencies);
   let initial: Stats;
   try {
     initial = await lstat(path);
@@ -384,7 +385,7 @@ async function createParentDirectories(
 ): Promise<void> {
   let current = root;
   for (const segment of segments) {
-    await assertNameAvailable(current, segment, true);
+    await assertNameAvailable(current, segment, true, dependencies);
     current = join(current, segment);
     await dependencies.beforeCreateParent?.(current);
     let createdStats: Stats | undefined;
@@ -436,14 +437,18 @@ async function createParentDirectories(
   }
 }
 
-async function assertPublishTarget(root: string, asset: PreparedAsset): Promise<void> {
+async function assertPublishTarget(
+  root: string,
+  asset: PreparedAsset,
+  dependencies: InitDependencies,
+): Promise<void> {
   if ((await inspectParents(root, asset.segments.slice(0, -1))) !== "present") {
     throw new InitInputError("Initialization parent disappeared.");
   }
   const parent = asset.segments
     .slice(0, -1)
     .reduce((current, segment) => join(current, segment), root);
-  await assertNameAvailable(parent, asset.name, false);
+  await assertNameAvailable(parent, asset.name, false, dependencies);
   try {
     await lstat(asset.path);
     throw new InitInputError("Initialization target appeared during publication.");
@@ -506,11 +511,12 @@ async function assertNameAvailable(
   parent: string,
   expectedName: string,
   allowExact: boolean,
+  dependencies: InitDependencies,
 ): Promise<void> {
   validateSegment(expectedName);
   let entries: string[];
   try {
-    entries = await readdir(parent);
+    entries = await (dependencies.readDirectory ?? readdir)(parent);
   } catch (error) {
     if (isMissing(error)) return;
     throw new InitInputError("Initialization directory could not be enumerated.");

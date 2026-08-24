@@ -573,17 +573,19 @@ describe("init", () => {
 
   it("rejects roots too large for bounded case-collision inspection", async () => {
     const cwd = await repository();
-    for (let batch = 0; batch < 17; batch += 1) {
-      await Promise.all(
-        Array.from({ length: 256 }, (_, index) =>
-          writeFile(join(cwd, `entry-${batch}-${index}`), "", "utf8"),
-        ),
-      );
-    }
-    const result = await initializeRepository({ format: "json", integration: "none" }, { cwd });
+    const result = await initializeRepository(
+      { format: "json", integration: "none" },
+      {
+        cwd,
+        readDirectory: async (path) =>
+          path === cwd
+            ? Array.from({ length: 4_097 }, (_, index) => `entry-${index}`)
+            : readdir(path),
+      },
+    );
     expect(result.exitCode).toBe(2);
     await expect(readFile(join(cwd, ".agenthawk.yml"), "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
-  }, 20_000);
+  });
 });
