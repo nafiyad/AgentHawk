@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { commandForEntry, HostHarnessError, terminateChild } from "./verify-codex-host.mjs";
@@ -44,6 +45,10 @@ export function spawnBoundedJsonl(entry, args, options) {
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
+  const processGroupId =
+    process.platform !== "win32" && Number.isSafeInteger(child.pid) && child.pid > 0
+      ? child.pid
+      : undefined;
   const maximumLineBytes = options.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES;
   const maximumTotalBytes = options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES;
   const maximumMessages = options.maxMessages ?? DEFAULT_MAX_MESSAGES;
@@ -65,24 +70,43 @@ export function spawnBoundedJsonl(entry, args, options) {
   });
 
   const waitForProcessGroupExit = async () => {
-    if (process.platform === "win32" || !child.pid) return;
+    if (process.platform === "win32" || !processGroupId) return;
     const deadline =
-      Date.now() + (options.terminationGroupTimeoutMs ?? TERMINATION_GROUP_TIMEOUT_MS);
+      performance.now() + (options.terminationGroupTimeoutMs ?? TERMINATION_GROUP_TIMEOUT_MS);
     while (true) {
       try {
-        process.kill(-child.pid, 0);
+        process.kill(-processGroupId, 0);
       } catch (error) {
         if (error?.code === "ESRCH") return;
-        throw protocolError("termination_group_check_failed");
+        // macOS reports EPERM when any member of an existing group cannot be
+        // probed. That still proves the group exists, so keep waiting rather
+        // than mistaking it for quiescence or failing before the bounded poll.
+        if (error?.code !== "EPERM") throw protocolError("termination_group_check_failed");
       }
-      if (Date.now() >= deadline) throw protocolError("termination_group_timeout");
+      if (performance.now() >= deadline) throw protocolError("termination_group_timeout");
       await delay(10);
+    }
+  };
+
+  const signalProcessGroup = () => {
+    if (process.platform === "win32" || !processGroupId) return;
+    try {
+      process.kill(-processGroupId, "SIGKILL");
+    } catch (error) {
+      if (error?.code === "ESRCH") return;
+      throw protocolError("termination_group_kill_failed");
     }
   };
 
   const terminateAndWait = () => {
     if (!termination) {
       termination = (async () => {
+        let groupKillError;
+        try {
+          signalProcessGroup();
+        } catch (error) {
+          groupKillError = error;
+        }
         await terminateChild(child);
         let terminationTimer;
         try {
@@ -96,10 +120,11 @@ export function spawnBoundedJsonl(entry, args, options) {
               terminationTimer.unref();
             }),
           ]);
-          await waitForProcessGroupExit();
         } finally {
           if (terminationTimer) clearTimeout(terminationTimer);
         }
+        if (groupKillError) throw groupKillError;
+        await waitForProcessGroupExit();
       })();
       void termination.catch(() => undefined);
     }
