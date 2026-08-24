@@ -46,6 +46,16 @@ verify `status`, and retry only after reviewing any documented fixed-target
 recovery state. The currently published `0.1.0-alpha.1` package predates these
 commands; verify an installed version with `agenthawk --help`.
 
+## Claude Code native research candidate
+
+No Claude Code native adapter is supported or installable. [ADR 0015](adr/0015-claude-code-hook-edge.md)
+pins local CLI `2.1.241` as the first research candidate and keeps `Bash` and
+`PowerShell` as distinct shell rows. Claude settings hooks can run with full user
+permissions before interactive workspace trust and in untrusted `-p`/SDK folders;
+startup failure, malformed output, and command-hook timeout are non-blocking.
+The next implementation slice is fixtures and an adapter process only. Continue
+to use the advisory `CLAUDE.md` template and protected `scan`/`diff` CI.
+
 Codex discovers repository guidance through `AGENTS.md`. Claude Code loads project instructions from `CLAUDE.md`. Cursor project rules live under `.cursor/rules` and use MDC metadata. See the official [Codex documentation](https://developers.openai.com/codex), [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-code), and [Cursor rules documentation](https://docs.cursor.com/context/rules).
 
 ## Decision contract
