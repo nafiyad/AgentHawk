@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   access,
   chmod,
@@ -208,6 +209,38 @@ export function classifyFunctionOutput(value, callId) {
   )
     return "success";
   return "unknown";
+}
+
+const ADMINISTRATOR_EVIDENCE_MARKERS = Object.freeze({
+  managed_deny_read: "managed denied-read requirements need the elevated Windows sandbox backend",
+  managed_network: "managed networking requires the elevated Windows sandbox backend",
+  read_only: "Restricted read-only access requires the elevated Windows sandbox backend",
+  deny_read: "deny-read overrides require the elevated Windows sandbox backend",
+  legacy_preflight: "failed to preflight non-admin Windows sandbox setup",
+});
+
+export function describeFunctionOutputEvidence(value, callId) {
+  const output = findFunctionOutput(value, callId);
+  if (typeof output !== "string") {
+    return {
+      outputType: output === null ? "null" : typeof output,
+      normalizedDigest: null,
+      markers: [],
+    };
+  }
+  const normalized = output
+    .replaceAll("\r\n", "\n")
+    .replace(/Wall time: [0-9]+(?:\.[0-9]+)? seconds/g, "Wall time: <duration> seconds")
+    .replace(/Chunk ID: [^\n]+/g, "Chunk ID: <id>")
+    .replace(/[A-Za-z]:\\[^\r\n"']+/g, "<windows-path>");
+  const markers = Object.entries(ADMINISTRATOR_EVIDENCE_MARKERS)
+    .filter(([, marker]) => normalized.includes(marker))
+    .map(([id]) => id);
+  return {
+    outputType: "string",
+    normalizedDigest: createHash("sha256").update(normalized, "utf8").digest("hex"),
+    markers,
+  };
 }
 
 export function neutralScenarioPassed(functionOutput, markerVerified) {

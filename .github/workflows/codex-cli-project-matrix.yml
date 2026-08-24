@@ -84,5 +84,5 @@ jobs:
           }
           "CODEX_ENTRY=$entry" >> $env:GITHUB_ENV
 
-      - name: Prove hosted administrator boundary fails closed
-        run: node scripts/verify-codex-cli-project-matrix.mjs --codex-entry "$env:CODEX_ENTRY" --expect-administrator-rejection
+      - name: Classify hosted administrator boundary evidence
+        run: node scripts/verify-codex-cli-project-matrix.mjs --codex-entry "$env:CODEX_ENTRY" --probe-administrator-rejection

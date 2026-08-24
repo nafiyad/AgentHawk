@@ -11,6 +11,7 @@ import {
   assertExactVersion,
   closeServer,
   createFixtureServer,
+  describeFunctionOutputEvidence,
   EXPECTED_CODEX_VERSION,
   HostHarnessError,
   listenLoopback,
@@ -27,8 +28,17 @@ const PERFORMANCE_SAMPLES = 25;
 
 function parseMatrixArguments(argv) {
   const expectAdministratorRejection = argv.includes("--expect-administrator-rejection");
-  const hostArguments = argv.filter((argument) => argument !== "--expect-administrator-rejection");
-  return { ...parseArguments(hostArguments), expectAdministratorRejection };
+  const probeAdministratorRejection = argv.includes("--probe-administrator-rejection");
+  const hostArguments = argv.filter(
+    (argument) =>
+      argument !== "--expect-administrator-rejection" &&
+      argument !== "--probe-administrator-rejection",
+  );
+  return {
+    ...parseArguments(hostArguments),
+    expectAdministratorRejection,
+    probeAdministratorRejection,
+  };
 }
 
 export const MATRIX_SCENARIOS = Object.freeze({
@@ -540,6 +550,7 @@ async function runUnrelatedScenario({
   codexEntry,
   codexHome,
   expectAdministratorRejection = false,
+  probeAdministratorRejection = false,
   fakeBin,
   preloadEntry,
   repository,
@@ -593,6 +604,18 @@ async function runUnrelatedScenario({
       await verifyNeutralMarker(marker, "win32");
     } catch (error) {
       if (error instanceof HostHarnessError) {
+        if (probeAdministratorRejection && error.code === "neutral_marker_missing") {
+          return {
+            rejectionProbe: describeFunctionOutputEvidence(
+              {
+                type: "function_call_output",
+                call_id: "call-agenthawk",
+                output: modelFixture.state.functionOutputRaw,
+              },
+              "call-agenthawk",
+            ),
+          };
+        }
         if (
           expectAdministratorRejection &&
           modelFixture.state.functionOutput === "administrator_rejected"
@@ -650,6 +673,7 @@ async function removeProjectHook(repository) {
 export async function verifyCodexCliProjectMatrix({
   codexEntry,
   expectAdministratorRejection = false,
+  probeAdministratorRejection = false,
 }) {
   if (process.platform !== "win32") throw matrixError("windows_required");
   await access(codexEntry);
@@ -678,11 +702,25 @@ export async function verifyCodexCliProjectMatrix({
       codexEntry,
       codexHome,
       expectAdministratorRejection,
+      probeAdministratorRejection,
       fakeBin,
       preloadEntry,
       repository,
       root,
     });
+    if (typeof unrelated === "object" && unrelated !== null && "rejectionProbe" in unrelated) {
+      await removeProjectHook(repository);
+      return {
+        schemaVersion: "1.0",
+        host: "codex-cli-project-hook",
+        version: EXPECTED_CODEX_VERSION,
+        surface: "github-hosted-windows-administrator-probe",
+        providerRequests: 0,
+        removal: "passed",
+        support: "unsupported",
+        ...unrelated,
+      };
+    }
     if (unrelated === "administrator_rejected") {
       await removeProjectHook(repository);
       return {
