@@ -24,12 +24,12 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 | Integration | Current status |
 | --- | --- |
-| Codex | Advisory template; exact CLI `0.149.0` Windows x64 project-hook compatibility candidate with a complete local standard-user matrix, but unsupported because the pinned GitHub-hosted administrator environment rejects ordinary sandboxed execution before that matrix can run. See [ADR 0014](adr/0014-codex-support-scope.md) |
+| Codex | Advisory template; exact CLI `0.149.0` Windows x64 project-hook compatibility candidate with a complete local standard-user matrix, but unsupported because the pinned GitHub-hosted Windows environment rejects its restricted-token split writable-root projection before execution. See [ADR 0014](adr/0014-codex-support-scope.md) |
 | Claude Code | Advisory project instruction template |
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |
 | GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
-| Native pre-action hooks | No native adapter is supported. The Codex candidate's local matrix proves unrelated zero-provider execution, controlled allow, visible warn denial, distinct review/block/error denial, malformed emergency denial, enabled-tool binding, exact removal, and controlled performance; the hosted gate positively proves its administrator exclusion. Every other surface, version, operating system, authority, and vendor remains separate |
+| Native pre-action hooks | No native adapter is supported. The Codex candidate's local matrix proves unrelated zero-provider execution, controlled allow, visible warn denial, distinct review/block/error denial, malformed emergency denial, enabled-tool binding, exact removal, and controlled performance; the hosted gate positively proves only the exact restricted-token split writable-root exclusion. Every other surface, version, operating system, authority, and vendor remains separate |
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 

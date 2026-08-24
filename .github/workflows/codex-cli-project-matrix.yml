@@ -1,4 +1,4 @@
-name: Codex hosted administrator boundary
+name: Codex hosted Windows exclusion
 
 on:
   pull_request:
@@ -37,8 +37,8 @@ permissions:
   contents: read
 
 jobs:
-  hosted-administrator-boundary:
-    name: hosted administrator rejection (Windows 2025, Node 22)
+  hosted-restricted-token-exclusion:
+    name: hosted restricted-token exclusion (Windows 2025, Node 22)
     runs-on: windows-2025
     timeout-minutes: 20
     steps:
@@ -84,5 +84,5 @@ jobs:
           }
           "CODEX_ENTRY=$entry" >> $env:GITHUB_ENV
 
-      - name: Classify hosted administrator boundary evidence
-        run: node scripts/verify-codex-cli-project-matrix.mjs --codex-entry "$env:CODEX_ENTRY" --probe-administrator-rejection
+      - name: Prove exact hosted sandbox rejection
+        run: node scripts/verify-codex-cli-project-matrix.mjs --codex-entry "$env:CODEX_ENTRY" --expect-hosted-sandbox-rejection

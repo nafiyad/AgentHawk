@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  acceptsHostedSandboxExclusion,
   createMatrixProviderServer,
   MATRIX_SCENARIOS,
   matrixPolicy,
@@ -19,6 +20,31 @@ afterEach(async () => {
 });
 
 describe("Codex CLI project-hook matrix contract", () => {
+  it("accepts only exact rejection evidence with a truly absent neutral marker", () => {
+    expect(acceptsHostedSandboxExclusion("neutral_marker_missing", "hosted_sandbox_rejected")).toBe(
+      true,
+    );
+    for (const markerState of [
+      "marker_present",
+      "neutral_marker_invalid",
+      "neutral_marker_not_regular",
+      "neutral_marker_check_failed",
+    ]) {
+      expect(acceptsHostedSandboxExclusion(markerState, "hosted_sandbox_rejected")).toBe(false);
+    }
+    for (const category of [
+      "success",
+      "unknown",
+      "not_found",
+      "approval_rejected",
+      "permission_rejected",
+      "timeout",
+      "sandbox_rejected",
+    ]) {
+      expect(acceptsHostedSandboxExclusion("neutral_marker_missing", category)).toBe(false);
+    }
+  });
+
   it("uses the nearest-rank p95 without averaging away tail latency", () => {
     expect(percentile95(Array.from({ length: 20 }, (_value, index) => index + 1))).toBe(19);
     expect(() => percentile95([])).toThrow("cli_matrix_performance_samples_invalid");

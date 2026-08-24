@@ -12,9 +12,12 @@ import {
   classifyFunctionOutput,
   closeServer,
   codexHostPlatform,
+  EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST,
   encodeSse,
   HostHarnessError,
   hookCommands,
+  isExactHostedSandboxRejection,
+  matchesExpectedHostedSandboxEvidence,
   minimalEnvironment,
   neutralScenarioPassed,
   parseArguments,
@@ -411,13 +414,48 @@ describe("Codex host verification tool pin", () => {
 
 describe("Codex host result classification", () => {
   it.each([
-    ["administrator policy rejected execution", "administrator_rejected"],
     ["approval was required", "approval_rejected"],
     ["Access is denied", "permission_rejected"],
     ["hook timed out", "timeout"],
+    ["command not found; ask an administrator to elevate", "not_found"],
+    ["permission denied by the elevated policy", "permission_rejected"],
   ])("maps bounded failure category for %j", (output, expected) => {
     expect(
       classifyFunctionOutput({ type: "function_call_output", call_id: "call", output }, "call"),
     ).toBe(expected);
+  });
+
+  it.each([
+    "administrator policy rejected execution",
+    "an elevated prompt was shown",
+    "arbitrary administrator and elevated text",
+  ])("does not treat arbitrary privilege wording as the pinned host rejection", (output) => {
+    const value = { type: "function_call_output", call_id: "call", output };
+    expect(classifyFunctionOutput(value, "call")).toBe("unknown");
+    expect(isExactHostedSandboxRejection(value, "call")).toBe(false);
+  });
+
+  it("pins the hosted rejection to the exact normalized evidence record", () => {
+    expect(EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST).toBe(
+      "422a8d829de4853001e0a145d3925a1dfa5cd736378736c38d5c07186096a2a5",
+    );
+    const exactEvidence = {
+      outputType: "string",
+      normalizedDigest: EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST,
+      exactReasonCount: 1,
+    };
+    expect(matchesExpectedHostedSandboxEvidence(exactEvidence)).toBe(true);
+    expect(matchesExpectedHostedSandboxEvidence({ ...exactEvidence, outputType: "object" })).toBe(
+      false,
+    );
+    expect(
+      matchesExpectedHostedSandboxEvidence({ ...exactEvidence, normalizedDigest: "0".repeat(64) }),
+    ).toBe(false);
+    expect(matchesExpectedHostedSandboxEvidence({ ...exactEvidence, exactReasonCount: 0 })).toBe(
+      false,
+    );
+    expect(matchesExpectedHostedSandboxEvidence({ ...exactEvidence, exactReasonCount: 2 })).toBe(
+      false,
+    );
   });
 });

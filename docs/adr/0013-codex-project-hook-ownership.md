@@ -426,8 +426,9 @@ the project hook was present before policy, `configRequirements/read` reported
 `allowManagedHooksOnly: true`, hook inventory was empty under that requirement,
 and the fixture provider received zero requests. This evidence does not promote
 another host surface. The separate local ordinary CLI project-hook outcome
-matrix and alternate-tool exclusion pass, but the pinned hosted administrator
-environment rejects ordinary sandboxed execution. [ADR 0014](0014-codex-support-scope.md)
+matrix and alternate-tool exclusion pass, but the pinned hosted Windows
+environment rejects the restricted-token split writable-root projection before
+execution. [ADR 0014](0014-codex-support-scope.md)
 therefore keeps the candidate unsupported. Other named host gates remain
 separate and do not inherit that decision.
 

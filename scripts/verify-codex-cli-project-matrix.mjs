@@ -11,7 +11,6 @@ import {
   assertExactVersion,
   closeServer,
   createFixtureServer,
-  describeFunctionOutputEvidence,
   EXPECTED_CODEX_VERSION,
   HostHarnessError,
   listenLoopback,
@@ -27,18 +26,19 @@ const FIXTURE_TIMESTAMP = "2020-01-01T00:00:00.000Z";
 const PERFORMANCE_SAMPLES = 25;
 
 function parseMatrixArguments(argv) {
-  const expectAdministratorRejection = argv.includes("--expect-administrator-rejection");
-  const probeAdministratorRejection = argv.includes("--probe-administrator-rejection");
-  const hostArguments = argv.filter(
-    (argument) =>
-      argument !== "--expect-administrator-rejection" &&
-      argument !== "--probe-administrator-rejection",
-  );
+  const expectHostedSandboxRejection = argv.includes("--expect-hosted-sandbox-rejection");
+  const hostArguments = argv.filter((argument) => argument !== "--expect-hosted-sandbox-rejection");
   return {
     ...parseArguments(hostArguments),
-    expectAdministratorRejection,
-    probeAdministratorRejection,
+    expectHostedSandboxRejection,
   };
+}
+
+export function acceptsHostedSandboxExclusion(markerErrorCode, functionOutputCategory) {
+  return (
+    markerErrorCode === "neutral_marker_missing" &&
+    functionOutputCategory === "hosted_sandbox_rejected"
+  );
 }
 
 export const MATRIX_SCENARIOS = Object.freeze({
@@ -549,8 +549,7 @@ async function runCliScenario({
 async function runUnrelatedScenario({
   codexEntry,
   codexHome,
-  expectAdministratorRejection = false,
-  probeAdministratorRejection = false,
+  expectHostedSandboxRejection = false,
   fakeBin,
   preloadEntry,
   repository,
@@ -604,23 +603,11 @@ async function runUnrelatedScenario({
       await verifyNeutralMarker(marker, "win32");
     } catch (error) {
       if (error instanceof HostHarnessError) {
-        if (probeAdministratorRejection && error.code === "neutral_marker_missing") {
-          return {
-            rejectionProbe: describeFunctionOutputEvidence(
-              {
-                type: "function_call_output",
-                call_id: "call-agenthawk",
-                output: modelFixture.state.functionOutputRaw,
-              },
-              "call-agenthawk",
-            ),
-          };
-        }
         if (
-          expectAdministratorRejection &&
-          modelFixture.state.functionOutput === "administrator_rejected"
+          expectHostedSandboxRejection &&
+          acceptsHostedSandboxExclusion(error.code, modelFixture.state.functionOutput)
         ) {
-          return "administrator_rejected";
+          return "hosted_sandbox_rejected";
         }
         throw matrixError(
           `unrelated_marker_missing:${modelFixture.state.functionOutput ?? "missing"}`,
@@ -672,8 +659,7 @@ async function removeProjectHook(repository) {
 
 export async function verifyCodexCliProjectMatrix({
   codexEntry,
-  expectAdministratorRejection = false,
-  probeAdministratorRejection = false,
+  expectHostedSandboxRejection = false,
 }) {
   if (process.platform !== "win32") throw matrixError("windows_required");
   await access(codexEntry);
@@ -701,40 +687,26 @@ export async function verifyCodexCliProjectMatrix({
     const unrelated = await runUnrelatedScenario({
       codexEntry,
       codexHome,
-      expectAdministratorRejection,
-      probeAdministratorRejection,
+      expectHostedSandboxRejection,
       fakeBin,
       preloadEntry,
       repository,
       root,
     });
-    if (typeof unrelated === "object" && unrelated !== null && "rejectionProbe" in unrelated) {
+    if (unrelated === "hosted_sandbox_rejected") {
       await removeProjectHook(repository);
       return {
         schemaVersion: "1.0",
         host: "codex-cli-project-hook",
         version: EXPECTED_CODEX_VERSION,
-        surface: "github-hosted-windows-administrator-probe",
-        providerRequests: 0,
-        removal: "passed",
-        support: "unsupported",
-        ...unrelated,
-      };
-    }
-    if (unrelated === "administrator_rejected") {
-      await removeProjectHook(repository);
-      return {
-        schemaVersion: "1.0",
-        host: "codex-cli-project-hook",
-        version: EXPECTED_CODEX_VERSION,
-        surface: "github-hosted-windows-administrator",
-        administratorBoundary: "rejected",
+        surface: "github-hosted-windows-restricted-token",
+        sandboxBoundary: "split_writable_roots_rejected",
         providerRequests: 0,
         removal: "passed",
         support: "unsupported",
       };
     }
-    if (expectAdministratorRejection) throw matrixError("administrator_rejection_missing");
+    if (expectHostedSandboxRejection) throw matrixError("hosted_sandbox_rejection_missing");
     const liveEvidenceMilliseconds = {};
     for (const scenarioName of ["allow", "warn", "review", "block", "error"]) {
       liveEvidenceMilliseconds[scenarioName] = await runCliScenario({

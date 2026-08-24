@@ -19,6 +19,10 @@ import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const EXPECTED_CODEX_VERSION = "0.149.0";
+export const EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION =
+  "windows unelevated restricted-token sandbox cannot enforce split writable root sets directly; refusing to run unsandboxed";
+export const EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST =
+  "422a8d829de4853001e0a145d3925a1dfa5cd736378736c38d5c07186096a2a5";
 const MAX_CAPTURE_BYTES = 128 * 1024;
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const CHILD_TIMEOUT_MS = 45_000;
@@ -192,9 +196,7 @@ export function classifyFunctionOutput(value, callId) {
   if (output === undefined) return "missing";
   const serialized = JSON.stringify(output).toLowerCase();
   if (serialized.includes("agenthawk:")) return "denied";
-  if (serialized.includes("administrator") || serialized.includes("elevated")) {
-    return "administrator_rejected";
-  }
+  if (isExactHostedSandboxRejection(value, callId)) return "hosted_sandbox_rejected";
   if (serialized.includes("approval")) return "approval_rejected";
   if (serialized.includes("access is denied") || serialized.includes("permission denied")) {
     return "permission_rejected";
@@ -211,34 +213,13 @@ export function classifyFunctionOutput(value, callId) {
   return "unknown";
 }
 
-const ADMINISTRATOR_EVIDENCE_MARKERS = Object.freeze({
-  check_user_administrator: "Couldn't check if user is an administrator",
-  contact_workspace_administrator: "Contact your workspace administrator",
-  dev_drive_administrator: "ask your administrator to trust the Windows Dev Drive",
-  helper_non_elevated: "failed to launch setup helper (non-elevated)",
-  managed_deny_read: "managed denied-read requirements need the elevated Windows sandbox backend",
-  managed_network: "managed networking requires the elevated Windows sandbox backend",
-  read_only: "Restricted read-only access requires the elevated Windows sandbox backend",
-  deny_read: "deny-read overrides require the elevated Windows sandbox backend",
-  legacy_preflight: "failed to preflight non-admin Windows sandbox setup",
-  provisioning_requires_elevated: "sandbox provisioning setup must be run from an elevated process",
-  unelevated_deny_read:
-    "windows unelevated restricted-token sandbox cannot enforce deny-read restrictions directly; refusing to run unsandboxed",
-  unelevated_reopen:
-    "windows unelevated restricted-token sandbox cannot reopen writable descendants under read-only carveouts directly; refusing to run unsandboxed",
-  unelevated_split_filesystem:
-    "windows unelevated restricted-token sandbox cannot enforce split filesystem read restrictions directly; refusing to run unsandboxed",
-  unelevated_split_writable:
-    "windows unelevated restricted-token sandbox cannot enforce split writable root sets directly; refusing to run unsandboxed",
-});
-
 export function describeFunctionOutputEvidence(value, callId) {
   const output = findFunctionOutput(value, callId);
   if (typeof output !== "string") {
     return {
       outputType: output === null ? "null" : typeof output,
       normalizedDigest: null,
-      markers: [],
+      exactReasonCount: 0,
     };
   }
   const normalized = output
@@ -246,14 +227,24 @@ export function describeFunctionOutputEvidence(value, callId) {
     .replace(/Wall time: [0-9]+(?:\.[0-9]+)? seconds/g, "Wall time: <duration> seconds")
     .replace(/Chunk ID: [^\n]+/g, "Chunk ID: <id>")
     .replace(/[A-Za-z]:\\[^\r\n"']+/g, "<windows-path>");
-  const markers = Object.entries(ADMINISTRATOR_EVIDENCE_MARKERS)
-    .filter(([, marker]) => normalized.includes(marker))
-    .map(([id]) => id);
+  const exactReasonCount = normalized.split(EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION).length - 1;
   return {
     outputType: "string",
     normalizedDigest: createHash("sha256").update(normalized, "utf8").digest("hex"),
-    markers,
+    exactReasonCount,
   };
+}
+
+export function matchesExpectedHostedSandboxEvidence(evidence) {
+  return (
+    evidence.outputType === "string" &&
+    evidence.normalizedDigest === EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST &&
+    evidence.exactReasonCount === 1
+  );
+}
+
+export function isExactHostedSandboxRejection(value, callId) {
+  return matchesExpectedHostedSandboxEvidence(describeFunctionOutputEvidence(value, callId));
 }
 
 export function neutralScenarioPassed(functionOutput, markerVerified) {
