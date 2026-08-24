@@ -89,10 +89,10 @@ PowerShell command as unrelated.
 ### Configuration and ownership proposal
 
 The first fixture adapter is a dedicated binary with no Commander preprocessing.
-A later, separately reviewed project lifecycle may target only the fixed pair
-`.claude/settings.json` and an AgentHawk receipt/runtime location after deciding
-how to coexist with maintainer-owned settings. This ADR does not authorize
-overwriting, whole-file ownership, automatic merging, implicit trust, or automatic
+[ADR 0016](0016-claude-project-hook-ownership.md) subsequently selects only a
+previously absent machine-local `.claude/settings.local.json` as the exclusive
+future candidate and keeps shareable `.claude/settings.json` maintainer-owned.
+Neither decision authorizes overwriting, automatic merging, implicit trust, or
 installation.
 
 The proposed handler is synchronous `type: "command"`, matches
@@ -154,8 +154,9 @@ implemented; configuration mutation still waits for its own ownership decision.
 - SDK callback hooks were deferred as a separate surface. Their in-process
   timeout behavior must not be generalized to ordinary CLI settings command
   hooks, whose startup and timeout failures are non-blocking.
-- Immediate project installation was rejected because `.claude/settings.json`
-  is commonly maintainer-owned JSON and requires a collision/ownership design.
+- Immediate project installation was rejected because Claude settings are
+  commonly maintainer-owned JSON. ADR 0016 now defines a read-only collision
+  preflight and defers every mutation prerequisite.
 
 ## Security implications
 
