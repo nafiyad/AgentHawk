@@ -24,12 +24,12 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 | Integration | Current status |
 | --- | --- |
-| Codex | Advisory template; `0.149.0` `PreToolUse` compatibility candidate with exact local Windows CLI/app-server evidence; fixed-target status, collision-safe install, exact-owned remove, invocation-time root-bound verification, and isolated project discovery/trust/neutral/deny/mutation/disable evidence are implemented, but managed-only and remaining named host gates are still unsupported |
+| Codex | Advisory template; `0.149.0` `PreToolUse` compatibility candidate with exact local Windows CLI/app-server evidence; fixed-target lifecycle, root-bound verification, project discovery/trust/neutral/deny/mutation/disable, and disposable hosted managed-only suppression pass, but the exact support-scope decision and remaining named host gates are incomplete |
 | Claude Code | Advisory project instruction template |
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |
 | GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
-| Native pre-action hooks | Codex candidate and isolated host harnesses implemented; exact 0.149.0 local Windows CLI and local app-server stdio `shell_command` neutral/deny paths pass under the unelevated sandbox. The root-bound installer/remover and isolated project-hook discovery, exact trust, neutral/deny, mutation, and feature-disable checks pass. Linux Docker evidence failed closed when the native sandbox namespace was unavailable; IDE, desktop, Remote, cloud, managed requirements, other operating systems and versions remain unproven, so no native adapter is supported |
+| Native pre-action hooks | Codex candidate and isolated host harnesses implemented; exact 0.149.0 local Windows CLI/app-server neutral/deny, root-bound lifecycle, project activation, and disposable hosted managed-only suppression pass. Linux Docker evidence failed closed when the native sandbox namespace was unavailable; IDE, desktop, Remote, cloud, other operating systems and versions remain unproven, so no native adapter is supported |
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 

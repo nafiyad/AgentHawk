@@ -335,9 +335,34 @@ environment hook, not a release-artifact interface. The first activation
 harness therefore proves project discovery, exact-definition trust, execution,
 denial, mutation, and the ordinary feature-disable boundary using temporary
 roots. It neither mutates machine policy nor represents a debug build as the
-official artifact. Managed-only exact-artifact evidence remains a separate
-environment-dependent gate and the adapter remains unsupported while it is
-unproven.
+official artifact. Managed-only exact-artifact evidence is therefore a separate
+environment-dependent gate; it is supplied by the disposable hosted-runner
+workflow below rather than by mutating workstation policy.
+
+That separate gate runs only on a fresh GitHub-hosted Windows VM. GitHub
+documents that a standard hosted job receives a new VM and that Windows hosted
+VMs run as administrators with UAC disabled; the workflow additionally requires
+`RUNNER_ENVIRONMENT=github-hosted` and `RUNNER_OS=Windows` and refuses any
+self-hosted runner. It pins the official `0.149.0` Windows archive by its
+published SHA-256 digest, proves the same project hook is discoverable before
+policy installation, then creates the previously absent machine requirements
+file with exactly `allow_managed_hooks_only = true`. Acceptance requires
+`configRequirements/read` to report the literal managed value, `hooks/list` to
+return one warning-free empty inventory, and the loopback fixture provider to
+receive zero requests. Policy publication uses a same-directory staged file and
+an atomic no-replace hard link; cleanup verifies exact file and directory
+identities plus unchanged policy bytes before removing only state created by
+the job. No raw requirements, hook definition, provider payload, or temporary
+path is uploaded.
+
+This is intentionally a disposable-runner evidence path, not a reusable policy
+installer. Pull-request code has administrator authority inside the ephemeral
+VM, so the workflow uses no secrets, grants only `contents: read`, and publishes
+no artifact. Residual trust remains in GitHub's hosted-runner isolation and the
+integrity of the pinned official Codex release artifact. Sources: [GitHub-hosted
+runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+and [default runner variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables),
+accessed 2026-08-24.
 
 No Codex native adapter becomes supported merely because this ADR is accepted
 or the files can be installed. Support remains gated on collision, cancellation,
@@ -396,8 +421,12 @@ AgentHawk `owned_modified`, and feature-disabled empty discovery with zero
 provider requests. The release archive matched OpenAI's published
 `codex-package_SHA256SUMS` digest
 `bc470b4b90654c38ee52716056d6d5fc19a49afd08f419328034f4f324536459`.
-Managed-only exact-artifact rejection remains unverified and prevents a support
-claim.
+The pinned exact artifact also passed the separate GitHub-hosted Windows gate:
+the project hook was present before policy, `configRequirements/read` reported
+`allowManagedHooksOnly: true`, hook inventory was empty under that requirement,
+and the fixture provider received zero requests. This evidence does not promote
+the candidate to supported enforcement; the remaining exact-surface decision
+and other named host gates are still separate.
 
 User/managed/plugin installation, portable committed configuration, trust
 automation, merge/adopt/force/repair/upgrade operations, arbitrary paths,

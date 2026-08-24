@@ -7,6 +7,7 @@ import {
   validateDisabledHookInventory,
   validateHookNotification,
   validateInitializeResponse,
+  validateManagedOnlyRequirements,
   validateModifiedHook,
   validateThreadStart,
   validateTrustedHook,
@@ -196,6 +197,40 @@ describe("Codex app-server exact hook inventory", () => {
         data: [{ ...response.data[0], warnings: ["unexpected"] }],
       }),
     ).toThrowError(new HostHarnessError("app_server_hooks_disabled_invalid"));
+  });
+});
+
+describe("Codex app-server managed requirements", () => {
+  it("accepts only a literal managed-hooks-only requirement", () => {
+    expect(
+      validateManagedOnlyRequirements({
+        requirements: { allowManagedHooksOnly: true },
+      }),
+    ).toEqual({ allowManagedHooksOnly: true });
+  });
+
+  it.each([
+    null,
+    {},
+    { requirements: null },
+    { requirements: {} },
+    { requirements: { allowManagedHooksOnly: false } },
+    { requirements: { allowManagedHooksOnly: "true" } },
+    { requirements: { allowManagedHooksOnly: true }, unexpected: true },
+  ])("rejects absent, false, malformed, or widened requirement responses", (value) => {
+    expect(() => validateManagedOnlyRequirements(value)).toThrowError(
+      new HostHarnessError("app_server_managed_requirements_invalid"),
+    );
+  });
+
+  it("bounds the requirement record", () => {
+    const requirements = Object.fromEntries(
+      Array.from({ length: 65 }, (_, index) => [`field${index}`, null]),
+    );
+    requirements.allowManagedHooksOnly = true;
+    expect(() => validateManagedOnlyRequirements({ requirements })).toThrowError(
+      new HostHarnessError("app_server_managed_requirements_invalid"),
+    );
   });
 });
 
