@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
@@ -192,9 +202,79 @@ function classifyFunctionOutput(value, callId) {
   return "unknown";
 }
 
-export function neutralScenarioPassed(platform, functionOutput, markerVerified) {
-  if (platform !== "win32") return functionOutput === "success";
+export function neutralScenarioPassed(functionOutput, markerVerified) {
   return markerVerified && (functionOutput === "success" || functionOutput === "unknown");
+}
+
+export function codexHostPlatform(platform = process.platform) {
+  switch (platform) {
+    case "win32":
+      return {
+        commandTool: "shell_command",
+        neutralCommand: "Set-Content -LiteralPath agenthawk-neutral.marker -Value executed",
+        surface: "local-cli-windows-shell-command",
+      };
+    case "linux":
+      return {
+        commandTool: "exec_command",
+        neutralCommand: "/usr/bin/touch agenthawk-neutral.marker",
+        surface: "local-cli-linux-unified-exec",
+      };
+    case "darwin":
+      return {
+        commandTool: "exec_command",
+        neutralCommand: "/usr/bin/touch agenthawk-neutral.marker",
+        surface: "local-cli-macos-unified-exec",
+      };
+    default:
+      throw new HostHarnessError("host_platform_unsupported");
+  }
+}
+
+export async function verifyNeutralMarker(marker, platform = process.platform) {
+  codexHostPlatform(platform);
+  const observedBefore = await lstat(marker, { bigint: true }).catch((error) => {
+    if (error?.code === "ENOENT") throw new HostHarnessError("neutral_marker_missing");
+    throw new HostHarnessError("neutral_marker_check_failed");
+  });
+  if (!observedBefore.isFile() || observedBefore.isSymbolicLink()) {
+    throw new HostHarnessError("neutral_marker_not_regular");
+  }
+  const handle = await open(marker, "r").catch((error) => {
+    if (error?.code === "ENOENT") throw new HostHarnessError("neutral_marker_missing");
+    throw new HostHarnessError("neutral_marker_check_failed");
+  });
+  try {
+    const [observedAfter, opened] = await Promise.all([
+      lstat(marker, { bigint: true }),
+      handle.stat({ bigint: true }),
+    ]);
+    if (
+      !observedAfter.isFile() ||
+      observedAfter.isSymbolicLink() ||
+      !opened.isFile() ||
+      observedBefore.dev !== opened.dev ||
+      observedBefore.ino !== opened.ino ||
+      observedAfter.dev !== opened.dev ||
+      observedAfter.ino !== opened.ino
+    ) {
+      throw new HostHarnessError("neutral_marker_not_regular");
+    }
+    const contents = await handle.readFile();
+    if (platform === "win32") {
+      if (contents.toString("utf8").trim() !== "executed") {
+        throw new HostHarnessError("neutral_marker_invalid");
+      }
+    } else if (contents.length !== 0) {
+      throw new HostHarnessError("neutral_marker_invalid");
+    }
+    return true;
+  } catch (error) {
+    if (error instanceof HostHarnessError) throw error;
+    throw new HostHarnessError("neutral_marker_check_failed");
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
 
 async function readBoundedJson(request) {
@@ -437,6 +517,7 @@ function assertExactVersion(result) {
 }
 
 export function buildCodexConfig(providerUrl, platform = process.platform) {
+  codexHostPlatform(platform);
   return [
     'model = "agenthawk-fixture"',
     'model_provider = "agenthawk_loopback"',
@@ -538,10 +619,7 @@ async function configureFixture(
 }
 
 async function runScenario({ codexEntry, codexHome, repository, taskRoot, fakeBin, command }) {
-  const fixture = createFixtureServer(
-    command,
-    process.platform === "win32" ? "shell_command" : "exec_command",
-  );
+  const fixture = createFixtureServer(command, codexHostPlatform().commandTool);
   const providerUrl = await listenLoopback(fixture.server);
   try {
     const configPath = join(codexHome, "config.toml");
@@ -583,6 +661,7 @@ async function runScenario({ codexEntry, codexHome, repository, taskRoot, fakeBi
 }
 
 export async function verifyCodexHost({ codexEntry }) {
+  const platform = codexHostPlatform();
   await access(codexEntry);
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const adapterEntry = join(projectRoot, "packages", "cli", "dist", "codex-pretooluse-entry.js");
@@ -628,17 +707,13 @@ export async function verifyCodexHost({ codexEntry }) {
       adapterEntry,
       fakeBin,
     );
-    const neutralCommand =
-      process.platform === "win32"
-        ? "Set-Content -LiteralPath agenthawk-neutral.marker -Value executed"
-        : "/usr/bin/true";
     const neutralOutput = await runScenario({
       codexEntry,
       codexHome,
       repository,
       taskRoot,
       fakeBin,
-      command: neutralCommand,
+      command: platform.neutralCommand,
     });
     let neutralMarkerVerified = false;
     try {
@@ -646,18 +721,7 @@ export async function verifyCodexHost({ codexEntry }) {
     } catch {
       throw new HostHarnessError("host_did_not_run_session_hook");
     }
-    if (process.platform === "win32") {
-      try {
-        const neutralMarkerContents = await readFile(neutralMarker, "utf8");
-        if (neutralMarkerContents.trim() !== "executed") {
-          throw new HostHarnessError("neutral_marker_invalid");
-        }
-        neutralMarkerVerified = true;
-      } catch (error) {
-        if (error instanceof HostHarnessError) throw error;
-        throw new HostHarnessError("neutral_marker_missing");
-      }
-    }
+    neutralMarkerVerified = await verifyNeutralMarker(neutralMarker);
     const deniedExecutable = join(fakeBin, process.platform === "win32" ? "npm.cmd" : "npm");
     const deniedCommand = `${deniedExecutable} add agenthawk-host-denied`;
     const deniedOutput = await runScenario({
@@ -677,14 +741,13 @@ export async function verifyCodexHost({ codexEntry }) {
       if (error instanceof HostHarnessError) throw error;
       if (error?.code !== "ENOENT") throw new HostHarnessError("denied_marker_check_failed");
     }
-    if (!neutralScenarioPassed(process.platform, neutralOutput, neutralMarkerVerified))
+    if (!neutralScenarioPassed(neutralOutput, neutralMarkerVerified))
       throw new HostHarnessError(`neutral_command_failed:${neutralOutput}:denial_passed`);
     return {
       schemaVersion: "1.0",
       host: "codex-cli",
       version: EXPECTED_CODEX_VERSION,
-      surface:
-        process.platform === "win32" ? "local-exec-windows-shell-command" : "local-exec-unified",
+      surface: platform.surface,
       neutral: "passed",
       denial: "passed",
       isolation: "temporary-codex-home-loopback-provider",

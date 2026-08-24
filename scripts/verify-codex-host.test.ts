@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, get } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import {
   assertLoopbackUrl,
   buildCodexConfig,
   closeServer,
+  codexHostPlatform,
   encodeSse,
   HostHarnessError,
   hookCommands,
@@ -18,6 +19,7 @@ import {
   runBounded,
   selectCommandTool,
   terminateChild,
+  verifyNeutralMarker,
 } from "./verify-codex-host.mjs";
 
 describe("Codex host hook command boundary", () => {
@@ -60,19 +62,84 @@ describe("Codex host sandbox configuration", () => {
     expect(config).toContain("exclude_tmpdir_env_var = true");
     expect(config).toContain("unified_exec = true");
   });
+
+  it("rejects an unknown platform instead of inheriting Unix behavior", () => {
+    expect(() => buildCodexConfig(providerUrl, "aix")).toThrowError(
+      new HostHarnessError("host_platform_unsupported"),
+    );
+  });
 });
 
 describe("Codex host neutral execution proof", () => {
   it("requires the Windows marker when shell output omits an exit status", () => {
-    expect(neutralScenarioPassed("win32", "unknown", true)).toBe(true);
-    expect(neutralScenarioPassed("win32", "unknown", false)).toBe(false);
-    expect(neutralScenarioPassed("win32", "denied", true)).toBe(false);
-    expect(neutralScenarioPassed("win32", "missing", true)).toBe(false);
+    expect(neutralScenarioPassed("unknown", true)).toBe(true);
+    expect(neutralScenarioPassed("unknown", false)).toBe(false);
+    expect(neutralScenarioPassed("denied", true)).toBe(false);
+    expect(neutralScenarioPassed("missing", true)).toBe(false);
   });
 
-  it("retains explicit successful tool output on non-Windows platforms", () => {
-    expect(neutralScenarioPassed("linux", "success", false)).toBe(true);
-    expect(neutralScenarioPassed("linux", "unknown", true)).toBe(false);
+  it("requires a marker even when the host reports successful tool output", () => {
+    expect(neutralScenarioPassed("success", true)).toBe(true);
+    expect(neutralScenarioPassed("success", false)).toBe(false);
+  });
+
+  it("names each tested platform and command surface exactly", () => {
+    expect(codexHostPlatform("win32")).toMatchObject({
+      commandTool: "shell_command",
+      surface: "local-cli-windows-shell-command",
+    });
+    expect(codexHostPlatform("linux")).toMatchObject({
+      commandTool: "exec_command",
+      surface: "local-cli-linux-unified-exec",
+    });
+    expect(codexHostPlatform("darwin")).toMatchObject({
+      commandTool: "exec_command",
+      surface: "local-cli-macos-unified-exec",
+    });
+    expect(() => codexHostPlatform("freebsd")).toThrowError(
+      new HostHarnessError("host_platform_unsupported"),
+    );
+  });
+
+  it("accepts only the exact regular marker shape for each platform", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-neutral-marker-test-"));
+    try {
+      const linuxMarker = join(root, "linux-marker");
+      const windowsMarker = join(root, "windows-marker");
+      await writeFile(linuxMarker, "");
+      await writeFile(windowsMarker, "executed\r\n");
+      await expect(verifyNeutralMarker(linuxMarker, "linux")).resolves.toBe(true);
+      await expect(verifyNeutralMarker(windowsMarker, "win32")).resolves.toBe(true);
+      await writeFile(linuxMarker, "unexpected");
+      await expect(verifyNeutralMarker(linuxMarker, "linux")).rejects.toThrowError(
+        new HostHarnessError("neutral_marker_invalid"),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 3 });
+    }
+  });
+
+  it("rejects a directory or symbolic-link marker", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-neutral-marker-test-"));
+    try {
+      const directory = join(root, "directory");
+      const target = join(root, "target");
+      const linked = join(root, "linked");
+      await mkdir(directory);
+      await writeFile(target, "");
+      await expect(verifyNeutralMarker(directory, "linux")).rejects.toThrowError(
+        new HostHarnessError("neutral_marker_not_regular"),
+      );
+      await symlink(target, linked, "file");
+      await expect(verifyNeutralMarker(linked, "linux")).rejects.toThrowError(
+        new HostHarnessError("neutral_marker_not_regular"),
+      );
+      await expect(verifyNeutralMarker(target, "freebsd")).rejects.toThrowError(
+        new HostHarnessError("host_platform_unsupported"),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 3 });
+    }
   });
 });
 
