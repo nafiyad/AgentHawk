@@ -63,6 +63,14 @@ describe("Codex host sandbox configuration", () => {
     expect(config).toContain("unified_exec = true");
   });
 
+  it("can disable only the hooks feature for the activation boundary test", () => {
+    const config = buildCodexConfig(providerUrl, "win32", false);
+    expect(config).toContain("hooks = false");
+    expect(config).toContain('approval_policy = "never"');
+    expect(config).toContain('sandbox_mode = "workspace-write"');
+    expect(config).toContain("network_access = false");
+  });
+
   it("rejects an unknown platform instead of inheriting Unix behavior", () => {
     expect(() => buildCodexConfig(providerUrl, "aix")).toThrowError(
       new HostHarnessError("host_platform_unsupported"),

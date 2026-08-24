@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 
-import { access, chmod, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -77,22 +87,21 @@ export function validateInitializeResponse(result, platform = process.platform) 
   return response;
 }
 
-export function selectExpectedHook(result) {
+export function selectExpectedHook(result, expectedSource = "user") {
   const response = requireRecord(result, "hooks_list_invalid");
   if (!Array.isArray(response.data) || response.data.length !== 1) {
-    throw appServerError("hooks_list_invalid");
+    throw appServerError("hooks_list_entry_count_invalid");
   }
   const entry = requireRecord(response.data[0], "hooks_list_invalid");
-  if (
-    typeof entry.cwd !== "string" ||
-    !Array.isArray(entry.errors) ||
-    entry.errors.length !== 0 ||
-    !Array.isArray(entry.warnings) ||
-    entry.warnings.length !== 0 ||
-    !Array.isArray(entry.hooks) ||
-    entry.hooks.length !== 1
-  ) {
-    throw appServerError("hooks_list_invalid");
+  if (typeof entry.cwd !== "string") throw appServerError("hooks_list_cwd_invalid");
+  if (!Array.isArray(entry.errors) || entry.errors.length !== 0) {
+    throw appServerError("hooks_list_errors_present");
+  }
+  if (!Array.isArray(entry.warnings) || entry.warnings.length !== 0) {
+    throw appServerError("hooks_list_warnings_present");
+  }
+  if (!Array.isArray(entry.hooks) || entry.hooks.length !== 1) {
+    throw appServerError("hooks_list_hook_count_invalid");
   }
   const hook = requireRecord(entry.hooks[0], "hook_invalid");
   if (
@@ -100,7 +109,7 @@ export function selectExpectedHook(result) {
     hook.handlerType !== "command" ||
     hook.async !== false ||
     hook.enabled !== true ||
-    hook.source !== "user" ||
+    hook.source !== expectedSource ||
     hook.isManaged !== false ||
     hook.matcher !== "^Bash$" ||
     typeof hook.command !== "string" ||
@@ -128,6 +137,40 @@ export function validateTrustedHook(before, after) {
   ) {
     throw appServerError("hook_trust_invalid");
   }
+}
+
+export function validateModifiedHook(before, after) {
+  if (before.hook.trustStatus !== "trusted") throw appServerError("hook_initial_trust_invalid");
+  if (
+    after.cwd !== before.cwd ||
+    after.hook.key !== before.hook.key ||
+    after.hook.currentHash === before.hook.currentHash ||
+    after.hook.sourcePath !== before.hook.sourcePath ||
+    after.hook.source !== "project" ||
+    after.hook.trustStatus !== "modified"
+  ) {
+    throw appServerError("hook_mutation_invalid");
+  }
+}
+
+export function validateDisabledHookInventory(result) {
+  const response = requireRecord(result, "hooks_disabled_invalid");
+  if (!Array.isArray(response.data) || response.data.length !== 1) {
+    throw appServerError("hooks_disabled_invalid");
+  }
+  const entry = requireRecord(response.data[0], "hooks_disabled_invalid");
+  if (
+    typeof entry.cwd !== "string" ||
+    !Array.isArray(entry.errors) ||
+    entry.errors.length !== 0 ||
+    !Array.isArray(entry.warnings) ||
+    entry.warnings.length !== 0 ||
+    !Array.isArray(entry.hooks) ||
+    entry.hooks.length !== 0
+  ) {
+    throw appServerError("hooks_disabled_invalid");
+  }
+  return { cwd: entry.cwd };
 }
 
 export function validateThreadStart(result) {
@@ -177,14 +220,21 @@ export function matchesHookNotification(params, threadId, turnId, status, runId)
   );
 }
 
-export function validateHookNotification(params, threadId, turnId, status, runId) {
+export function validateHookNotification(
+  params,
+  threadId,
+  turnId,
+  status,
+  runId,
+  expectedSource = "user",
+) {
   if (!matchesHookNotification(params, threadId, turnId, status, runId)) {
     throw appServerError("hook_notification_invalid");
   }
   const run = params.run;
   if (
     run.scope !== "turn" ||
-    run.source !== "user" ||
+    run.source !== expectedSource ||
     typeof run.sourcePath !== "string" ||
     !Array.isArray(run.entries) ||
     run.entries.some(
@@ -224,7 +274,12 @@ async function assertAbsent(path) {
   }
 }
 
-async function configureScenario(root, providerUrl, adapterEntry) {
+async function configureScenario(
+  root,
+  providerUrl,
+  adapterEntry,
+  { hooksEnabled = true, projectHook = false } = {},
+) {
   const codexHome = join(root, "codex-home");
   const repository = join(root, "repository");
   const fakeBin = join(repository, ".agenthawk-host-bin");
@@ -232,35 +287,42 @@ async function configureScenario(root, providerUrl, adapterEntry) {
   await mkdir(repository, { recursive: true });
   await mkdir(fakeBin, { recursive: true });
   const hookCommand = hookCommands(process.execPath, adapterEntry);
-  const hooksPath = join(codexHome, "hooks.json");
-  await writeFile(
-    hooksPath,
-    `${JSON.stringify(
-      {
-        description: "Ephemeral AgentHawk app-server compatibility harness.",
-        hooks: {
-          PreToolUse: [
-            {
-              matcher: "^Bash$",
-              hooks: [
-                {
-                  type: "command",
-                  command: hookCommand.posix,
-                  commandWindows: hookCommand.windows,
-                  timeout: 10,
-                  statusMessage: "Evaluating dependency action",
-                },
-              ],
-            },
-          ],
+  let hooksPath = join(codexHome, "hooks.json");
+  let expectedHookCommand = process.platform === "win32" ? hookCommand.windows : hookCommand.posix;
+  if (!projectHook) {
+    await writeFile(
+      hooksPath,
+      `${JSON.stringify(
+        {
+          description: "Ephemeral AgentHawk app-server compatibility harness.",
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: "^Bash$",
+                hooks: [
+                  {
+                    type: "command",
+                    command: hookCommand.posix,
+                    commandWindows: hookCommand.windows,
+                    timeout: 10,
+                    statusMessage: "Evaluating dependency action",
+                  },
+                ],
+              },
+            ],
+          },
         },
-      },
-      null,
-      2,
-    )}\n`,
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }
+  await writeFile(
+    join(codexHome, "config.toml"),
+    `${buildCodexConfig(providerUrl, process.platform, hooksEnabled)}\n[projects.${JSON.stringify(repository)}]\ntrust_level = "trusted"\n`,
     "utf8",
   );
-  await writeFile(join(codexHome, "config.toml"), buildCodexConfig(providerUrl), "utf8");
   await writeFile(join(repository, ".agenthawk.yml"), "version: 1\nmode: review\n", "utf8");
   await writeFile(
     join(repository, "package.json"),
@@ -289,17 +351,49 @@ async function configureScenario(root, providerUrl, adapterEntry) {
     timeoutMs: 10_000,
   });
   if (git.code !== 0 || git.signal !== null) throw appServerError("fixture_git_init_failed");
+  if (projectHook) {
+    const { installCodexProjectHook } = await import(
+      "../packages/cli/dist/codex-project-hook-transaction.js"
+    );
+    const installation = await installCodexProjectHook({ format: "json" }, { cwd: repository });
+    if (installation.exitCode !== 0) throw appServerError("project_hook_install_failed");
+    const report = JSON.parse(installation.output);
+    if (
+      report?.schemaVersion !== "1.0" ||
+      report?.command !== "integrations_codex_install" ||
+      report?.ownership !== "owned_exact" ||
+      report?.readiness !== "current"
+    ) {
+      throw appServerError("project_hook_install_invalid");
+    }
+    hooksPath = join(repository, ".codex", "hooks.json");
+    const installed = JSON.parse(await readFile(hooksPath, "utf8"));
+    const commandHook = installed?.hooks?.PreToolUse?.[0]?.hooks?.[0];
+    expectedHookCommand =
+      process.platform === "win32" ? commandHook?.commandWindows : commandHook?.command;
+    if (typeof expectedHookCommand !== "string" || expectedHookCommand.length === 0) {
+      throw appServerError("project_hook_install_invalid");
+    }
+  }
   return {
     codexHome,
     environment,
-    expectedHookCommand: process.platform === "win32" ? hookCommand.windows : hookCommand.posix,
+    expectedHookCommand,
     fakeBin,
     hooksPath,
     repository,
   };
 }
 
-async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus, parseJson }) {
+async function runScenario({
+  codexEntry,
+  adapterEntry,
+  scenario,
+  expectedStatus,
+  parseJson,
+  projectHook = false,
+  verifyMutation = false,
+}) {
   const root = await mkdtemp(join(tmpdir(), "agenthawk-codex-app-server-"));
   const platform = codexHostPlatform();
   const deniedExecutable = join(
@@ -319,7 +413,7 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
   let result;
   let scenarioError;
   try {
-    const configured = await configureScenario(root, providerUrl, adapterEntry);
+    const configured = await configureScenario(root, providerUrl, adapterEntry, { projectHook });
     client = spawnBoundedJsonl(
       codexEntry,
       ["--strict-config", "app-server", "--listen", "stdio://"],
@@ -347,6 +441,7 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
       await client.request("agenthawk-hooks-before", "hooks/list", {
         cwds: [configured.repository],
       }),
+      projectHook ? "project" : "user",
     );
     if (
       !(await sameCanonicalPath(before.cwd, configured.repository)) ||
@@ -381,6 +476,7 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
       await client.request("agenthawk-hooks-after", "hooks/list", {
         cwds: [configured.repository],
       }),
+      projectHook ? "project" : "user",
     );
     validateTrustedHook(before, after);
     if (!(await sameCanonicalPath(after.cwd, configured.repository))) {
@@ -413,6 +509,8 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
       thread.threadId,
       turnId,
       "running",
+      undefined,
+      projectHook ? "project" : "user",
     );
     if (!(await sameCanonicalPath(started.sourcePath, configured.hooksPath))) {
       throw appServerError("hook_path_mismatch");
@@ -426,6 +524,7 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
       turnId,
       expectedStatus,
       started.id,
+      projectHook ? "project" : "user",
     );
     if (!(await sameCanonicalPath(completed.sourcePath, configured.hooksPath))) {
       throw appServerError("hook_path_mismatch");
@@ -437,15 +536,51 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
     if (validateTurnCompleted(completion, thread.threadId, turnId) !== "completed") {
       throw appServerError("turn_failed");
     }
-    await client.close();
-    client = undefined;
     if (fixture.state.error) throw fixture.state.error;
     if (fixture.state.requests !== 2) throw appServerError("provider_request_count_mismatch");
+    let mutation;
+    if (verifyMutation) {
+      if (!projectHook) throw appServerError("mutation_requires_project_hook");
+      const installed = JSON.parse(await readFile(configured.hooksPath, "utf8"));
+      const commandHook = installed?.hooks?.PreToolUse?.[0]?.hooks?.[0];
+      if (!commandHook || typeof commandHook !== "object" || Array.isArray(commandHook)) {
+        throw appServerError("hook_mutation_invalid");
+      }
+      commandHook.statusMessage = "Evaluating dependency action (modified)";
+      await writeFile(configured.hooksPath, `${JSON.stringify(installed, null, 2)}\n`, "utf8");
+      const modified = selectExpectedHook(
+        await client.request("agenthawk-hooks-modified", "hooks/list", {
+          cwds: [configured.repository],
+        }),
+        "project",
+      );
+      validateModifiedHook(after, modified);
+      const { statusCodexProjectHook } = await import(
+        "../packages/cli/dist/codex-project-hook-status.js"
+      );
+      const status = await statusCodexProjectHook(
+        { format: "json" },
+        { cwd: configured.repository },
+      );
+      if (status.exitCode !== 1) throw appServerError("project_hook_status_failed");
+      const statusReport = JSON.parse(status.output);
+      if (
+        statusReport?.schemaVersion !== "1.0" ||
+        statusReport?.command !== "integrations_codex_status" ||
+        statusReport?.ownership !== "owned_modified"
+      ) {
+        throw appServerError("project_hook_status_invalid");
+      }
+      mutation = "passed";
+    }
+    await client.close();
+    client = undefined;
     succeeded = true;
     result = {
       functionOutput: fixture.state.functionOutput,
       neutralMarker: join(configured.repository, "agenthawk-neutral.marker"),
       deniedMarker: join(configured.repository, "denied.marker"),
+      mutation,
       root,
     };
   } catch (error) {
@@ -476,6 +611,77 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
     throw appServerError("scenario_result_missing");
   }
   return result;
+}
+
+async function runDisabledProjectHookScenario({ codexEntry, adapterEntry, parseJson }) {
+  const root = await mkdtemp(join(tmpdir(), "agenthawk-codex-project-disabled-"));
+  const fixture = createFixtureServer(
+    codexHostPlatform().neutralCommand,
+    codexHostPlatform().commandTool,
+  );
+  const providerUrl = await listenLoopback(fixture.server);
+  let client;
+  let scenarioError;
+  try {
+    const configured = await configureScenario(root, providerUrl, adapterEntry, {
+      hooksEnabled: false,
+      projectHook: true,
+    });
+    client = spawnBoundedJsonl(
+      codexEntry,
+      ["--strict-config", "app-server", "--listen", "stdio://"],
+      { cwd: configured.repository, env: configured.environment, parseJson },
+    );
+    const initialized = validateInitializeResponse(
+      await client.request("agenthawk-disabled-initialize", "initialize", {
+        clientInfo: {
+          name: "agenthawk_test",
+          title: "AgentHawk project-hook disabled-feature harness",
+          version: "1.0.0",
+        },
+        capabilities: { experimentalApi: false },
+      }),
+    );
+    if (!(await sameCanonicalPath(initialized.codexHome, configured.codexHome))) {
+      throw appServerError("codex_home_mismatch");
+    }
+    await client.notify("initialized");
+    const disabled = validateDisabledHookInventory(
+      await client.request("agenthawk-hooks-disabled", "hooks/list", {
+        cwds: [configured.repository],
+      }),
+    );
+    if (!(await sameCanonicalPath(disabled.cwd, configured.repository))) {
+      throw appServerError("hook_path_mismatch");
+    }
+    await client.close();
+    client = undefined;
+    if (fixture.state.error) throw fixture.state.error;
+    if (fixture.state.requests !== 0) throw appServerError("disabled_provider_request_detected");
+  } catch (error) {
+    scenarioError = error;
+  }
+  let cleanupError;
+  if (client) {
+    try {
+      await client.abort();
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+  try {
+    await closeServer(fixture.server);
+  } catch (error) {
+    cleanupError ??= error;
+  }
+  try {
+    await rm(root, { recursive: true, force: true, maxRetries: 3 });
+  } catch (error) {
+    cleanupError ??= error;
+  }
+  if (cleanupError) throw cleanupError;
+  if (scenarioError) throw scenarioError;
+  return "passed";
 }
 
 export async function verifyCodexAppServer({ codexEntry }) {
@@ -538,9 +744,90 @@ export async function verifyCodexAppServer({ codexEntry }) {
   }
 }
 
+export async function verifyCodexProjectActivation({ codexEntry }) {
+  codexHostPlatform();
+  await access(codexEntry);
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const adapterEntry = join(projectRoot, "packages", "cli", "dist", "codex-pretooluse-entry.js");
+  await access(adapterEntry);
+  const { parseStrictJson } = await import("../packages/cli/dist/hook-json.js");
+  const versionRoot = await mkdtemp(join(tmpdir(), "agenthawk-codex-project-version-"));
+  try {
+    const version = await runBounded(codexEntry, ["--version"], {
+      cwd: versionRoot,
+      env: minimalEnvironment(versionRoot, versionRoot, versionRoot),
+      timeoutMs: 10_000,
+    });
+    assertExactVersion(version);
+  } finally {
+    await rm(versionRoot, { recursive: true, force: true, maxRetries: 3 });
+  }
+  let neutralRoot;
+  let deniedRoot;
+  try {
+    const neutral = await runScenario({
+      codexEntry,
+      adapterEntry,
+      scenario: "neutral",
+      expectedStatus: "completed",
+      parseJson: parseStrictJson,
+      projectHook: true,
+      verifyMutation: true,
+    });
+    neutralRoot = neutral.root;
+    const neutralMarkerVerified = await verifyNeutralMarker(neutral.neutralMarker);
+    if (
+      !neutralMarkerVerified ||
+      neutral.mutation !== "passed" ||
+      !["success", "unknown"].includes(neutral.functionOutput)
+    ) {
+      throw appServerError("project_neutral_or_mutation_failed");
+    }
+    const denied = await runScenario({
+      codexEntry,
+      adapterEntry,
+      scenario: "denied",
+      expectedStatus: "blocked",
+      parseJson: parseStrictJson,
+      projectHook: true,
+    });
+    deniedRoot = denied.root;
+    if (denied.functionOutput !== "denied") throw appServerError("denial_not_observed");
+    await assertAbsent(denied.deniedMarker);
+    const disabled = await runDisabledProjectHookScenario({
+      codexEntry,
+      adapterEntry,
+      parseJson: parseStrictJson,
+    });
+    return {
+      schemaVersion: "1.0",
+      host: "codex-app-server-project-hook",
+      version: EXPECTED_CODEX_VERSION,
+      sourceCommit: EXPECTED_TAG_COMMIT,
+      surface: appServerSurface(),
+      installedUntrusted: "passed",
+      exactDefinitionTrust: "passed",
+      neutral: "passed",
+      denial: "passed",
+      mutation: "passed",
+      disabled,
+      managedOnly: "unverified_requires_isolated_system-policy-environment",
+      isolation: "per-scenario-temporary-repository-codex-home-loopback-provider",
+    };
+  } finally {
+    for (const root of [neutralRoot, deniedRoot]) {
+      if (root) await rm(root, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }
+}
+
 async function main() {
   try {
-    const result = await verifyCodexAppServer(parseArguments(process.argv.slice(2)));
+    const argv = process.argv.slice(2);
+    const projectActivation = argv[0] === "--project-activation";
+    const result = projectActivation
+      ? await verifyCodexProjectActivation(parseArguments(argv.slice(1)))
+      : await verifyCodexAppServer(parseArguments(argv));
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
     const code = error instanceof HostHarnessError ? error.code : "unexpected_failure";
