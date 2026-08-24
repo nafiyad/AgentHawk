@@ -681,7 +681,12 @@ async function runSuppressedProjectHookScenario({
     const observed = expectProjectHook
       ? selectExpectedHook(inventory, "project")
       : validateDisabledHookInventory(inventory);
-    if (!(await sameCanonicalPath(observed.cwd, configured.repository))) {
+    if (
+      !(await sameCanonicalPath(observed.cwd, configured.repository)) ||
+      (expectProjectHook &&
+        (!(await sameCanonicalPath(observed.hook.sourcePath, configured.hooksPath)) ||
+          observed.hook.command !== configured.expectedHookCommand))
+    ) {
       throw appServerError("hook_path_mismatch");
     }
     await client.close();

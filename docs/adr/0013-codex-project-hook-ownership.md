@@ -335,9 +335,9 @@ environment hook, not a release-artifact interface. The first activation
 harness therefore proves project discovery, exact-definition trust, execution,
 denial, mutation, and the ordinary feature-disable boundary using temporary
 roots. It neither mutates machine policy nor represents a debug build as the
-official artifact. Managed-only exact-artifact evidence remains a separate
-environment-dependent gate and the adapter remains unsupported while it is
-unproven.
+official artifact. Managed-only exact-artifact evidence is therefore a separate
+environment-dependent gate; it is supplied by the disposable hosted-runner
+workflow below rather than by mutating workstation policy.
 
 That separate gate runs only on a fresh GitHub-hosted Windows VM. GitHub
 documents that a standard hosted job receives a new VM and that Windows hosted
@@ -421,8 +421,12 @@ AgentHawk `owned_modified`, and feature-disabled empty discovery with zero
 provider requests. The release archive matched OpenAI's published
 `codex-package_SHA256SUMS` digest
 `bc470b4b90654c38ee52716056d6d5fc19a49afd08f419328034f4f324536459`.
-Managed-only exact-artifact rejection remains unverified and prevents a support
-claim.
+The pinned exact artifact also passed the separate GitHub-hosted Windows gate:
+the project hook was present before policy, `configRequirements/read` reported
+`allowManagedHooksOnly: true`, hook inventory was empty under that requirement,
+and the fixture provider received zero requests. This evidence does not promote
+the candidate to supported enforcement; the remaining exact-surface decision
+and other named host gates are still separate.
 
 User/managed/plugin installation, portable committed configuration, trust
 automation, merge/adopt/force/repair/upgrade operations, arbitrary paths,
