@@ -2,7 +2,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseStrictJson } from "../packages/cli/src/hook-json.js";
 import { spawnBoundedJsonl, validateProtocolMessage } from "./bounded-jsonl-process.mjs";
@@ -221,6 +221,128 @@ process.stdin.on("end", () => setInterval(() => {}, 1000));
     await delay(1_000);
     await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it.skipIf(process.platform === "win32")(
+    "terminates the captured process group after its leader exits",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "agenthawk-jsonl-orphan-test-"));
+      roots.push(root);
+      const marker = join(root, "orphan-ran");
+      const pidFile = join(root, "orphan.pid");
+      const descendant = join(root, "orphan.mjs");
+      const parent = join(root, "exited-parent.mjs");
+      await writeFile(
+        descendant,
+        `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => writeFileSync(${JSON.stringify(marker)}, "ran"), 800); setInterval(() => {}, 1000);`,
+        "utf8",
+      );
+      await writeFile(
+        parent,
+        `import { spawn } from "node:child_process"; const child = spawn(process.execPath, [${JSON.stringify(descendant)}], { stdio: "ignore" }); child.once("spawn", () => setTimeout(() => process.exit(0), 100));`,
+        "utf8",
+      );
+      const transport = client(parent, root);
+      const pending = transport.request("one", "fixture/request", {});
+      const pendingRejection = expect(pending).rejects.toThrowError(
+        new HostHarnessError("app_server_process_closed_early"),
+      );
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        try {
+          await access(pidFile);
+          break;
+        } catch {
+          await delay(25);
+        }
+      }
+      const descendantPid = Number.parseInt(await readFile(pidFile, "utf8"), 10);
+      await pendingRejection;
+      await transport.abort();
+      expect(() => process.kill(descendantPid, 0)).toThrow();
+      await delay(1_000);
+      await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "treats EPERM as evidence that the process group still exists",
+    async () => {
+      const fixture = await fakeProcess("setInterval(() => {}, 1000);");
+      const transport = client(fixture.entry, fixture.root);
+      const pending = transport.request("one", "fixture/request", {});
+      const pendingRejection = expect(pending).rejects.toThrowError();
+      const originalKill = process.kill;
+      let groupProbeCount = 0;
+      const killSpy = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+        if (typeof pid === "number" && pid < 0 && signal === 0 && groupProbeCount++ === 0) {
+          const error = new Error("operation not permitted");
+          Object.assign(error, { code: "EPERM" });
+          throw error;
+        }
+        return originalKill(pid, signal);
+      });
+      try {
+        await transport.abort();
+      } finally {
+        killSpy.mockRestore();
+      }
+      await pendingRejection;
+      expect(groupProbeCount).toBeGreaterThan(1);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "fails closed when EPERM prevents the process-group kill",
+    async () => {
+      const fixture = await fakeProcess("setInterval(() => {}, 1000);");
+      const transport = client(fixture.entry, fixture.root);
+      const pending = transport.request("one", "fixture/request", {});
+      const pendingRejection = expect(pending).rejects.toThrowError();
+      const originalKill = process.kill;
+      const killSpy = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+        if (typeof pid === "number" && pid < 0 && signal === "SIGKILL") {
+          const error = new Error("operation not permitted");
+          Object.assign(error, { code: "EPERM" });
+          throw error;
+        }
+        return originalKill(pid, signal);
+      });
+      try {
+        await expect(transport.abort()).rejects.toThrowError(
+          new HostHarnessError("app_server_termination_group_kill_failed"),
+        );
+      } finally {
+        killSpy.mockRestore();
+      }
+      await pendingRejection;
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "times out fail-closed while a process-group probe remains indeterminate",
+    async () => {
+      const fixture = await fakeProcess("setInterval(() => {}, 1000);");
+      const transport = client(fixture.entry, fixture.root, { terminationGroupTimeoutMs: 25 });
+      const pending = transport.request("one", "fixture/request", {});
+      const pendingRejection = expect(pending).rejects.toThrowError();
+      const originalKill = process.kill;
+      const killSpy = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+        if (typeof pid === "number" && pid < 0 && signal === 0) {
+          const error = new Error("operation not permitted");
+          Object.assign(error, { code: "EPERM" });
+          throw error;
+        }
+        return originalKill(pid, signal);
+      });
+      try {
+        await expect(transport.abort()).rejects.toThrowError(
+          new HostHarnessError("app_server_termination_group_timeout"),
+        );
+      } finally {
+        killSpy.mockRestore();
+      }
+      await pendingRejection;
+    },
+  );
 });
 
 describe("app-server protocol framing", () => {
