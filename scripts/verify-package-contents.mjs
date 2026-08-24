@@ -223,6 +223,32 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       },
     );
     assert(JSON.parse(validated.stdout).valid === true, "Packed initialized policy is invalid");
+    await execute("git", ["init", "--quiet"], {
+      cwd: initDirectory,
+      encoding: "utf8",
+      maxBuffer: 65_536,
+      timeout: 10_000,
+      windowsHide: true,
+    });
+    const status = await execute(
+      process.execPath,
+      [cliEntrypoint, "integrations", "codex", "status", "--format", "json"],
+      {
+        cwd: initDirectory,
+        encoding: "utf8",
+        maxBuffer: 65_536,
+        timeout: 15_000,
+        windowsHide: true,
+      },
+    );
+    const statusReport = JSON.parse(status.stdout);
+    assert(
+      statusReport.command === "integrations_codex_status" &&
+        statusReport.ownership === "absent" &&
+        statusReport.readiness === "not_applicable" &&
+        statusReport.providersContacted === false,
+      "Packed Codex project-hook status smoke failed",
+    );
     await verifyPackedCodexHook(consumerDirectory);
   } finally {
     await rm(consumerDirectory, { force: true, recursive: true });

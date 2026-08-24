@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   approvalValidationReportSchema,
   cliErrorReportSchema,
+  codexProjectHookStatusReportSchema,
   diffReportSchema,
   doctorReportSchema,
   initReportSchema,
@@ -11,6 +12,49 @@ import {
 } from "../src/index.js";
 
 describe("CLI JSON contract", () => {
+  it("enforces closed and internally consistent Codex project-hook status reports", () => {
+    const report = {
+      schemaVersion: "1.0",
+      toolVersion: "0.1.0-alpha.1",
+      command: "integrations_codex_status",
+      ownership: "owned_exact",
+      readiness: "current",
+      blockers: ["config_collision", "operation_locked", "linked_worktree"],
+      providersContacted: false,
+    } as const;
+    expect(codexProjectHookStatusReportSchema.parse(report)).toEqual(report);
+    expect(
+      codexProjectHookStatusReportSchema.safeParse({
+        ...report,
+        blockers: ["linked_worktree", "config_collision"],
+      }).success,
+    ).toBe(false);
+    expect(
+      codexProjectHookStatusReportSchema.safeParse({
+        ...report,
+        blockers: ["config_collision", "config_collision"],
+      }).success,
+    ).toBe(false);
+    expect(
+      codexProjectHookStatusReportSchema.safeParse({ ...report, readiness: "not_applicable" })
+        .success,
+    ).toBe(false);
+    expect(
+      codexProjectHookStatusReportSchema.safeParse({
+        ...report,
+        remediation: "install_available",
+      }).success,
+    ).toBe(false);
+    expect(
+      codexProjectHookStatusReportSchema.safeParse({
+        ...report,
+        ownership: "absent",
+        readiness: "not_applicable",
+        privatePath: "/private/repository",
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts the versioned error envelope and rejects unknown fields", () => {
     const error = {
       schemaVersion: "1.0",

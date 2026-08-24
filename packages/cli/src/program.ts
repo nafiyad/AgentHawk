@@ -2,6 +2,10 @@ import { cliErrorReportSchema, initIntegrationSchema } from "@agenthawk/core";
 import { Command } from "commander";
 import { verifyApprovalFile } from "./approvals.js";
 import { type CheckDependencies, checkNpmPackage, type OutputFormat } from "./check.js";
+import {
+  type CodexProjectHookStatusDependencies,
+  statusCodexProjectHook,
+} from "./codex-project-hook-status.js";
 import { diffDependencies } from "./diff.js";
 import { type DoctorDependencies, runDoctor } from "./doctor.js";
 import { type InitDependencies, initializeRepository } from "./init.js";
@@ -10,14 +14,14 @@ import { scanDependencies } from "./scan.js";
 import { escapeTerminal } from "./terminal.js";
 import { AGENTHAWK_CLI_VERSION } from "./version.js";
 
-export interface ProgramDependencies
-  extends CheckDependencies,
-    DoctorDependencies,
-    InitDependencies {
-  writeError?: (text: string) => void;
-  write?: (text: string) => void;
-  setExitCode?: (code: number) => void;
-}
+export type ProgramDependencies = CheckDependencies &
+  DoctorDependencies &
+  InitDependencies &
+  CodexProjectHookStatusDependencies & {
+    writeError?: (text: string) => void;
+    write?: (text: string) => void;
+    setExitCode?: (code: number) => void;
+  };
 
 export function createProgram(dependencies: ProgramDependencies = {}): Command {
   const safeOutput = {
@@ -176,6 +180,25 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     const format = parseOutputFormat(options.format, dependencies);
     if (!format) return;
     writeResult(await runDoctor({ format }, dependencies), dependencies);
+  });
+
+  const integrations = program
+    .command("integrations")
+    .description("Inspect native agent integration state.")
+    .configureOutput(safeOutput);
+  const codexIntegration = integrations
+    .command("codex")
+    .description("Inspect the Codex project-hook integration.")
+    .configureOutput(safeOutput);
+  const codexStatus = codexIntegration
+    .command("status")
+    .description("Observe fixed Codex project-hook state without changing files.")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  codexStatus.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    writeResult(await statusCodexProjectHook({ format }, dependencies), dependencies);
   });
 
   const diff = program

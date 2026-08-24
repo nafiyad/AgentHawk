@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { isAbsolute, normalize, posix, resolve, win32 } from "node:path";
 import { z } from "zod";
 import { CODEX_CONTRACT_RELEASE } from "./codex-pretooluse.js";
+import { parseStrictJson } from "./hook-json.js";
 
 const hexadecimal256 = z.string().regex(/^[0-9a-f]{64}$/u);
 const boundedVersion = z
@@ -28,6 +29,10 @@ export const codexProjectHookReceiptSchema = z
 
 export type CodexProjectHookReceipt = z.infer<typeof codexProjectHookReceiptSchema>;
 
+export const codexProjectHookLockSchema = z
+  .object({ operationId: hexadecimal256, schemaVersion: z.literal("1.0") })
+  .strict();
+
 export interface CodexProjectHookFormatInput {
   readonly adapterBytes: Uint8Array;
   readonly adapterEntry: string;
@@ -53,6 +58,24 @@ export interface CodexProjectHookLaunchContext {
   readonly deploymentTrust: "project";
   readonly installationId: string;
   readonly rootBinding: string;
+}
+
+export interface VerifiedCodexProjectHook {
+  readonly adapterEntry: string;
+  readonly nodeExecutable: string;
+}
+
+export function parseCodexProjectHookReceiptBytes(
+  receiptBytes: Uint8Array,
+): CodexProjectHookReceipt | undefined {
+  try {
+    if (receiptBytes.byteLength > 8_192) return undefined;
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(receiptBytes);
+    const receipt = codexProjectHookReceiptSchema.parse(parseStrictJson(source));
+    return Buffer.from(receiptBytes).equals(serializeJson(receipt)) ? receipt : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 const rootBindingDomain = Buffer.from("AgentHawk Codex root binding v1\0", "ascii");
@@ -117,6 +140,60 @@ export function parseCodexProjectHookLaunchArguments(
     installationId: hexadecimal256.parse(arguments_[1].slice(installationPrefix.length)),
     rootBinding: hexadecimal256.parse(arguments_[2].slice(bindingPrefix.length)),
   };
+}
+
+export function verifyCodexProjectHookReceiptBinding(
+  receipt: CodexProjectHookReceipt,
+  repositoryRoot: string,
+  repositoryIdentity: { readonly dev: bigint; readonly ino: bigint },
+): boolean {
+  try {
+    return (
+      computeCodexProjectRootBinding({
+        installationId: receipt.installationId,
+        repositoryIdentity,
+        repositoryRoot,
+      }) === receipt.rootBinding
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function verifyCodexProjectHookBytes(
+  receipt: CodexProjectHookReceipt,
+  hookBytes: Uint8Array,
+): VerifiedCodexProjectHook | undefined {
+  try {
+    if (hookBytes.byteLength > 65_536 || digest(hookBytes) !== receipt.hookSha256) return undefined;
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(hookBytes);
+    const hook = codexProjectHookSchema.parse(parseStrictJson(source));
+    if (!Buffer.from(hookBytes).equals(serializeJson(hook))) return undefined;
+    const definition = hook.hooks.PreToolUse[0];
+    const handler = definition.hooks[0];
+    const launchArguments = parsePowerShellCommand(handler.commandWindows);
+    if (
+      launchArguments?.length !== 5 ||
+      handler.command !== launchArguments.map(quotePosixArgument).join(" ") ||
+      handler.commandWindows !== `& ${launchArguments.map(quotePowerShellLiteral).join(" ")}` ||
+      digest(serializeJson(definition)) !== receipt.hookDefinitionSha256 ||
+      digest(serializeJson(launchArguments)) !== receipt.launchArgumentsSha256
+    ) {
+      return undefined;
+    }
+    validateAbsoluteLaunchPath(launchArguments[0] ?? "");
+    validateAbsoluteLaunchPath(launchArguments[1] ?? "");
+    const context = parseCodexProjectHookLaunchArguments(launchArguments.slice(2));
+    if (
+      context.installationId !== receipt.installationId ||
+      context.rootBinding !== receipt.rootBinding
+    ) {
+      return undefined;
+    }
+    return { nodeExecutable: launchArguments[0] ?? "", adapterEntry: launchArguments[1] ?? "" };
+  } catch {
+    return undefined;
+  }
 }
 
 export function buildCodexProjectHookArtifacts(
@@ -247,4 +324,71 @@ function validateGeneratedCommand(value: string): void {
   if (Buffer.byteLength(value, "utf8") > 16_384) {
     throw new Error("Codex project-hook command is too large.");
   }
+}
+
+const codexProjectHookSchema = z
+  .object({
+    description: z.literal(
+      "AgentHawk Codex project dependency admission hook for rust-v0.149.0. Machine-local; do not commit.",
+    ),
+    hooks: z
+      .object({
+        PreToolUse: z
+          .tuple([
+            z
+              .object({
+                matcher: z.literal("^Bash$"),
+                hooks: z.tuple([
+                  z
+                    .object({
+                      type: z.literal("command"),
+                      async: z.literal(false),
+                      command: z.string().min(1).max(16_384),
+                      commandWindows: z.string().min(1).max(16_384),
+                      timeout: z.literal(10),
+                      statusMessage: z.literal("Evaluating dependency action"),
+                    })
+                    .strict(),
+                ]),
+              })
+              .strict(),
+          ])
+          .readonly(),
+      })
+      .strict(),
+  })
+  .strict();
+
+function parsePowerShellCommand(command: string): string[] | undefined {
+  if (!command.startsWith("& ")) return undefined;
+  const values: string[] = [];
+  let offset = 2;
+  while (offset < command.length) {
+    if (command[offset] !== "'") return undefined;
+    offset += 1;
+    let value = "";
+    let closed = false;
+    while (offset < command.length) {
+      const character = command[offset];
+      if (character !== "'") {
+        value += character;
+        offset += 1;
+        continue;
+      }
+      if (command[offset + 1] === "'") {
+        value += "'";
+        offset += 2;
+        continue;
+      }
+      offset += 1;
+      closed = true;
+      break;
+    }
+    if (!closed) return undefined;
+    values.push(value);
+    if (offset === command.length) break;
+    if (command[offset] !== " " || command[offset + 1] === undefined) return undefined;
+    offset += 1;
+  }
+  return values;
 }

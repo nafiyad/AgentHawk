@@ -41,7 +41,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Stable redacted provider errors without package installation or execution
 - Read-only GitHub pull-request evaluation with an isolated opt-in write commenter
 - Fail-closed advisory templates for Codex, Claude Code, Cursor, and generic agents
-- A packaged, release-pinned Codex `PreToolUse` compatibility candidate with exact local Windows CLI and app-server host evidence plus a root-bound hook/receipt format; installation, activation, recovery, and support remain unavailable
+- A packaged, release-pinned Codex `PreToolUse` compatibility candidate with exact local Windows CLI and app-server host evidence, a root-bound hook/receipt format, and read-only `integrations codex status`; installation, activation, recovery, and support remain unavailable
 - Exact release-package manifests, dual-use disclosure, checksummed CI artifacts, and protected stage-only trusted publishing for future versions
 - Offline fixtures and security regression tests
 
@@ -79,11 +79,14 @@ pnpm agenthawk approvals verify --file .agenthawk/approvals.yml --format json
 pnpm agenthawk doctor --format json
 # Available from this source revision; not in the published 0.1.0-alpha.1 package.
 pnpm agenthawk init --integration none --format json
+pnpm agenthawk integrations codex status --format json
 pnpm agenthawk scan --format json
 pnpm agenthawk diff --base origin/main --strict --format json
 ```
 
 `init` creates a deterministic root `.agenthawk.yml` and at most one selected advisory template without overwriting different content. Existing instruction files must be merged manually. See [initialization and recovery](docs/initialization.md).
+
+`integrations codex status` performs a bounded, read-only observation of the fixed project hook and path-redacted receipt. It reports ownership, current-artifact readiness, and configuration/operation/linked-worktree blockers without returning paths, identifiers, hashes, contents, environment values, or provider data. It does not install, remove, trust, enable, or prove Codex loaded the hook.
 
 Exit codes are `0` for allowed/non-strict or ready diagnostic results, `1` for strict review/block findings or diagnostic attention, `2` for invalid input or policy, `3` for required provider/evaluation failure, and `4` for unexpected internal failure.
 

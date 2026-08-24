@@ -207,6 +207,64 @@ export const doctorReportSchema = z
   });
 export type DoctorReport = z.infer<typeof doctorReportSchema>;
 
+export const codexProjectHookOwnershipSchema = z.enum([
+  "absent",
+  "owned_inactive",
+  "owned_exact",
+  "unowned_hook",
+  "record_collision",
+  "owned_modified",
+  "unsafe",
+]);
+export type CodexProjectHookOwnership = z.infer<typeof codexProjectHookOwnershipSchema>;
+
+export const codexProjectHookReadinessSchema = z.enum([
+  "not_applicable",
+  "current",
+  "artifact_unavailable",
+  "artifact_drift",
+]);
+export type CodexProjectHookReadiness = z.infer<typeof codexProjectHookReadinessSchema>;
+
+export const codexProjectHookBlockerSchema = z.enum([
+  "config_collision",
+  "operation_locked",
+  "linked_worktree",
+]);
+export type CodexProjectHookBlocker = z.infer<typeof codexProjectHookBlockerSchema>;
+
+export const codexProjectHookStatusReportSchema = z
+  .object({
+    schemaVersion: z.literal("1.0"),
+    toolVersion: z.string().min(1).max(128),
+    command: z.literal("integrations_codex_status"),
+    ownership: codexProjectHookOwnershipSchema,
+    readiness: codexProjectHookReadinessSchema,
+    blockers: z.array(codexProjectHookBlockerSchema).max(3),
+    providersContacted: z.literal(false),
+  })
+  .strict()
+  .superRefine((report, context) => {
+    const blockerOrder = ["config_collision", "operation_locked", "linked_worktree"] as const;
+    if (
+      new Set(report.blockers).size !== report.blockers.length ||
+      report.blockers.some(
+        (blocker, index) =>
+          blockerOrder.indexOf(blocker) <
+          blockerOrder.indexOf(report.blockers[index - 1] ?? blocker),
+      )
+    ) {
+      context.addIssue({ code: "custom", message: "Codex status blockers are inconsistent." });
+    }
+    const hasValidReceipt = ["owned_inactive", "owned_exact", "owned_modified"].includes(
+      report.ownership,
+    );
+    if ((report.readiness === "not_applicable") === hasValidReceipt) {
+      context.addIssue({ code: "custom", message: "Codex status readiness is inconsistent." });
+    }
+  });
+export type CodexProjectHookStatusReport = z.infer<typeof codexProjectHookStatusReportSchema>;
+
 export const directDependencySchema = z
   .object({
     name: z.string().min(1).max(214),
