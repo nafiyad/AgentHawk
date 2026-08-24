@@ -173,6 +173,19 @@ export function validateDisabledHookInventory(result) {
   return { cwd: entry.cwd };
 }
 
+export function validateManagedOnlyRequirements(result) {
+  const response = requireRecord(result, "managed_requirements_invalid");
+  const requirements = requireRecord(response.requirements, "managed_requirements_invalid");
+  if (
+    Object.keys(response).length !== 1 ||
+    Object.keys(requirements).length > 64 ||
+    requirements.allowManagedHooksOnly !== true
+  ) {
+    throw appServerError("managed_requirements_invalid");
+  }
+  return { allowManagedHooksOnly: true };
+}
+
 export function validateThreadStart(result) {
   const response = requireRecord(result, "thread_start_invalid");
   const thread = requireRecord(response.thread, "thread_start_invalid");
@@ -613,8 +626,14 @@ async function runScenario({
   return result;
 }
 
-async function runDisabledProjectHookScenario({ codexEntry, adapterEntry, parseJson }) {
-  const root = await mkdtemp(join(tmpdir(), "agenthawk-codex-project-disabled-"));
+async function runSuppressedProjectHookScenario({
+  codexEntry,
+  adapterEntry,
+  parseJson,
+  hooksEnabled,
+  expectManagedOnly,
+}) {
+  const root = await mkdtemp(join(tmpdir(), "agenthawk-codex-project-suppressed-"));
   const fixture = createFixtureServer(
     codexHostPlatform().neutralCommand,
     codexHostPlatform().commandTool,
@@ -624,7 +643,7 @@ async function runDisabledProjectHookScenario({ codexEntry, adapterEntry, parseJ
   let scenarioError;
   try {
     const configured = await configureScenario(root, providerUrl, adapterEntry, {
-      hooksEnabled: false,
+      hooksEnabled,
       projectHook: true,
     });
     client = spawnBoundedJsonl(
@@ -646,8 +665,17 @@ async function runDisabledProjectHookScenario({ codexEntry, adapterEntry, parseJ
       throw appServerError("codex_home_mismatch");
     }
     await client.notify("initialized");
+    if (expectManagedOnly) {
+      validateManagedOnlyRequirements(
+        await client.request(
+          "agenthawk-managed-requirements",
+          "configRequirements/read",
+          undefined,
+        ),
+      );
+    }
     const disabled = validateDisabledHookInventory(
-      await client.request("agenthawk-hooks-disabled", "hooks/list", {
+      await client.request("agenthawk-hooks-suppressed", "hooks/list", {
         cwds: [configured.repository],
       }),
     );
@@ -657,7 +685,7 @@ async function runDisabledProjectHookScenario({ codexEntry, adapterEntry, parseJ
     await client.close();
     client = undefined;
     if (fixture.state.error) throw fixture.state.error;
-    if (fixture.state.requests !== 0) throw appServerError("disabled_provider_request_detected");
+    if (fixture.state.requests !== 0) throw appServerError("suppressed_provider_request_detected");
   } catch (error) {
     scenarioError = error;
   }
@@ -794,10 +822,12 @@ export async function verifyCodexProjectActivation({ codexEntry }) {
     deniedRoot = denied.root;
     if (denied.functionOutput !== "denied") throw appServerError("denial_not_observed");
     await assertAbsent(denied.deniedMarker);
-    const disabled = await runDisabledProjectHookScenario({
+    const disabled = await runSuppressedProjectHookScenario({
       codexEntry,
       adapterEntry,
       parseJson: parseStrictJson,
+      hooksEnabled: false,
+      expectManagedOnly: false,
     });
     return {
       schemaVersion: "1.0",
@@ -821,13 +851,52 @@ export async function verifyCodexProjectActivation({ codexEntry }) {
   }
 }
 
+export async function verifyCodexManagedOnly({ codexEntry }) {
+  codexHostPlatform();
+  await access(codexEntry);
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const adapterEntry = join(projectRoot, "packages", "cli", "dist", "codex-pretooluse-entry.js");
+  await access(adapterEntry);
+  const { parseStrictJson } = await import("../packages/cli/dist/hook-json.js");
+  const versionRoot = await mkdtemp(join(tmpdir(), "agenthawk-codex-managed-version-"));
+  try {
+    const version = await runBounded(codexEntry, ["--version"], {
+      cwd: versionRoot,
+      env: minimalEnvironment(versionRoot, versionRoot, versionRoot),
+      timeoutMs: 10_000,
+    });
+    assertExactVersion(version);
+  } finally {
+    await rm(versionRoot, { recursive: true, force: true, maxRetries: 3 });
+  }
+  await runSuppressedProjectHookScenario({
+    codexEntry,
+    adapterEntry,
+    parseJson: parseStrictJson,
+    hooksEnabled: true,
+    expectManagedOnly: true,
+  });
+  return {
+    schemaVersion: "1.0",
+    host: "codex-app-server-project-hook",
+    version: EXPECTED_CODEX_VERSION,
+    sourceCommit: EXPECTED_TAG_COMMIT,
+    surface: appServerSurface(),
+    managedOnly: "passed",
+    isolation: "temporary-repository-codex-home-loopback-provider-hosted-machine-policy",
+  };
+}
+
 async function main() {
   try {
     const argv = process.argv.slice(2);
     const projectActivation = argv[0] === "--project-activation";
+    const managedOnly = argv[0] === "--managed-only";
     const result = projectActivation
       ? await verifyCodexProjectActivation(parseArguments(argv.slice(1)))
-      : await verifyCodexAppServer(parseArguments(argv));
+      : managedOnly
+        ? await verifyCodexManagedOnly(parseArguments(argv.slice(1)))
+        : await verifyCodexAppServer(parseArguments(argv));
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
     const code = error instanceof HostHarnessError ? error.code : "unexpected_failure";

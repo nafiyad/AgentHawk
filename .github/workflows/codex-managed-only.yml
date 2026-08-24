@@ -1,0 +1,132 @@
+name: Codex managed-only evidence
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/codex-managed-only.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/bounded-jsonl-process.mjs"
+      - "scripts/verify-codex-app-server.mjs"
+      - "scripts/verify-codex-app-server.test.ts"
+      - "scripts/verify-codex-host.mjs"
+      - "packages/cli/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/codex-managed-only.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/bounded-jsonl-process.mjs"
+      - "scripts/verify-codex-app-server.mjs"
+      - "scripts/verify-codex-app-server.test.ts"
+      - "scripts/verify-codex-host.mjs"
+      - "packages/cli/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  managed-only:
+    name: managed-only (Windows 2025, Node 22)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify exact official Codex artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'codex-package-x86_64-pc-windows-msvc.tar.gz'
+          $extract = Join-Path $env:RUNNER_TEMP 'agenthawk-codex-0.149.0'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/openai/codex/releases/download/rust-v0.149.0/codex-package-x86_64-pc-windows-msvc.tar.gz' -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'bc470b4b90654c38ee52716056d6d5fc19a49afd08f419328034f4f324536459'
+          if ($actual -cne $expected) { throw 'Codex archive digest mismatch.' }
+          New-Item -ItemType Directory -Path $extract | Out-Null
+          tar -xzf $archive -C $extract
+          if ($LASTEXITCODE -ne 0) { throw 'Codex archive extraction failed.' }
+          $entries = @(Get-ChildItem -LiteralPath $extract -Filter 'codex.exe' -File -Recurse)
+          if ($entries.Count -ne 1) { throw 'Expected exactly one Codex executable.' }
+          $entry = $entries[0].FullName
+          $version = & $entry --version
+          if ($LASTEXITCODE -ne 0 -or $version -cne 'codex-cli 0.149.0') {
+            throw 'Unexpected Codex executable version.'
+          }
+          "CODEX_ENTRY=$entry" >> $env:GITHUB_ENV
+
+      - name: Prove ordinary project activation baseline
+        run: node scripts/verify-codex-app-server.mjs --project-activation --codex-entry "$env:CODEX_ENTRY"
+
+      - name: Prove managed-only project-hook suppression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted') { throw 'Refusing non-hosted runner.' }
+          if ($env:RUNNER_OS -cne 'Windows') { throw 'Refusing non-Windows runner.' }
+          $commonData = [Environment]::GetFolderPath('CommonApplicationData')
+          if (-not [IO.Path]::IsPathFullyQualified($commonData)) { throw 'Invalid machine-data root.' }
+          $openAi = Join-Path $commonData 'OpenAI'
+          $codex = Join-Path $openAi 'Codex'
+          $requirements = Join-Path $codex 'requirements.toml'
+          if (Test-Path -LiteralPath $codex) { throw 'Refusing pre-existing Codex policy directory.' }
+          $createdOpenAi = -not (Test-Path -LiteralPath $openAi)
+          if (-not $createdOpenAi) {
+            $openAiItem = Get-Item -LiteralPath $openAi -Force
+            if (-not $openAiItem.PSIsContainer -or ($openAiItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'Unsafe pre-existing OpenAI policy parent.'
+            }
+          }
+          $policy = [Text.Encoding]::UTF8.GetBytes("allow_managed_hooks_only = true`n")
+          $policyBase64 = [Convert]::ToBase64String($policy)
+          $exitCode = 1
+          try {
+            New-Item -ItemType Directory -Path $codex | Out-Null
+            $codexItem = Get-Item -LiteralPath $codex -Force
+            if ($codexItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+              throw 'Unsafe Codex policy directory.'
+            }
+            [IO.File]::WriteAllBytes($requirements, $policy)
+            node scripts/verify-codex-app-server.mjs --managed-only --codex-entry "$env:CODEX_ENTRY"
+            $exitCode = $LASTEXITCODE
+          } finally {
+            if (Test-Path -LiteralPath $requirements) {
+              $afterBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($requirements))
+              if ($afterBase64 -cne $policyBase64) {
+                throw 'Managed requirements changed during verification; refusing cleanup.'
+              }
+              Remove-Item -LiteralPath $requirements -Force
+            }
+            if (Test-Path -LiteralPath $codex) {
+              if (@(Get-ChildItem -LiteralPath $codex -Force).Count -ne 0) {
+                throw 'Codex policy directory is not empty; refusing cleanup.'
+              }
+              Remove-Item -LiteralPath $codex
+            }
+            if ($createdOpenAi -and (Test-Path -LiteralPath $openAi)) {
+              if (@(Get-ChildItem -LiteralPath $openAi -Force).Count -ne 0) {
+                throw 'OpenAI policy directory is not empty; refusing cleanup.'
+              }
+              Remove-Item -LiteralPath $openAi
+            }
+          }
+          if ($exitCode -ne 0) { throw 'Managed-only harness failed.' }

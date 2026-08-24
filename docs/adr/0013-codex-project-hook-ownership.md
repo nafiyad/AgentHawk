@@ -339,6 +339,29 @@ official artifact. Managed-only exact-artifact evidence remains a separate
 environment-dependent gate and the adapter remains unsupported while it is
 unproven.
 
+That separate gate runs only on a fresh GitHub-hosted Windows VM. GitHub
+documents that a standard hosted job receives a new VM and that Windows hosted
+VMs run as administrators with UAC disabled; the workflow additionally requires
+`RUNNER_ENVIRONMENT=github-hosted` and `RUNNER_OS=Windows` and refuses any
+self-hosted runner. It pins the official `0.149.0` Windows archive by its
+published SHA-256 digest, proves the same project hook is discoverable before
+policy installation, then creates the previously absent machine requirements
+file with exactly `allow_managed_hooks_only = true`. Acceptance requires
+`configRequirements/read` to report the literal managed value, `hooks/list` to
+return one warning-free empty inventory, and the loopback fixture provider to
+receive zero requests. Cleanup verifies the policy bytes are unchanged before
+removing only the exact file and empty directories created by the job. No raw
+requirements, hook definition, provider payload, or temporary path is uploaded.
+
+This is intentionally a disposable-runner evidence path, not a reusable policy
+installer. Pull-request code has administrator authority inside the ephemeral
+VM, so the workflow uses no secrets, grants only `contents: read`, and publishes
+no artifact. Residual trust remains in GitHub's hosted-runner isolation and the
+integrity of the pinned official Codex release artifact. Sources: [GitHub-hosted
+runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+and [default runner variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables),
+accessed 2026-08-24.
+
 No Codex native adapter becomes supported merely because this ADR is accepted
 or the files can be installed. Support remains gated on collision, cancellation,
 recovery, packed-consumer, exact-host activation, and removal tests plus the
