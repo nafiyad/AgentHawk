@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXPECTED_CODEX_VERSION = "0.149.0";
+export const EXPECTED_CODEX_VERSION = "0.149.0";
 const MAX_CAPTURE_BYTES = 128 * 1024;
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const CHILD_TIMEOUT_MS = 45_000;
@@ -306,7 +306,7 @@ async function readBoundedJson(request) {
   }
 }
 
-function createFixtureServer(command, expectedTool) {
+export function createFixtureServer(command, expectedTool) {
   const state = { requests: 0, error: undefined };
   const server = createServer(async (request, response) => {
     try {
@@ -352,7 +352,7 @@ function createFixtureServer(command, expectedTool) {
   return { server, state };
 }
 
-async function listenLoopback(server) {
+export async function listenLoopback(server) {
   await new Promise((resolveListen, rejectListen) => {
     const onError = (error) => rejectListen(error);
     server.once("error", onError);
@@ -391,7 +391,7 @@ export async function closeServer(server) {
   });
 }
 
-function minimalEnvironment(codexHome, taskRoot, fakeBin) {
+export function minimalEnvironment(codexHome, taskRoot, fakeBin) {
   const environment = {
     CODEX_HOME: codexHome,
     NO_COLOR: "1",
@@ -411,7 +411,7 @@ function minimalEnvironment(codexHome, taskRoot, fakeBin) {
   return environment;
 }
 
-function commandForEntry(entry, args) {
+export function commandForEntry(entry, args) {
   if ([".js", ".mjs", ".cjs"].some((extension) => entry.toLowerCase().endsWith(extension))) {
     return { file: process.execPath, args: [entry, ...args] };
   }
@@ -518,7 +518,7 @@ export async function runBounded(entry, args, options) {
   });
 }
 
-function assertExactVersion(result) {
+export function assertExactVersion(result) {
   if (result.code !== 0 || result.signal !== null) {
     throw new HostHarnessError("codex_version_failed");
   }

@@ -16,6 +16,7 @@
     "lint": "biome check .",
     "package:check": "pnpm build && node scripts/verify-package-contents.mjs",
     "release:prepare": "node scripts/prepare-release-artifacts.mjs",
+    "verify:codex-app-server": "pnpm build && node scripts/verify-codex-app-server.mjs",
     "verify:codex-host": "pnpm build && node scripts/verify-codex-host.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

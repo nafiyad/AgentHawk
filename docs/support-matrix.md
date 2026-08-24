@@ -1,6 +1,6 @@
 # Support matrix
 
-Support snapshot: 2026-08-23 UTC
+Support snapshot: 2026-08-24 UTC
 
 AgentHawk separates declared compatibility, upstream lifecycle status, and direct CI evidence. A compatible or tested environment is not a claim that the host or a dependency is secure.
 
@@ -24,12 +24,12 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 | Integration | Current status |
 | --- | --- |
-| Codex | Advisory repository instruction template; `0.149.0` `PreToolUse` compatibility candidate implemented but unsupported |
+| Codex | Advisory repository instruction template; `0.149.0` `PreToolUse` compatibility candidate implemented with exact local Windows CLI and app-server evidence, but unsupported pending installation/configuration-ownership review |
 | Claude Code | Advisory project instruction template |
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |
 | GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
-| Native pre-action hooks | Codex candidate and isolated host harness implemented; exact 0.149.0 local Windows CLI neutral/deny paths pass under the unelevated sandbox. Linux Docker evidence failed closed when the native sandbox namespace was unavailable; app-server and installation authority remain unreviewed, so no native adapter is supported |
+| Native pre-action hooks | Codex candidate and isolated host harnesses implemented; exact 0.149.0 local Windows CLI and local app-server stdio `shell_command` neutral/deny paths pass under the unelevated sandbox. Linux Docker evidence failed closed when the native sandbox namespace was unavailable; IDE, desktop, Remote, cloud, managed requirements, other operating systems and versions remain unproven. Installation authority remains unreviewed, so no native adapter is supported |
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 

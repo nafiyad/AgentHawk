@@ -20,7 +20,7 @@ Package specifications, registry URLs, registry responses, redirects, HTTP statu
 
 Policy configuration is also untrusted input. Strict schemas reject unknown nested fields, numeric thresholds must be non-negative, and the known-malicious action cannot be weakened below `block`.
 
-The Codex compatibility-candidate hook request path treats the complete payload, declared working directory, raw shell command text, host configuration, hook environment, and vendor failure behavior as untrusted. Only a release-pinned, bounded `PreToolUse` `Bash` shape reaches the transient action contract; deployment trust is fixed to `unknown`. A project hook is repository-controlled code, not an administrator boundary, and the candidate is neither installed nor described as supported until a real-host harness passes. Future vendor edges remain untrusted independent boundaries. [ADR 0012](adr/0012-native-hook-enforcement-boundary.md) defines the complete gate.
+The Codex compatibility-candidate hook request path treats the complete payload, declared working directory, raw shell command text, host configuration, hook environment, and vendor failure behavior as untrusted. Only a release-pinned, bounded `PreToolUse` `Bash` shape reaches the transient action contract; deployment trust is fixed to `unknown`. A project hook is repository-controlled code, not an administrator boundary. Exact local Windows CLI and app-server real-host harnesses pass, but the candidate remains uninstalled and unsupported until its configuration-ownership and recovery boundary is reviewed. Future vendor edges remain untrusted independent boundaries. [ADR 0012](adr/0012-native-hook-enforcement-boundary.md) defines the complete gate.
 
 ## Abuse cases and mitigations
 
@@ -69,7 +69,7 @@ The Codex compatibility-candidate hook request path treats the complete payload,
 
 ## Native-hook threats and implementation gates
 
-The Codex rows describe the implemented compatibility candidate; other vendor rows remain design requirements. The support matrix remains “no adapter supported” until every applicable gate, including a named real-host harness, is tested.
+The Codex rows describe the implemented compatibility candidate; other vendor rows remain design requirements. The support matrix remains “no adapter supported” until the configuration-ownership, installation, recovery, and named real-host gates for a claimed surface are all tested.
 
 | Threat | Required implementation gate | Residual risk |
 |---|---|---|
