@@ -398,7 +398,98 @@ async function configureScenario(
   };
 }
 
-async function runScenario({
+export async function prepareTrustedProjectHookScenario({ codexEntry, adapterEntry, parseJson }) {
+  const root = await mkdtemp(join(tmpdir(), "agenthawk-codex-cli-project-"));
+  const fixture = createFixtureServer(
+    codexHostPlatform().neutralCommand,
+    codexHostPlatform().commandTool,
+  );
+  const providerUrl = await listenLoopback(fixture.server);
+  let client;
+  let succeeded = false;
+  try {
+    const configured = await configureScenario(root, providerUrl, adapterEntry, {
+      projectHook: true,
+    });
+    client = spawnBoundedJsonl(
+      codexEntry,
+      ["--strict-config", "app-server", "--listen", "stdio://"],
+      { cwd: configured.repository, env: configured.environment, parseJson },
+    );
+    const initialized = validateInitializeResponse(
+      await client.request("agenthawk-cli-matrix-initialize", "initialize", {
+        clientInfo: {
+          name: "agenthawk_test",
+          title: "AgentHawk CLI project matrix trust preparation",
+          version: "1.0.0",
+        },
+        capabilities: { experimentalApi: false },
+      }),
+    );
+    if (!(await sameCanonicalPath(initialized.codexHome, configured.codexHome))) {
+      throw appServerError("codex_home_mismatch");
+    }
+    await client.notify("initialized");
+    const before = selectExpectedHook(
+      await client.request("agenthawk-cli-matrix-hooks-before", "hooks/list", {
+        cwds: [configured.repository],
+      }),
+      "project",
+    );
+    if (
+      !(await sameCanonicalPath(before.cwd, configured.repository)) ||
+      !(await sameCanonicalPath(before.hook.sourcePath, configured.hooksPath)) ||
+      before.hook.command !== configured.expectedHookCommand
+    ) {
+      throw appServerError("hook_path_mismatch");
+    }
+    const writeResponse = requireRecord(
+      await client.request("agenthawk-cli-matrix-hook-trust", "config/batchWrite", {
+        edits: [
+          {
+            keyPath: "hooks.state",
+            value: { [before.hook.key]: { trusted_hash: before.hook.currentHash } },
+            mergeStrategy: "upsert",
+          },
+        ],
+        reloadUserConfig: true,
+      }),
+      "hook_trust_write_invalid",
+    );
+    if (
+      typeof writeResponse.filePath !== "string" ||
+      typeof writeResponse.version !== "string" ||
+      writeResponse.version.length === 0 ||
+      !["ok", "okOverridden"].includes(writeResponse.status) ||
+      !(await sameCanonicalPath(writeResponse.filePath, join(configured.codexHome, "config.toml")))
+    ) {
+      throw appServerError("hook_trust_write_invalid");
+    }
+    const after = selectExpectedHook(
+      await client.request("agenthawk-cli-matrix-hooks-after", "hooks/list", {
+        cwds: [configured.repository],
+      }),
+      "project",
+    );
+    validateTrustedHook(before, after);
+    if (!(await sameCanonicalPath(after.cwd, configured.repository))) {
+      throw appServerError("hook_path_mismatch");
+    }
+    await client.close();
+    client = undefined;
+    if (fixture.state.error || fixture.state.requests !== 0) {
+      throw appServerError("trust_preparation_provider_request_observed");
+    }
+    succeeded = true;
+    return { ...configured, root };
+  } finally {
+    if (client) await client.abort().catch(() => undefined);
+    await closeServer(fixture.server).catch(() => undefined);
+    if (!succeeded) await rm(root, { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+export async function runScenario({
   codexEntry,
   adapterEntry,
   scenario,

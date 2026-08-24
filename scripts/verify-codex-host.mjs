@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   access,
   chmod,
@@ -18,6 +19,10 @@ import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const EXPECTED_CODEX_VERSION = "0.149.0";
+export const EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION =
+  "windows unelevated restricted-token sandbox cannot enforce split writable root sets directly; refusing to run unsandboxed";
+export const EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST =
+  "422a8d829de4853001e0a145d3925a1dfa5cd736378736c38d5c07186096a2a5";
 const MAX_CAPTURE_BYTES = 128 * 1024;
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const CHILD_TIMEOUT_MS = 45_000;
@@ -169,7 +174,7 @@ function containsFunctionOutput(value, callId) {
   return Object.values(value).some((item) => containsFunctionOutput(item, callId));
 }
 
-function findFunctionOutput(value, callId) {
+export function findFunctionOutput(value, callId) {
   if (Array.isArray(value)) {
     for (const item of value) {
       const found = findFunctionOutput(item, callId);
@@ -186,11 +191,17 @@ function findFunctionOutput(value, callId) {
   return undefined;
 }
 
-function classifyFunctionOutput(value, callId) {
+export function classifyFunctionOutput(value, callId) {
   const output = findFunctionOutput(value, callId);
   if (output === undefined) return "missing";
   const serialized = JSON.stringify(output).toLowerCase();
   if (serialized.includes("agenthawk:")) return "denied";
+  if (isExactHostedSandboxRejection(value, callId)) return "hosted_sandbox_rejected";
+  if (serialized.includes("approval")) return "approval_rejected";
+  if (serialized.includes("access is denied") || serialized.includes("permission denied")) {
+    return "permission_rejected";
+  }
+  if (serialized.includes("timed out") || serialized.includes("timeout")) return "timeout";
   if (serialized.includes("blocked by policy")) return "sandbox_rejected";
   if (serialized.includes("not recognized") || serialized.includes("not found")) return "not_found";
   if (
@@ -200,6 +211,40 @@ function classifyFunctionOutput(value, callId) {
   )
     return "success";
   return "unknown";
+}
+
+export function describeFunctionOutputEvidence(value, callId) {
+  const output = findFunctionOutput(value, callId);
+  if (typeof output !== "string") {
+    return {
+      outputType: output === null ? "null" : typeof output,
+      normalizedDigest: null,
+      exactReasonCount: 0,
+    };
+  }
+  const normalized = output
+    .replaceAll("\r\n", "\n")
+    .replace(/Wall time: [0-9]+(?:\.[0-9]+)? seconds/g, "Wall time: <duration> seconds")
+    .replace(/Chunk ID: [^\n]+/g, "Chunk ID: <id>")
+    .replace(/[A-Za-z]:\\[^\r\n"']+/g, "<windows-path>");
+  const exactReasonCount = normalized.split(EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION).length - 1;
+  return {
+    outputType: "string",
+    normalizedDigest: createHash("sha256").update(normalized, "utf8").digest("hex"),
+    exactReasonCount,
+  };
+}
+
+export function matchesExpectedHostedSandboxEvidence(evidence) {
+  return (
+    evidence.outputType === "string" &&
+    evidence.normalizedDigest === EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST &&
+    evidence.exactReasonCount === 1
+  );
+}
+
+export function isExactHostedSandboxRejection(value, callId) {
+  return matchesExpectedHostedSandboxEvidence(describeFunctionOutputEvidence(value, callId));
 }
 
 export function neutralScenarioPassed(functionOutput, markerVerified) {
@@ -306,7 +351,7 @@ async function readBoundedJson(request) {
   }
 }
 
-export function createFixtureServer(command, expectedTool) {
+export function createFixtureServer(command, expectedTool, options = {}) {
   const state = { requests: 0, error: undefined };
   const server = createServer(async (request, response) => {
     try {
@@ -317,6 +362,7 @@ export function createFixtureServer(command, expectedTool) {
       const body = await readBoundedJson(request);
       let events;
       if (state.requests === 1) {
+        options.validateToolSet?.(body);
         const selected = selectCommandTool(body, command, expectedTool);
         events = [
           responseCreated("resp-agenthawk-call"),
@@ -327,7 +373,9 @@ export function createFixtureServer(command, expectedTool) {
         if (!containsFunctionOutput(body, "call-agenthawk")) {
           throw new HostHarnessError("provider_missing_function_output");
         }
+        state.functionOutputRaw = findFunctionOutput(body, "call-agenthawk");
         state.functionOutput = classifyFunctionOutput(body, "call-agenthawk");
+        options.onFunctionOutput?.(state.functionOutputRaw);
         events = [
           responseCreated("resp-agenthawk-finished"),
           assistantMessage("msg-agenthawk-finished", "fixture complete"),
@@ -400,14 +448,15 @@ export function minimalEnvironment(codexHome, taskRoot, fakeBin) {
     TMP: taskRoot,
     USERPROFILE: taskRoot,
   };
-  for (const key of ["PATH", "Path", "PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR", "ComSpec"]) {
+  for (const key of ["PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR", "ComSpec"]) {
     const value = process.env[key];
     if (value !== undefined) {
       environment[key] = value;
     }
   }
-  const pathKey = Object.hasOwn(environment, "Path") ? "Path" : "PATH";
-  environment[pathKey] = `${fakeBin}${delimiter}${environment[pathKey] ?? ""}`;
+  const inheritedPath = process.env.Path ?? process.env.PATH ?? "";
+  environment[process.platform === "win32" ? "Path" : "PATH"] =
+    `${fakeBin}${delimiter}${inheritedPath}`;
   return environment;
 }
 
@@ -459,6 +508,18 @@ export async function terminateChild(child, spawnTreeKiller = spawn) {
 
 export async function runBounded(entry, args, options) {
   const command = commandForEntry(entry, args);
+  const input = options.input;
+  if (
+    input !== undefined &&
+    typeof input !== "string" &&
+    !Buffer.isBuffer(input) &&
+    !(input instanceof Uint8Array)
+  ) {
+    throw new HostHarnessError("host_input_invalid");
+  }
+  if (input !== undefined && Buffer.byteLength(input) > 64 * 1024) {
+    throw new HostHarnessError("host_input_too_large");
+  }
   return await new Promise((resolveRun, rejectRun) => {
     const child = spawn(command.file, command.args, {
       cwd: options.cwd,
@@ -466,8 +527,9 @@ export async function runBounded(entry, args, options) {
       shell: false,
       detached: process.platform !== "win32",
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    if (input !== undefined) child.stdin.end(input);
     const output = { stdout: [], stderr: [], bytes: 0 };
     let settled = false;
     let terminating = false;

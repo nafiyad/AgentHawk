@@ -24,12 +24,12 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 | Integration | Current status |
 | --- | --- |
-| Codex | Advisory template; `0.149.0` `PreToolUse` compatibility candidate with exact local Windows CLI/app-server evidence; fixed-target lifecycle, root-bound verification, project discovery/trust/neutral/deny/mutation/disable, and disposable hosted managed-only suppression pass. [ADR 0014](adr/0014-codex-support-scope.md) keeps it unsupported until the exact CLI project-hook outcome matrix passes |
+| Codex | Advisory template; exact CLI `0.149.0` Windows x64 project-hook compatibility candidate with a complete local standard-user matrix, but unsupported because the pinned GitHub-hosted Windows environment rejects its restricted-token split writable-root projection before execution. See [ADR 0014](adr/0014-codex-support-scope.md) |
 | Claude Code | Advisory project instruction template |
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |
 | GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
-| Native pre-action hooks | Codex candidate and isolated host harnesses implemented; exact 0.149.0 local Windows CLI/app-server neutral/deny, root-bound lifecycle, project activation, and disposable hosted managed-only suppression pass. Linux Docker evidence failed closed when the native sandbox namespace was unavailable; IDE, desktop, Remote, cloud, other operating systems and versions remain unproven, so no native adapter is supported |
+| Native pre-action hooks | No native adapter is supported. The Codex candidate's local matrix proves unrelated zero-provider execution, controlled allow, visible warn denial, distinct review/block/error denial, malformed emergency denial, enabled-tool binding, exact removal, and controlled performance; the hosted gate positively proves only the exact restricted-token split writable-root exclusion. Every other surface, version, operating system, authority, and vendor remains separate |
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 

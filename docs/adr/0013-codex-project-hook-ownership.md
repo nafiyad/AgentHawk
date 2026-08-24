@@ -425,10 +425,12 @@ The pinned exact artifact also passed the separate GitHub-hosted Windows gate:
 the project hook was present before policy, `configRequirements/read` reported
 `allowManagedHooksOnly: true`, hook inventory was empty under that requirement,
 and the fixture provider received zero requests. This evidence does not promote
-the candidate to supported enforcement; [ADR 0014](0014-codex-support-scope.md)
-keeps the first exact surface unsupported until its ordinary CLI project-hook
-outcome matrix and alternate-tool exclusion pass. Other named host gates remain
-separate and do not block or inherit that exact-surface decision.
+another host surface. The separate local ordinary CLI project-hook outcome
+matrix and alternate-tool exclusion pass, but the pinned hosted Windows
+environment rejects the restricted-token split writable-root projection before
+execution. [ADR 0014](0014-codex-support-scope.md)
+therefore keeps the candidate unsupported. Other named host gates remain
+separate and do not inherit that decision.
 
 User/managed/plugin installation, portable committed configuration, trust
 automation, merge/adopt/force/repair/upgrade operations, arbitrary paths,

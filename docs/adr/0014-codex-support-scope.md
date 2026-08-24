@@ -12,14 +12,14 @@ packed-consumer, local CLI, local app-server, project ownership/activation, and
 disposable managed-only gates pass. That evidence is intentionally split by
 host surface and authority; passing one row cannot establish another.
 
-The roadmap's supported-adapter exit criteria are stricter than the evidence
-currently recorded. An actual integration harness must prove an allowed explicit
-dependency addition proceeds; every `review`, `block`, and `error` outcome
-denies; malformed input denies visibly; and an unrelated command makes zero
-provider calls. The present real-host project harness proves unrelated neutral
-execution and one denied dependency addition, but not the complete outcome
-matrix. Its project-hook lifecycle is exercised through local app-server stdio,
-not through the ordinary user-facing CLI launch path.
+The roadmap's supported-adapter exit criteria are stricter than one local run.
+The completed local ordinary-CLI harness proves an allowed explicit dependency
+addition proceeds; every `warn`, `review`, `block`, and `error` outcome denies;
+malformed input denies visibly; an unrelated command makes zero provider calls;
+the enabled tool inventory has no alternate execution surface; and controlled
+latency targets pass. The project-hook ownership lifecycle is also exercised
+through local app-server stdio. Neither local result is independently
+reproducible on the current hosted Windows environment.
 
 Exact tagged-source review also bounds the hook's coverage. Tool dispatch runs
 `PreToolUse` only when a handler exposes a pre-tool payload. The pinned
@@ -35,12 +35,13 @@ Primary sources, accessed 2026-08-24:
 - [Codex `rust-v0.149.0` code-mode execute handler](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/core/src/tools/code_mode/execute_handler.rs)
 - [Codex `rust-v0.149.0` feature defaults](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/features/src/lib.rs)
 - [Codex command-hook output schema](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/hooks/schema/generated/pre-tool-use.command.output.schema.json)
+- [Codex `rust-v0.149.0` restricted-token filesystem projection](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/sandboxing/src/windows.rs#L131-L151)
 
 ## Decision
 
-AgentHawk does not yet describe any Codex native adapter as supported. Passing
-managed-only suppression completes an authority gate; it does not waive the
-remaining supported-adapter exit criteria.
+AgentHawk does not support a Codex native adapter in this source revision. The
+row below remains the first eligibility target; passing a different host or
+authority gate does not establish it.
 
 The first eligible support target is deliberately narrow:
 
@@ -55,9 +56,10 @@ The first eligible support target is deliberately narrow:
 - cooperative `project` deployment trust only; and
 - protected scan/diff CI as the final repository boundary.
 
-Before that row may be supported, one exact-artifact CLI project-hook harness
-must use the production installer and prove all of the following without a real
-package manager or package code:
+The exact-artifact CLI project-hook harness uses the production installer. A
+local standard-user run proves the following without a real package manager or
+package code, but that result is not independently reproducible in the current
+hosted gate:
 
 1. exact installed hook discovery and trust;
 2. unrelated command execution with zero provider calls;
@@ -79,6 +81,18 @@ Evidence from app-server stdio may supplement that CLI row, but it cannot
 substitute for the user-facing launch proof. Desktop, IDE/extension, Remote,
 cloud, elevated sandbox, Linux, macOS, managed installation, other Codex
 versions, and other vendors remain separate unsupported rows.
+
+The checksum-pinned official artifact on GitHub-hosted Windows runs under an
+administrator account. In that environment Codex `0.149.0` rejects the ordinary
+neutral command because its unelevated restricted-token backend cannot enforce
+the effective split writable-root set without running unsandboxed. The hosted
+workflow pins the normalized output digest and the exact tagged-source reason,
+requires the neutral marker to be truly absent, requires zero provider traffic,
+and verifies exact-owned removal. It does not generalize the failure into a
+claim that Codex rejects every administrator account. AgentHawk does not disable
+the sandbox, use danger-full-access, or convert the exclusion into support. A
+fresh standard-user Windows runner with the same exact-artifact matrix is still
+required before this row can become supported.
 
 ## Alternatives
 
@@ -105,8 +119,12 @@ receive deterministic policy enforcement.
 
 ## Consequences
 
-Public installation guidance and the support matrix continue to say that no
-native adapter is supported. The next implementation slice is not another
-vendor: it is the exact Windows CLI project-hook outcome matrix above. Claude
-Code work remains dependency-ordered after the first Codex row either passes or
-is explicitly closed as unsupported by another reviewed decision.
+Public guidance keeps all native adapters unsupported. The local harness
+inventories the enabled tool set, uses ordinary `codex exec`, records each host
+scenario's live-evidence time, and measures controlled nearest-rank p95
+unrelated qualification, fresh cache-hit, and loopback live-evidence targets
+without changing verdicts. The hosted restricted-token exclusion is separately
+checksum-pinned and green only for the exact normalized rejection, true marker
+absence, zero provider traffic, and removal. Claude Code is
+the next dependency-ordered research target under the roadmap's explicit
+unsupported-closure rule; it inherits no Codex evidence.

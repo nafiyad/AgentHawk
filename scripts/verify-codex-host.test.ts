@@ -2,18 +2,23 @@ import { EventEmitter } from "node:events";
 import { access, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, get } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   assertLoopbackUrl,
   buildCodexConfig,
+  classifyFunctionOutput,
   closeServer,
   codexHostPlatform,
+  EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST,
   encodeSse,
   HostHarnessError,
   hookCommands,
+  isExactHostedSandboxRejection,
+  matchesExpectedHostedSandboxEvidence,
+  minimalEnvironment,
   neutralScenarioPassed,
   parseArguments,
   runBounded,
@@ -315,6 +320,22 @@ describe("Codex host process cleanup boundary", () => {
       }),
     ).rejects.toThrowError(new HostHarnessError("host_output_too_large"));
   });
+
+  it("writes only a bounded explicit stdin payload", async () => {
+    const result = await runBounded(
+      process.execPath,
+      ["-e", "process.stdin.pipe(process.stdout)"],
+      { cwd: tmpdir(), env: process.env, input: "fixture-input", timeoutMs: 5_000 },
+    );
+    expect(result).toMatchObject({ code: 0, signal: null, stdout: "fixture-input" });
+    await expect(
+      runBounded(process.execPath, ["-e", ""], {
+        cwd: tmpdir(),
+        env: process.env,
+        input: "x".repeat(64 * 1024 + 1),
+      }),
+    ).rejects.toThrowError(new HostHarnessError("host_input_too_large"));
+  });
 });
 
 describe("Codex host verification argument boundary", () => {
@@ -330,6 +351,17 @@ describe("Codex host verification argument boundary", () => {
     [["--other"], "unknown_argument:--other"],
   ])("rejects malformed arguments", (argv, code) => {
     expect(() => parseArguments(argv)).toThrowError(new HostHarnessError(code));
+  });
+});
+
+describe("Codex host environment isolation", () => {
+  it("emits one case-insensitive PATH key with the fake bin first", () => {
+    const fakeBin = process.platform === "win32" ? "C:\\fake-bin" : "/fake-bin";
+    const environment = minimalEnvironment("codex-home", "task", fakeBin);
+    const pathKeys = Object.keys(environment).filter((key) => key.toLowerCase() === "path");
+    expect(pathKeys).toHaveLength(1);
+    const path = environment[pathKeys[0] ?? ""];
+    expect(path?.split(delimiter)[0]).toBe(fakeBin);
   });
 });
 
@@ -376,6 +408,54 @@ describe("Codex host verification tool pin", () => {
   it("fails on missing host capability instead of switching tools", () => {
     expect(() => selectCommandTool({ tools: [] }, "git status", "shell_command")).toThrowError(
       new HostHarnessError("host_missing_tool:shell_command"),
+    );
+  });
+});
+
+describe("Codex host result classification", () => {
+  it.each([
+    ["approval was required", "approval_rejected"],
+    ["Access is denied", "permission_rejected"],
+    ["hook timed out", "timeout"],
+    ["command not found; ask an administrator to elevate", "not_found"],
+    ["permission denied by the elevated policy", "permission_rejected"],
+  ])("maps bounded failure category for %j", (output, expected) => {
+    expect(
+      classifyFunctionOutput({ type: "function_call_output", call_id: "call", output }, "call"),
+    ).toBe(expected);
+  });
+
+  it.each([
+    "administrator policy rejected execution",
+    "an elevated prompt was shown",
+    "arbitrary administrator and elevated text",
+  ])("does not treat arbitrary privilege wording as the pinned host rejection", (output) => {
+    const value = { type: "function_call_output", call_id: "call", output };
+    expect(classifyFunctionOutput(value, "call")).toBe("unknown");
+    expect(isExactHostedSandboxRejection(value, "call")).toBe(false);
+  });
+
+  it("pins the hosted rejection to the exact normalized evidence record", () => {
+    expect(EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST).toBe(
+      "422a8d829de4853001e0a145d3925a1dfa5cd736378736c38d5c07186096a2a5",
+    );
+    const exactEvidence = {
+      outputType: "string",
+      normalizedDigest: EXPECTED_CODEX_HOSTED_SANDBOX_REJECTION_DIGEST,
+      exactReasonCount: 1,
+    };
+    expect(matchesExpectedHostedSandboxEvidence(exactEvidence)).toBe(true);
+    expect(matchesExpectedHostedSandboxEvidence({ ...exactEvidence, outputType: "object" })).toBe(
+      false,
+    );
+    expect(
+      matchesExpectedHostedSandboxEvidence({ ...exactEvidence, normalizedDigest: "0".repeat(64) }),
+    ).toBe(false);
+    expect(matchesExpectedHostedSandboxEvidence({ ...exactEvidence, exactReasonCount: 0 })).toBe(
+      false,
+    );
+    expect(matchesExpectedHostedSandboxEvidence({ ...exactEvidence, exactReasonCount: 2 })).toBe(
+      false,
     );
   });
 });
