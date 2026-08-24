@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { commandForEntry, HostHarnessError, terminateChild } from "./verify-codex-host.mjs";
 
@@ -9,6 +10,7 @@ const DEFAULT_MAX_MESSAGES = 256;
 const DEFAULT_MAX_STDERR_BYTES = 128 * 1024;
 const CLOSE_TIMEOUT_MS = 5_000;
 const TERMINATION_CLOSE_TIMEOUT_MS = 5_000;
+const TERMINATION_GROUP_TIMEOUT_MS = 5_000;
 
 function protocolError(code) {
   return new HostHarnessError(`app_server_${code}`);
@@ -62,6 +64,22 @@ export function spawnBoundedJsonl(entry, args, options) {
     resolveClosed = resolvePromise;
   });
 
+  const waitForProcessGroupExit = async () => {
+    if (process.platform === "win32" || !child.pid) return;
+    const deadline =
+      Date.now() + (options.terminationGroupTimeoutMs ?? TERMINATION_GROUP_TIMEOUT_MS);
+    while (true) {
+      try {
+        process.kill(-child.pid, 0);
+      } catch (error) {
+        if (error?.code === "ESRCH") return;
+        throw protocolError("termination_group_check_failed");
+      }
+      if (Date.now() >= deadline) throw protocolError("termination_group_timeout");
+      await delay(10);
+    }
+  };
+
   const terminateAndWait = () => {
     if (!termination) {
       termination = (async () => {
@@ -78,6 +96,7 @@ export function spawnBoundedJsonl(entry, args, options) {
               terminationTimer.unref();
             }),
           ]);
+          await waitForProcessGroupExit();
         } finally {
           if (terminationTimer) clearTimeout(terminationTimer);
         }
