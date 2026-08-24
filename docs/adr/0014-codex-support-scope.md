@@ -62,14 +62,18 @@ package manager or package code:
 1. exact installed hook discovery and trust;
 2. unrelated command execution with zero provider calls;
 3. an allowed mature registry dependency reaches a fake package-manager marker;
-4. distinct review, block, and provider-error decisions each leave their marker
-   absent;
-5. malformed adapter input and emergency exit `2` remain blocking;
-6. the advertised shell tool is present and no enabled alternate execution
+4. a `warn` result denies as `warning_requires_review` with a visible bounded
+   explanation and leaves its marker absent, unless that exact host first proves
+   a neutral visible-warning channel;
+5. distinct `review` and `block` verdicts each leave their marker absent;
+6. a required-provider failure under strict provider-error policy produces an
+   actual `error` verdict and leaves its marker absent;
+7. malformed adapter input and emergency exit `2` remain blocking;
+8. the advertised shell tool is present and no enabled alternate execution
    surface bypasses the hook;
-7. removal and recovery instructions match the already proven exact-owned
+9. removal and recovery instructions match the already proven exact-owned
    lifecycle; and
-8. the roadmap performance targets are measured without changing verdicts.
+10. the roadmap performance targets are measured without changing verdicts.
 
 Evidence from app-server stdio may supplement that CLI row, but it cannot
 substitute for the user-facing launch proof. Desktop, IDE/extension, Remote,
@@ -79,7 +83,7 @@ versions, and other vendors remain separate unsupported rows.
 ## Alternatives
 
 - Supporting the app-server row immediately was rejected because it lacks the
-  complete allowed/review/block/error real-host matrix and is not the ordinary
+  complete allow/warn/review/block/error real-host matrix and is not the ordinary
   CLI launch experience described to users.
 - Treating managed-only success as overall adapter approval was rejected because
   deployment authority and action coverage are independent properties.

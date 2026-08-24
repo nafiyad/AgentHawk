@@ -51,7 +51,7 @@ Milestone 17 is split into independently reviewed slices:
 4. one Codex `PreToolUse` adapter for `Bash` fixtures and a real package-consumer harness;
 5. separate Claude Code, Cursor, and GitHub Copilot adapters only after their exact contracts have independent fixtures and failure tests.
 
-The research slice itself installed no hook. Collision-safe `init` remains an advisory-template initializer. [ADR 0013](0013-codex-project-hook-ownership.md) now accepts and implements a separately requested project-scoped exclusive-ownership lifecycle. Its isolated exact-host project discovery, trust, execution, mutation, and feature-disable evidence passes; managed-only exact-artifact evidence remains pending.
+The research slice itself installed no hook. Collision-safe `init` remains an advisory-template initializer. [ADR 0013](0013-codex-project-hook-ownership.md) accepts and implements a separately requested project-scoped exclusive-ownership lifecycle. Its isolated exact-host project discovery, trust, execution, mutation, feature-disable, and managed-only exact-artifact evidence passes. [ADR 0014](0014-codex-support-scope.md) nevertheless keeps the candidate unsupported until its ordinary CLI project-hook outcome matrix and alternate-tool exclusion pass.
 
 Cursor is a compatibility research target, not a promised adapter: its current documented pre-action output has no neutral/defer result. AgentHawk will not emit `permission: "allow"`. Cursor support remains unavailable unless a version-pinned real harness proves a true neutral result that preserves the ordinary host permission flow while `failClosed: true` still denies failures.
 
