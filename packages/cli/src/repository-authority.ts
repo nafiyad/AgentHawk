@@ -25,6 +25,10 @@ const maximumManifestBytes = 1_048_576;
 
 export interface RepositoryAuthority {
   readonly repositoryRoot: string;
+  readonly repositoryIdentity: {
+    readonly dev: bigint;
+    readonly ino: bigint;
+  };
   readonly config: AgentHawkConfig;
   readonly approvals: ApprovalFile;
   readonly manifest?: PackageManifest;
@@ -144,6 +148,7 @@ export async function loadRepositoryAuthority(
     const dependenciesList: DirectDependency[] = manifest ? directDependencies(manifest) : [];
     return {
       repositoryRoot,
+      repositoryIdentity: { dev: finalIdentity.dev, ino: finalIdentity.ino },
       config,
       approvals,
       ...(manifest ? { manifest } : {}),

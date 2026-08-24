@@ -559,6 +559,7 @@ function authority(existing: readonly string[] = []): RepositoryAuthority {
     approvals: { approvals: [], version: 1 },
     config,
     directDependencyNames: existing,
+    repositoryIdentity: { dev: 1n, ino: 2n },
     repositoryRoot: root,
   };
 }

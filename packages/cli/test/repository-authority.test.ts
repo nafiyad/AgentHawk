@@ -41,6 +41,8 @@ describe("loadRepositoryAuthority", { timeout: integrationTimeout }, () => {
     const result = await loadRepositoryAuthority(root);
 
     expect(result.repositoryRoot).toBe(await realpath(root));
+    const rootIdentity = await lstat(root, { bigint: true });
+    expect(result.repositoryIdentity).toEqual({ dev: rootIdentity.dev, ino: rootIdentity.ino });
     expect(result.config).toMatchObject({ mode: "review", version: 1 });
     expect(result.approvals).toEqual({ approvals: [], version: 1 });
     expect(result.directDependencyNames).toEqual(["vitest", "zod"]);
