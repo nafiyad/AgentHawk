@@ -15,6 +15,7 @@ Research for this decision used current primary vendor documentation, accessed 2
 - [OpenAI Codex hooks](https://learn.chatgpt.com/docs/hooks)
 - [OpenAI Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
 - [OpenAI Codex developer commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
+- [OpenAI Codex sandboxing](https://learn.chatgpt.com/docs/sandboxing)
 - [OpenAI Codex Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox)
 - [OpenAI Codex v0.149.0 generated hook schemas](https://github.com/openai/codex/tree/rust-v0.149.0/codex-rs/hooks/schema/generated)
 - [OpenAI Codex v0.149.0 `PreToolUse` runtime](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/hooks/src/events/pre_tool_use.rs)
@@ -188,11 +189,15 @@ The corrected named run explicitly selected the documented `windows.sandbox = "u
 Maintainers can repeat the development check after building both workspaces. The argument must name an absolute JavaScript entry or native executable that reports exactly `codex-cli 0.149.0`; the harness never downloads Codex itself:
 
 ```text
-pnpm verify:codex-host -- --codex-entry <absolute-path-to-reviewed-codex-entry>
+pnpm verify:codex-host --codex-entry <absolute-path-to-reviewed-codex-entry>
 ```
 
 Success emits one bounded JSON object containing only the version, named surface, two pass states, and isolation mode. Failure emits one fixed category line and no captured host output, request body, command, path, environment, prompt, transcript, or identifier. The command is intentionally excluded from CI because acquiring and executing a vendor host artifact is a separate reviewed compatibility operation, not an offline unit test.
 
-The candidate remains unsupported until named real local and remote host surfaces prove complete neutral and denial behavior under their intended sandbox configuration. Its `portable` qualifier makes no target-shell claim and intentionally rejects shell-specific syntax; unknown shell constructs can still conceal dependency operations and remain a residual bypass. Each later adapter requires equivalent independent evidence. A vendor without a proven neutral no-auto-approve result remains unsupported; a cloud surface without required provider reachability or a visible warning channel must deny rather than silently degrade.
+Support is granted per exact named surface, version, operating system, sandbox configuration, and deployment authority; evidence from one row never unlocks another. A local CLI support claim therefore does not wait on undocumented cloud behavior, but it also cannot be generalized to app-server, SDK, IDE, desktop, Remote, cloud, managed requirements, another operating system, or another version. The candidate remains unsupported while installation and ownership guidance is unreviewed. Its `portable` qualifier makes no target-shell claim and intentionally rejects shell-specific syntax; unknown shell constructs can still conceal dependency operations and remain a residual bypass. Each later adapter and surface requires equivalent independent evidence. A vendor without a proven neutral no-auto-approve result remains unsupported; a cloud surface without required provider reachability or a visible warning channel must deny rather than silently degrade.
+
+The next named attempt used the official `@openai/codex@0.149.0-linux-x64` artifact (registry integrity `sha512-uZXaN9JPxu0/jjnqqJeTd4kRYPnjVZK3MiVndfG1mHhEaoDKL7ScWHfPqvAEOjwsSDEmQSlMfUkmvYp/CHciYw==`) inside `node:22-bookworm` image digest `sha256:0557ac14e0d45d02ed563067b82856ca5e7aa3437fa28d98d4350ea9c3d9494a` on Docker Desktop's Linux engine. The harness reached the loopback fixture, but Codex's bundled `bwrap` could not create its namespace under the container boundary, so the neutral repository marker was absent and the harness failed closed. AgentHawk did not retry with a privileged container, `CAP_SYS_ADMIN`, disabled seccomp, danger-full-access, or an external-sandbox bypass. This is an environment limitation, not Linux compatibility evidence. A Linux claim still requires the same exact run on a host that supports Codex's intended sandbox without weakening it.
+
+The hardened harness now names Windows, Linux, and macOS CLI surfaces separately, rejects other platform values, and requires an exact regular repository-local neutral marker on every platform. The next independently reproducible surface is exact-version local app-server over stdio using the same isolated loopback provider. Passing app-server will establish only that protocol host; it will not establish the VS Code extension, desktop app, Remote product, or Codex cloud.
 
 Adapter claims are version- and surface-specific. Documentation must prefer: “AgentHawk can deny recognized dependency-add shell tool calls that reach a supported, enabled, synchronous vendor hook; deployment trust and documented bypasses determine the strength of that guardrail.”
