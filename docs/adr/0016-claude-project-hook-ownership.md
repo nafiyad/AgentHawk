@@ -68,14 +68,18 @@ the canonical co-root repository authority:
 <root>/.claude/settings.local.json
 ```
 
-It accepts no path override, reads no user home, Claude configuration directory,
-managed policy, plugin, session, SDK, environment, transcript, or trust store,
-and contacts no provider or network service. It does not create a missing
-directory or file. Linked worktrees remain observable as independent AgentHawk
-roots; host discovery behavior must be proven before a later installer admits
-them.
+It accepts no path override and directly opens no user-home file, Claude
+configuration directory, managed policy, plugin, session, SDK, environment,
+transcript, or trust store. It contacts no provider or network service and does
+not create a missing directory or file. The trusted Git subprocess can consult
+its normal repository, parent, per-repository, and user-global configuration or
+exclude sources; AgentHawk does not request, capture, parse, retain, or render
+those source paths, patterns, or bytes. Linked worktrees remain observable as
+independent AgentHawk roots; host discovery behavior must be proven before a
+later installer admits them.
 
-The preflight runs only bounded, shell-free Git argument arrays. In addition to
+The preflight directly opens only the two fixed settings targets and runs only
+bounded, shell-free Git argument arrays. In addition to
 the existing topology query, `git check-ignore -q --
 .claude/settings.local.json` observes effective repository, parent, global, and
 per-repository excludes without returning pattern content or a path. Exit `0`
