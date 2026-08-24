@@ -8,10 +8,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   assertLoopbackUrl,
+  buildCodexConfig,
   closeServer,
   encodeSse,
   HostHarnessError,
   hookCommands,
+  neutralScenarioPassed,
   parseArguments,
   runBounded,
   selectCommandTool,
@@ -33,6 +35,44 @@ describe("Codex host hook command boundary", () => {
         "& 'C:\\Program Files\\$runtime`$(ignored)\\node.exe' " +
         "'C:\\fixture path\\owner''s $hook`$(ignored).mjs'",
     });
+  });
+});
+
+describe("Codex host sandbox configuration", () => {
+  const providerUrl = new URL("http://127.0.0.1:4567/v1");
+
+  it("activates the supported unelevated Windows sandbox without weakening policy", () => {
+    const config = buildCodexConfig(providerUrl, "win32");
+    expect(config).toContain('approval_policy = "never"\nsandbox_mode = "workspace-write"');
+    expect(config).toContain(
+      "[sandbox_workspace_write]\nnetwork_access = false\nexclude_tmpdir_env_var = true\nexclude_slash_tmp = true",
+    );
+    expect(config).toContain('[windows]\nsandbox = "unelevated"\n\n[features]');
+    expect(config).toContain("unified_exec = false");
+    expect(config).not.toMatch(
+      /danger-full-access|writable_roots|network_access\s*=\s*true|sandbox_private_desktop\s*=\s*false/u,
+    );
+  });
+
+  it("does not add Windows sandbox configuration on other platforms", () => {
+    const config = buildCodexConfig(providerUrl, "linux");
+    expect(config).not.toContain("[windows]");
+    expect(config).toContain("exclude_tmpdir_env_var = true");
+    expect(config).toContain("unified_exec = true");
+  });
+});
+
+describe("Codex host neutral execution proof", () => {
+  it("requires the Windows marker when shell output omits an exit status", () => {
+    expect(neutralScenarioPassed("win32", "unknown", true)).toBe(true);
+    expect(neutralScenarioPassed("win32", "unknown", false)).toBe(false);
+    expect(neutralScenarioPassed("win32", "denied", true)).toBe(false);
+    expect(neutralScenarioPassed("win32", "missing", true)).toBe(false);
+  });
+
+  it("retains explicit successful tool output on non-Windows platforms", () => {
+    expect(neutralScenarioPassed("linux", "success", false)).toBe(true);
+    expect(neutralScenarioPassed("linux", "unknown", true)).toBe(false);
   });
 });
 

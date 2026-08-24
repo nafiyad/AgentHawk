@@ -192,6 +192,11 @@ function classifyFunctionOutput(value, callId) {
   return "unknown";
 }
 
+export function neutralScenarioPassed(platform, functionOutput, markerVerified) {
+  if (platform !== "win32") return functionOutput === "success";
+  return markerVerified && (functionOutput === "success" || functionOutput === "unknown");
+}
+
 async function readBoundedJson(request) {
   const chunks = [];
   let size = 0;
@@ -431,6 +436,39 @@ function assertExactVersion(result) {
   }
 }
 
+export function buildCodexConfig(providerUrl, platform = process.platform) {
+  return [
+    'model = "agenthawk-fixture"',
+    'model_provider = "agenthawk_loopback"',
+    'approval_policy = "never"',
+    'sandbox_mode = "workspace-write"',
+    'web_search = "disabled"',
+    "",
+    "[sandbox_workspace_write]",
+    "network_access = false",
+    "exclude_tmpdir_env_var = true",
+    "exclude_slash_tmp = true",
+    "",
+    "[shell_environment_policy]",
+    'inherit = "all"',
+    "",
+    "[model_providers.agenthawk_loopback]",
+    'name = "AgentHawk loopback fixture"',
+    `base_url = ${tomlLiteral(providerUrl.href.replace(/\/$/u, ""))}`,
+    'wire_api = "responses"',
+    "requires_openai_auth = false",
+    "request_max_retries = 0",
+    "stream_max_retries = 0",
+    "stream_idle_timeout_ms = 5000",
+    "",
+    ...(platform === "win32" ? ["[windows]", 'sandbox = "unelevated"', ""] : []),
+    "[features]",
+    "hooks = true",
+    `unified_exec = ${platform === "win32" ? "false" : "true"}`,
+    "",
+  ].join("\n");
+}
+
 async function configureFixture(
   taskRoot,
   codexHome,
@@ -481,30 +519,7 @@ async function configureFixture(
     'import { writeFileSync } from "node:fs";\nimport { fileURLToPath } from "node:url";\nwriteFileSync(fileURLToPath(new URL("../hook-probe.marker", import.meta.url)), "started");\n',
     "utf8",
   );
-  const config = [
-    'model = "agenthawk-fixture"',
-    'model_provider = "agenthawk_loopback"',
-    'approval_policy = "never"',
-    'sandbox_mode = "workspace-write"',
-    'web_search = "disabled"',
-    "",
-    "[shell_environment_policy]",
-    'inherit = "all"',
-    "",
-    "[model_providers.agenthawk_loopback]",
-    'name = "AgentHawk loopback fixture"',
-    `base_url = ${tomlLiteral(providerUrl.href.replace(/\/$/u, ""))}`,
-    'wire_api = "responses"',
-    "requires_openai_auth = false",
-    "request_max_retries = 0",
-    "stream_max_retries = 0",
-    "stream_idle_timeout_ms = 5000",
-    "",
-    "[features]",
-    "hooks = true",
-    `unified_exec = ${process.platform === "win32" ? "false" : "true"}`,
-    "",
-  ].join("\n");
+  const config = buildCodexConfig(providerUrl);
   await writeFile(join(codexHome, "config.toml"), config, "utf8");
   await writeFile(join(repository, ".agenthawk.yml"), "version: 1\nmode: review\n", "utf8");
   await writeFile(
@@ -576,6 +591,7 @@ export async function verifyCodexHost({ codexEntry }) {
   const codexHome = join(taskRoot, "codex-home");
   const repository = join(taskRoot, "repository");
   const deniedMarker = join(repository, "denied.marker");
+  const neutralMarker = join(repository, "agenthawk-neutral.marker");
   const hookProbeMarker = join(repository, "hook-probe.marker");
   const fakeBin = join(repository, ".agenthawk-host-bin");
   try {
@@ -613,7 +629,9 @@ export async function verifyCodexHost({ codexEntry }) {
       fakeBin,
     );
     const neutralCommand =
-      process.platform === "win32" ? "C:/Windows/System32/whoami.exe" : "/usr/bin/true";
+      process.platform === "win32"
+        ? "Set-Content -LiteralPath agenthawk-neutral.marker -Value executed"
+        : "/usr/bin/true";
     const neutralOutput = await runScenario({
       codexEntry,
       codexHome,
@@ -622,10 +640,23 @@ export async function verifyCodexHost({ codexEntry }) {
       fakeBin,
       command: neutralCommand,
     });
+    let neutralMarkerVerified = false;
     try {
       await access(hookProbeMarker);
     } catch {
       throw new HostHarnessError("host_did_not_run_session_hook");
+    }
+    if (process.platform === "win32") {
+      try {
+        const neutralMarkerContents = await readFile(neutralMarker, "utf8");
+        if (neutralMarkerContents.trim() !== "executed") {
+          throw new HostHarnessError("neutral_marker_invalid");
+        }
+        neutralMarkerVerified = true;
+      } catch (error) {
+        if (error instanceof HostHarnessError) throw error;
+        throw new HostHarnessError("neutral_marker_missing");
+      }
     }
     const deniedExecutable = join(fakeBin, process.platform === "win32" ? "npm.cmd" : "npm");
     const deniedCommand = `${deniedExecutable} add agenthawk-host-denied`;
@@ -646,7 +677,7 @@ export async function verifyCodexHost({ codexEntry }) {
       if (error instanceof HostHarnessError) throw error;
       if (error?.code !== "ENOENT") throw new HostHarnessError("denied_marker_check_failed");
     }
-    if (neutralOutput !== "success")
+    if (!neutralScenarioPassed(process.platform, neutralOutput, neutralMarkerVerified))
       throw new HostHarnessError(`neutral_command_failed:${neutralOutput}:denial_passed`);
     return {
       schemaVersion: "1.0",
