@@ -174,6 +174,10 @@ describe("CLI runner JSON parser failures", () => {
     ["missing policy file", ["policy", "validate", "--format", "json"]],
     ["missing approvals file", ["approvals", "verify", "--format", "json"]],
     ["unknown doctor option", ["doctor", "--format", "json", "--unknown"]],
+    [
+      "unknown Codex status option",
+      ["integrations", "codex", "status", "--format", "json", "--unknown"],
+    ],
     ["unknown init option", ["init", "--format", "json", "--unknown"]],
   ])("envelopes %s", async (_label, args) => {
     let output = "";

@@ -8,6 +8,7 @@ export default defineConfig({
         "packages/core/src/**/*.ts",
         "packages/cli/src/action-evaluation.ts",
         "packages/cli/src/codex-project-hook-format.ts",
+        "packages/cli/src/codex-project-hook-status.ts",
         "packages/cli/src/codex-pretooluse.ts",
         "packages/cli/src/doctor.ts",
         "packages/cli/src/hook-json.ts",

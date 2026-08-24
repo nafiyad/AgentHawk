@@ -3,12 +3,16 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildCodexProjectHookArtifacts,
+  codexProjectHookLockSchema,
   codexProjectHookReceiptSchema,
   computeCodexProjectRootBinding,
   createCodexProjectHookIdentifier,
   parseCodexProjectHookLaunchArguments,
+  parseCodexProjectHookReceiptBytes,
   quotePosixArgument,
   quotePowerShellLiteral,
+  verifyCodexProjectHookBytes,
+  verifyCodexProjectHookReceiptBinding,
 } from "../src/codex-project-hook-format.js";
 
 const installationId = "00".repeat(32);
@@ -118,6 +122,11 @@ describe("Codex project-hook format", () => {
     expect(first.hookBytes.at(-1)).toBe(0x0a);
     expect(first.hookBytes.length).toBeLessThanOrEqual(65_536);
     expect(first.receiptBytes.at(-1)).toBe(0x0a);
+    expect(parseCodexProjectHookReceiptBytes(first.receiptBytes)).toEqual(first.receipt);
+    expect(
+      parseCodexProjectHookReceiptBytes(Buffer.concat([Buffer.from(" "), first.receiptBytes])),
+    ).toBeUndefined();
+    expect(parseCodexProjectHookReceiptBytes(Buffer.from([0xff]))).toBeUndefined();
     expect(
       codexProjectHookReceiptSchema.parse(JSON.parse(first.receiptBytes.toString("utf8"))),
     ).toEqual(first.receipt);
@@ -129,6 +138,61 @@ describe("Codex project-hook format", () => {
     expect(first.receiptBytes.toString("utf8")).not.toContain(input.adapterEntry);
     expect(first.hookBytes.toString("utf8")).toContain(installationId);
     expect(first.hookBytes.toString("utf8")).toContain(first.receipt.rootBinding);
+    expect(verifyCodexProjectHookBytes(first.receipt, first.hookBytes)).toEqual({
+      adapterEntry: input.adapterEntry,
+      nodeExecutable: input.nodeExecutable,
+    });
+    expect(
+      verifyCodexProjectHookReceiptBinding(
+        first.receipt,
+        input.repositoryRoot,
+        input.repositoryIdentity,
+      ),
+    ).toBe(true);
+    expect(
+      verifyCodexProjectHookReceiptBinding(first.receipt, input.repositoryRoot, {
+        dev: 7n,
+        ino: 43n,
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects drifted or semantically foreign hook bytes", () => {
+    const artifacts = buildCodexProjectHookArtifacts({
+      adapterBytes: Buffer.from("adapter"),
+      adapterEntry: resolve("adapter.js"),
+      adapterVersion: "0.1.0-alpha.1",
+      installationId,
+      nodeExecutable: resolve("node"),
+      nodeVersion: "v22.18.0",
+      repositoryIdentity: { dev: 1n, ino: 2n },
+      repositoryRoot,
+    });
+    const changed = Buffer.from(artifacts.hookBytes);
+    changed[10] = changed[10] === 0x61 ? 0x62 : 0x61;
+    expect(verifyCodexProjectHookBytes(artifacts.receipt, changed)).toBeUndefined();
+    expect(
+      verifyCodexProjectHookBytes(artifacts.receipt, Buffer.from('{"hooks":{}}\n')),
+    ).toBeUndefined();
+  });
+
+  it("accepts only the closed operation-lock record", () => {
+    expect(
+      codexProjectHookLockSchema.parse({ operationId: "ab".repeat(32), schemaVersion: "1.0" }),
+    ).toEqual({ operationId: "ab".repeat(32), schemaVersion: "1.0" });
+    expect(() =>
+      codexProjectHookLockSchema.parse({
+        operationId: "AB".repeat(32),
+        schemaVersion: "1.0",
+      }),
+    ).toThrow();
+    expect(() =>
+      codexProjectHookLockSchema.parse({
+        operationId: "ab".repeat(32),
+        schemaVersion: "1.0",
+        pid: 1,
+      }),
+    ).toThrow();
   });
 
   it.each(["space value", "quote'value", "dollar$value", "tick`value", "%!^value"])(

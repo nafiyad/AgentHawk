@@ -1,6 +1,6 @@
 # CLI JSON contract
 
-AgentHawk JSON output is intended for automation and coding-agent integrations. Successful `init`, `check`, `scan`, `diff`, `policy validate`, `approvals verify`, and `doctor` reports and CLI failures use schema version `1.0`. Consumers must parse the process exit code and JSON together and fail closed on malformed output, unsupported schema versions, or unknown values.
+AgentHawk JSON output is intended for automation and coding-agent integrations. Successful `init`, `check`, `scan`, `diff`, `policy validate`, `approvals verify`, `doctor`, and `integrations codex status` reports and CLI failures use schema version `1.0`. Consumers must parse the process exit code and JSON together and fail closed on malformed output, unsupported schema versions, or unknown values.
 
 ## Compatibility policy
 
@@ -35,6 +35,8 @@ Stable error codes are `invalid_input`, `output_limit`, and `internal_error`. Me
 
 Only exit `0` plus an explicitly acceptable parsed verdict permits an automated agent to proceed with dependency admission. Strict mode is required for admission workflows. For `policy validate`, exit `0` plus a schema-valid report with `valid: true` means only that the policy file passed the current file and configuration schemas; it is not a package verdict. For `approvals verify`, the same combination means only that the approval file is structurally valid; consumers must inspect its time-state counts and must not infer policy applicability. For `doctor`, exit `0` plus `ready: true` means only that its bounded documented checks passed; exit `1` is diagnostic attention, not a dependency verdict. For `init`, exit `0` means every expected fixed target was created or matched the release-pinned bytes exactly. Exit `2` means a collision or unsafe precondition prevented initialization; exit `4` includes unexpected publication or unconfirmed-cleanup failures. Init never uses exit `1` or `3`.
 
+For `integrations codex status`, exit `0` means either no owned state exists and no mutation blocker was observed, or an exact owned pair has current local artifacts and no blocker. Exit `1` means the completed snapshot requires attention; exit `4` is an unexpected reporting failure. The report is not an admission verdict and never proves Codex loaded, trusted, enabled, or executed a hook.
+
 ## Report families
 
 - `check npm` returns a package target, verdict and original verdict, findings, provider status, policy/evidence digests, optional approval metadata, and a human-readable exit-code meaning.
@@ -44,8 +46,9 @@ Only exit `0` plus an explicitly acceptable parsed verdict permits an automated 
 - `approvals verify` returns command identity, tool/file schema versions, bounded time-eligible/expired/not-yet-effective counts, one checked instant, and a semantic approval digest. It does not return the requested path or approval contents, apply an approval, or make a provider request.
 - `doctor` returns fixed runtime, package-alignment, cache, Git, configuration, and integration-presence states. It returns no paths, contents, environment values, child-process diagnostics, or provider data.
 - `init` returns its selected integration and fixed created/unchanged target identifiers. It returns no absolute paths, contents, temporary names, filesystem diagnostics, or provider data.
+- `integrations codex status` returns one of seven ownership states, independent current-artifact readiness, ordered configuration/operation/linked-worktree blockers, and a fixed remediation enum. It returns no absolute paths, identifiers, hashes, file contents, environment values, trust assertion, or provider data and performs no write.
 
-Runtime schemas are exported by `@agenthawk/core` as `evaluationReportSchema`, `scanReportSchema`, `diffReportSchema`, `inventoryReportSchema`, `policyValidationReportSchema`, `approvalValidationReportSchema`, `doctorReportSchema`, `initReportSchema`, and `cliErrorReportSchema`.
+Runtime schemas are exported by `@agenthawk/core` as `evaluationReportSchema`, `scanReportSchema`, `diffReportSchema`, `inventoryReportSchema`, `policyValidationReportSchema`, `approvalValidationReportSchema`, `doctorReportSchema`, `initReportSchema`, `codexProjectHookStatusReportSchema`, and `cliErrorReportSchema`.
 
 ## Planned native-hook internal contracts
 

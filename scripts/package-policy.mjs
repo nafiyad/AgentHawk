@@ -50,7 +50,7 @@ export const packageSpecifications = [
   {
     name: "@agenthawk/cli",
     directory: "packages/cli",
-    maximumBytes: 165_000,
+    maximumBytes: 195_000,
     paths: [
       "DISCLOSURE",
       "LICENSE",
@@ -63,6 +63,8 @@ export const packageSpecifications = [
       "dist/check.js",
       "dist/codex-project-hook-format.d.ts",
       "dist/codex-project-hook-format.js",
+      "dist/codex-project-hook-status.d.ts",
+      "dist/codex-project-hook-status.js",
       "dist/codex-pretooluse-entry.d.ts",
       "dist/codex-pretooluse-entry.js",
       "dist/codex-pretooluse.d.ts",

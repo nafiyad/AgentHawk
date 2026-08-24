@@ -30,6 +30,13 @@ This decision uses public primary sources, accessed 2026-08-24:
 - The same pinned loader [redirects linked-worktree hook declarations to the
   root checkout](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/config/src/loader/mod.rs#L1083-L1093)
   and [replaces worktree-local hooks with that root-checkout source](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/config/src/loader/mod.rs#L1590-L1613).
+- Git's [worktree documentation](https://git-scm.com/docs/git-worktree) defines
+  a linked worktree's private Git directory and shared common directory, while
+  [`git rev-parse`](https://git-scm.com/docs/git-rev-parse) documents canonical
+  absolute Git-directory output and absolute path formatting. Status therefore
+  detects linked worktrees from one bounded, shell-free metadata snapshot and
+  canonical directory identities instead of parsing the repository's `.git`
+  file itself.
 
 Codex combines matching hooks from multiple sources. A higher-precedence source
 does not replace a lower-precedence hook, and project `hooks.json` can coexist
@@ -196,12 +203,28 @@ would be implicit adoption and is outside this decision.
 | `owned_modified` | A valid root-bound receipt exists, but a present hook no longer matches its recorded published bytes | Human review; AgentHawk does not delete the changed hook |
 | `unsafe` | A target or parent is linked, aliased, unstable, unsupported, or has an unexpected type | No mutation |
 
-Readiness is separately `current`, `artifact_unavailable`, or `artifact_drift`.
+Readiness is separately `not_applicable`, `current`, `artifact_unavailable`, or
+`artifact_drift`. It is `not_applicable` when there is no valid root-bound
+receipt from which current artifacts can be compared. For a valid receipt,
+unavailable current artifacts produce `artifact_unavailable`, exact current
+artifacts produce `current`, and any available mismatch produces
+`artifact_drift`.
 It never changes `owned_exact` into an unowned state, so a still-identical old
 pair remains safely removable after Node moves, the package is upgraded, or the
 adapter artifact is unavailable. Mutation blockers are `config_collision` and
-`operation_locked`. `config_collision` prevents a fresh install or activation
-claim but never prevents removal of `owned_exact` or `owned_inactive`.
+`operation_locked`, plus `linked_worktree` for the first installer's unsupported
+Git layout. `config_collision` prevents a fresh install or activation claim but
+never prevents removal of `owned_exact` or `owned_inactive`. A linked worktree
+remains safe to observe and is not relabeled `unsafe`; it is not installable
+because the pinned host redirects project hooks to the main checkout.
+
+Linked-worktree detection uses one `git rev-parse --path-format=absolute
+--show-toplevel --absolute-git-dir --git-common-dir` argument-array invocation,
+strictly parses exactly three bounded absolute output lines, canonicalizes and
+identity-checks both Git directories, and reports `linked_worktree` when their
+canonical identities differ. Equal identities admit an ordinary main worktree,
+a submodule, or a main worktree using `--separate-git-dir`. Mutation must repeat
+this snapshot under its operation lock and fail if any value or identity changes.
 
 The first implementation does not guess that a lock is stale or break it by
 process identifier or elapsed time; both checks are vulnerable to reuse and
@@ -217,6 +240,15 @@ absolute paths, installation identifiers, raw file contents, hook hashes, or
 adapter hashes. `owned_exact` plus `current` means only that AgentHawk's
 declaration is intact and its current artifacts match at the instant checked.
 It does not mean Codex loaded, trusted, enabled, or could execute the hook.
+
+The Node.js 22/24 filesystem API does not provide a portable handle-relative
+parent walk or a Windows equivalent of `O_NOFOLLOW`. Observation therefore
+rejects Node-reported symbolic links, non-regular types, canonical redirection,
+case aliases, hard links, and identity/size changes at its checks, but does not
+claim atomic protection from every reparse type, bind mount, or same-account
+filesystem race. Such a race can force a conservative `unsafe` or stale
+point-in-time observation. The later mutating slice must narrow its supported
+filesystem claims to the publication primitives it proves.
 
 ### Transaction and recovery ordering
 
@@ -323,9 +355,12 @@ quotes every launch argument for the named POSIX and Windows PowerShell forms,
 and strictly parses only the three fixed ordered launch declarations. This does
 not write configuration or activate the adapter.
 
-The next implementation slice can add only project-scoped `status`, `install`,
-and `remove`, transactional filesystem helpers, invocation-time pair
-verification, and the exact project-hook host harness. It must add adversarial tests for collisions,
+The next implementation slice adds only project-scoped, read-only `status`,
+including fixed-target observation, linked-worktree classification, strict
+ownership verification, separate readiness/blockers, and bounded redacted
+terminal/JSON output. A later slice can add `install` and `remove`, transactional
+filesystem helpers, invocation-time pair verification, and the exact project-hook
+host harness. Those slices must add adversarial tests for collisions,
 links and reparse points, identity races, cancellation at every publication
 boundary, abandoned locks, changed artifacts, interrupted install/removal, hostile
 file contents, and bounded redacted output on Windows, Linux, and macOS where
