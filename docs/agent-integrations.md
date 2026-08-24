@@ -50,9 +50,9 @@ commands; verify an installed version with `agenthawk --help`.
 
 No Claude Code native adapter is supported or installable. [ADR 0015](adr/0015-claude-code-hook-edge.md)
 pins local CLI `2.1.241` as the first research candidate and keeps `Bash` and
-`PowerShell` as distinct shell rows. Claude settings hooks can run with full user
-permissions before interactive workspace trust and in untrusted `-p`/SDK folders;
-startup failure, malformed output, and command-hook timeout are non-blocking.
+`PowerShell` as distinct shell rows. Interactive hooks wait for current-folder
+or inherited parent trust, while `-p`/SDK has no trust dialog. Hooks run with full
+user permissions; startup failure, malformed output, and timeout are non-blocking.
 The next implementation slice is fixtures and an adapter process only. Continue
 to use the advisory `CLAUDE.md` template and protected `scan`/`diff` CI.
 

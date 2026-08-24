@@ -24,10 +24,11 @@ The Codex hook request path treats the complete payload, declared working direct
 
 The Claude Code proposal is a separate untrusted edge. Canonical `Bash` and
 `PowerShell` payloads, settings sources, shell grammars, host modes, and failure
-semantics cannot inherit Codex evidence. Project settings hooks may execute with
-the user's authority and inherited environment before interactive workspace
-trust and in untrusted `-p`/SDK folders. Bare mode, settings-source selection,
-managed-only policy, or hook disabling can exclude them. [ADR 0015](adr/0015-claude-code-hook-edge.md)
+semantics cannot inherit Codex evidence. Interactive settings hooks wait for
+current-folder trust or previously accepted parent trust that extends to the
+folder; `-p`/SDK has no trust dialog. Hooks execute with the user's authority and
+inherited environment. Bare mode, settings-source selection, managed-only policy,
+or hook disabling can exclude them. [ADR 0015](adr/0015-claude-code-hook-edge.md)
 pins the research candidate but installs nothing and keeps every Claude row
 unsupported.
 
@@ -94,7 +95,7 @@ The Codex rows describe an implemented but unsupported compatibility candidate p
 | Status follows a linked/aliased/changed target, leaks private state, or confuses artifact readiness with host activation | Observe only fixed contained targets twice; reject links, hard links, unexpected types, aliases, oversize content, identity/size changes, malformed closed records, and root-binding/hook/digest mismatch; emit only bounded ownership/readiness/blocker enums and state explicitly that host activation is unproven | Portable Node APIs cannot atomically exclude every parent race, Windows reparse type, bind mount, or hostile/network filesystem behavior; a local writer can mutate state after the snapshot |
 | A linked worktree receives a hook file that the pinned Codex host does not load | Detect and reject linked worktrees before mutation; Codex 0.149 redirects project hooks to the root checkout while AgentHawk treats the worktree as an independent authority | Future Codex behavior can change; coordinated root-checkout installation needs a separate ownership decision |
 | A vendor without neutral output forces AgentHawk to auto-allow, or a cloud surface hides warnings/provider failure | Keep Cursor unsupported until a real fail-closed harness proves neutral no-auto-approve output; treat Copilot cloud npm/OSV reachability as unavailable until administrator-enabled and tested; deny warnings without a visible neutral channel | Vendor contracts, enterprise firewall policy, and cloud UX can change independently |
-| Claude settings run with repository-selected authority before trust | Treat project hook configuration and every payload/environment value as hostile; install nothing until a separate collision/ownership decision; require isolated exact-artifact tests for interactive and `-p` sources | A repository writer can replace the hook or settings, and a hook executes with the user's operating-system authority |
+| Claude settings run under inherited trust or dialog-free programmatic mode | Treat project hook configuration and every payload/environment value as hostile; prove current-folder and inherited parent trust separately from dialog-free `-p`/SDK; install nothing until a separate collision/ownership decision | A repository writer can replace the hook or settings, and a hook executes with the user's operating-system authority |
 | Bash-only coverage is generalized to Windows PowerShell | Match canonical `Bash|PowerShell`, preserve distinct dialects, and keep PowerShell dependency admission unsupported until a separate restricted grammar and exact-host row pass | Alternate tools, aliases, scripts, or shells that do not reach a proven hook remain bypasses |
 | Claude command-hook infrastructure failure is described as fail closed | Prove structured denial and exit-2 emergency denial, but document that missing executable, startup failure, non-2 error, malformed output, and host timeout continue to normal permissions; retain protected `scan`/`diff` CI as the final gate | An unavailable hook can allow the host to proceed under its own policy |
 | Parallel sibling hooks or direct shell mode bypass the intended stop | Prove no alternate shell tool or direct `!` path bypasses `PreToolUse`; disclose that all matching hooks run in parallel and AgentHawk cannot prevent sibling side effects | Vendor execution order and future tool surfaces can change; a sibling hook can act before denial is known |
