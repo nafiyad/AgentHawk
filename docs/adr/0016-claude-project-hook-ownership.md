@@ -49,13 +49,16 @@ enforcing.
 
 ### Scope and fixed targets
 
-The first lifecycle candidate is explicit, project-local, and machine-specific.
+The first lifecycle candidate is explicit, project-local, and machine-specific
+only when Git proves its fixed path is currently ignored.
 It is not part of `agenthawk init` and will not edit the shareable
 `.claude/settings.json`. A later, separately reviewed transaction may exclusively
 own a previously absent `.claude/settings.local.json` containing only one
 AgentHawk matcher group. Using the local file avoids rewriting public maintainer
-configuration while keeping the runtime-specific absolute command out of the
-repository's portable settings.
+configuration. A later installer must refuse unless `git check-ignore -q --
+.claude/settings.local.json` succeeds immediately before publication; this
+reduces accidental publication of runtime-specific absolute paths but cannot
+prevent a user from force-adding an ignored file.
 
 The first read-only preflight may observe only these fixed contained targets after loading
 the canonical co-root repository authority:
@@ -71,6 +74,15 @@ and contacts no provider or network service. It does not create a missing
 directory or file. Linked worktrees remain observable as independent AgentHawk
 roots; host discovery behavior must be proven before a later installer admits
 them.
+
+The preflight runs only bounded, shell-free Git argument arrays. In addition to
+the existing topology query, `git check-ignore -q --
+.claude/settings.local.json` observes effective repository, parent, global, and
+per-repository excludes without returning pattern content or a path. Exit `0`
+means `ignored`, exit `1` means `not_ignored`, and every other result is
+`unknown` with a blocker. A tracked path is not accepted as ignored. Any later
+transaction must repeat this check under its operation lock and fail if the
+result changed. AgentHawk does not add an ignore rule or alter Git configuration.
 
 The observer uses bounded directory enumeration, fatal UTF-8, duplicate-key
 rejection, regular-file and containment checks, exact bigint file identities,
@@ -143,8 +155,9 @@ security-relevant project declarations:
   creates no ownership claim.
 
 AgentHawk does not set `disableAllHooks: false`, remove sibling hooks, edit an
-unrelated project setting, change `.gitignore`, or infer safety from a syntactic
-match. User, managed, plugin, session, SDK, `--settings`, `--bare`, selected
+unrelated project setting, change `.gitignore` or another exclude source, or
+infer safety from a syntactic match. User, managed, plugin, session, SDK,
+`--settings`, `--bare`, selected
 setting sources, and workspace trust remain unobserved external activation
 conditions. `allowManagedHooksOnly` in particular can suppress the project-local
 candidate even when every repository-owned byte is exact.
@@ -152,7 +165,7 @@ candidate even when every repository-owned byte is exact.
 ### Read-only preflight state model
 
 Before an owned receipt format exists, status must not claim ownership or artifact
-readiness. The first command is a collision preflight with four bounded
+readiness. The first command is a collision preflight with five bounded
 observations:
 
 | Field | Values | Meaning |
@@ -161,6 +174,7 @@ observations:
 | `sharedSettings` | `absent`, `present`, `unsafe` | Whether the maintainer-owned shared settings path was safely observed |
 | `sharedPreToolUse` | `absent`, `present`, `unknown` | Whether bounded strict shared JSON declares any `PreToolUse` matcher group |
 | `sharedDisableAllHooks` | `false`, `true`, `unknown` | The literal shared-project declaration only, never an effective merged value |
+| `localSettingsIgnored` | `ignored`, `not_ignored`, `unknown` | The current quiet Git ignore result for the exact future local-settings path; it is a publication precondition, not a guarantee against force-add or later configuration change |
 
 Malformed, duplicate-bearing, oversized, non-object, or unsupported shared JSON
 cannot establish either nested observation and produces `unsafe`, `unknown`,
@@ -171,17 +185,27 @@ exclusive install.
 
 The initial blockers are bounded enums:
 
+- `local_settings_unsafe`;
+- `shared_settings_unsafe`;
 - `local_settings_present`;
+- `local_settings_not_ignored`;
+- `ignore_status_unavailable`;
 - `project_hooks_present`;
 - `project_hooks_declared_disabled`;
 - `linked_worktree` until exact host discovery is proven.
 
+Blockers are deduplicated and emitted in exactly that order. An unsafe local
+observation still permits bounded shared and ignore observation but never
+produces a healthy precondition. An unsafe shared observation fixes both nested
+shared fields to `unknown`; it cannot be hidden by local absence or ignore state.
+
 The report also carries `activation: "unproven"` as a fixed explicit boundary.
-It returns only schema/tool version, command, the four observations, blockers,
+It returns only schema/tool version, command, the five observations, blockers,
 activation, `providersContacted: false`, and a stable exit meaning. It never
 returns paths, commands, settings, identifiers, digests, file contents, user or
-managed state, environment values, or parser errors. Both settings absent with
-no observable blocker is healthy only as a future installation-precondition
+managed state, environment values, or parser errors. Both settings absent,
+`localSettingsIgnored: "ignored"`, and no observable blocker is healthy only as
+a future installation-precondition
 result, never healthy enforcement.
 
 The eventual receipt-aware lifecycle may add `owned_inactive`, `owned_exact`,
@@ -196,7 +220,8 @@ The next slice is read-only `agenthawk integrations claude status`. It must:
 
 1. reuse canonical co-root repository authority and bounded shell-free Git
    topology observation;
-2. observe only the two fixed settings targets twice without writes or provider calls;
+2. observe only the two fixed settings targets twice and the exact quiet Git
+   ignore/topology queries without writes or provider calls;
 3. strictly distinguish absent, present, and unsafe settings state without
    parsing or adopting foreign local settings;
 4. parse project settings with fatal UTF-8 and duplicate rejection while
@@ -205,8 +230,9 @@ The next slice is read-only `agenthawk integrations claude status`. It must:
    activation is unproven;
 6. include adversarial tests for aliases, links, hard links, identity changes,
    oversized/deep/wide shared JSON, duplicate keys, hostile strings,
-   cancellation, linked worktrees, no-provider behavior, and every observation/
-   blocker precedence; and
+   cancellation, linked worktrees, no-provider behavior, every observation/
+   blocker precedence, ignore changes/failures, tracked or force-added local
+   settings, and no raw ignore-pattern output; and
 7. update package allowlists and packed-consumer smoke without creating or
    changing `.claude` state.
 
@@ -237,7 +263,7 @@ invocation-time verification, and exact-host discovery.
 
 ## Security implications
 
-Exclusive ownership of a previously absent local settings file avoids rewriting
+Future exclusive ownership of a previously absent and currently ignored local settings file avoids rewriting
 maintainer data and makes later exact removal possible. It does not prevent a
 same-account repository writer from modifying or deleting the hook, receipt,
 package, runtime, or lock. It also cannot prevent parallel sibling-hook effects,
@@ -252,7 +278,7 @@ repository gate.
 ## Consequences
 
 The design permits a small read-only status implementation while forbidding
-configuration mutation. Repositories that already use local Claude settings
-will be ineligible for the first lifecycle candidate unless a future ownership
+configuration mutation. Repositories that already use local Claude settings or
+do not currently ignore the exact local-settings path will be ineligible for the first lifecycle candidate unless a future ownership
 decision safely expands the model. No Claude Code native row becomes supported
 by accepting this ADR or implementing status.

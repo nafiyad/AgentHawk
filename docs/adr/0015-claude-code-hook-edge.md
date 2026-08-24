@@ -109,10 +109,10 @@ Implementation proceeds in reviewable slices:
 
 1. closed Claude payload parser, output serializer, emergency path, golden
    `Bash`/`PowerShell` fixtures, and adversarial process tests;
-2. an explicit collision/ownership ADR and status-only inspection before any
+2. the accepted collision ADR followed by status-only preflight before any
    configuration mutation;
-3. collision-safe install/remove and invocation-time verification, if the
-   ownership decision is accepted;
+3. a root-bound format/transaction amendment, then collision-safe install/remove
+   and invocation-time verification if every prerequisite is accepted;
 4. an isolated exact-artifact CLI harness proving loaded source, effective tool
    inventory, neutral execution, every denial outcome, malformed denial, timeout
    behavior, credential-scrub sentinels, direct `!` shell behavior, zero-provider
@@ -137,7 +137,9 @@ contracts but inherit no Codex parser, serializer, configuration, lifecycle,
 host result, timeout claim, or support status.
 
 Every Claude native surface remains unsupported. The closed fixture adapter is
-implemented; configuration mutation still waits for its own ownership decision.
+implemented; configuration mutation still waits for root-bound format,
+transaction, recovery, invocation-verification, and exact-host gates after ADR
+0016's read-only preflight.
 
 ## Alternatives
 
@@ -180,5 +182,5 @@ interception, malware detection, tamper resistance, or proof of package safety.
 This decision corrects the roadmap's older trust summary, fixes the version and
 artifact candidate, and bounds the implemented fixture edge without activating a
 host integration. It deliberately postpones PowerShell admission,
-configuration ownership, host activation, and support claims until their own
-evidence gates pass.
+root-bound ownership artifacts, transactional lifecycle, host activation, and
+support claims until their own evidence gates pass.
