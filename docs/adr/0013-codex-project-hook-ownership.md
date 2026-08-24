@@ -235,7 +235,8 @@ and remove only that fixed file while exclusive access is maintained. If no
 such exclusion can be established, the lock is preserved. AgentHawk never
 automates this recovery or treats PID/time as proof that deletion is race-free.
 
-Output uses these bounded categories and remediation text. It does not reveal
+Output uses only these bounded state categories; the read-only slice does not
+promise install/remove remediation before those commands exist. It does not reveal
 absolute paths, installation identifiers, raw file contents, hook hashes, or
 adapter hashes. `owned_exact` plus `current` means only that AgentHawk's
 declaration is intact and its current artifacts match at the instant checked.

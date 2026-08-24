@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   open,
+  opendir,
   readdir,
   realpath,
   rename,
@@ -13,7 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildCodexProjectHookArtifacts } from "../src/codex-project-hook-format.js";
@@ -40,7 +41,6 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
       ownership: "absent",
       readiness: "not_applicable",
       blockers: [],
-      remediation: "install_available",
       providersContacted: false,
     });
     expect(await readdir(root)).toEqual(before);
@@ -58,7 +58,6 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
       ownership: "owned_exact",
       readiness: "current",
       blockers: ["config_collision", "operation_locked"],
-      remediation: "remove_owned",
       providersContacted: false,
     });
   });
@@ -78,7 +77,6 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
     expect(await status(fixture)).toMatchObject({
       ownership: "owned_modified",
       readiness: "current",
-      remediation: "inspect_modified_hook",
     });
     await rm(fixture.dependencies.adapterEntry);
     expect(await status(fixture)).toMatchObject({
@@ -191,15 +189,23 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
     expect(await status(fixture)).toMatchObject({ ownership: "unsafe" });
 
     const root = await gitRoot();
+    let reads = 0;
+    let closed = false;
     const oversized = await statusCodexProjectHook(
       { format: "json" },
       {
         cwd: root,
-        readDirectory: async (path) =>
-          path === root ? Array.from({ length: 4_097 }, (_, index) => `entry-${index}`) : [],
+        openDirectory: async () => ({
+          close: async () => {
+            closed = true;
+          },
+          read: async () => ({ name: `entry-${reads++}` }),
+        }),
       },
     );
     expect(JSON.parse(oversized.output)).toMatchObject({ ownership: "unsafe" });
+    expect(reads).toBe(4_097);
+    expect(closed).toBe(true);
   });
 
   it("reports a real linked worktree as an explicit blocker", async () => {
@@ -216,6 +222,7 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
       readiness: "not_applicable",
       blockers: ["linked_worktree"],
     });
+    expect(JSON.parse(result.output)).not.toHaveProperty("remediation");
     expect(result.exitCode).toBe(1);
   });
 
@@ -260,6 +267,13 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
     );
     expect(JSON.parse(malformed.output)).toMatchObject({ ownership: "unsafe", blockers: [] });
 
+    const dotted = `${root}${sep}.${sep}`;
+    const noncanonical = await statusCodexProjectHook(
+      { format: "json" },
+      { cwd: root, runTopologyGit: async () => `${dotted}\n${dotted}\n${dotted}\n` },
+    );
+    expect(JSON.parse(noncanonical.output)).toMatchObject({ ownership: "unsafe" });
+
     await mkdir(join(root, ".CODEX"));
     const alias = await statusCodexProjectHook({ format: "json" }, { cwd: root });
     expect(JSON.parse(alias.output)).toMatchObject({ ownership: "unsafe" });
@@ -278,12 +292,12 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
       { format: "json" },
       {
         cwd: root,
-        readDirectory: async (path) => {
-          if (path === root && ++rootReads === 5) {
+        openDirectory: async (path) => {
+          if (path === root && ++rootReads === 2) {
             await rename(join(root, ".codex"), join(root, ".codex-old"));
             await mkdir(join(root, ".codex"));
           }
-          return await readdir(path);
+          return await opendir(path);
         },
       },
     );
@@ -314,6 +328,30 @@ describe("Codex project-hook status", { timeout: 20_000 }, () => {
     await expect(
       statusCodexProjectHook({ format: "json", signal: controller.signal }, { cwd: root }),
     ).rejects.toThrow();
+  });
+
+  it("closes a directory when cancellation arrives during bounded enumeration", async () => {
+    const root = await gitRoot();
+    const controller = new AbortController();
+    let closed = false;
+    await expect(
+      statusCodexProjectHook(
+        { format: "json", signal: controller.signal },
+        {
+          cwd: root,
+          openDirectory: async () => ({
+            close: async () => {
+              closed = true;
+            },
+            read: async () => {
+              controller.abort(new Error("private cancellation reason"));
+              return { name: ".git" };
+            },
+          }),
+        },
+      ),
+    ).rejects.toThrow();
+    expect(closed).toBe(true);
   });
 
   it("closes an opened file when cancellation arrives during observation", async () => {

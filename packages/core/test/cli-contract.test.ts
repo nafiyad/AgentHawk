@@ -20,7 +20,6 @@ describe("CLI JSON contract", () => {
       ownership: "owned_exact",
       readiness: "current",
       blockers: ["config_collision", "operation_locked", "linked_worktree"],
-      remediation: "remove_owned",
       providersContacted: false,
     } as const;
     expect(codexProjectHookStatusReportSchema.parse(report)).toEqual(report);
@@ -41,15 +40,16 @@ describe("CLI JSON contract", () => {
         .success,
     ).toBe(false);
     expect(
-      codexProjectHookStatusReportSchema.safeParse({ ...report, remediation: "install_available" })
-        .success,
+      codexProjectHookStatusReportSchema.safeParse({
+        ...report,
+        remediation: "install_available",
+      }).success,
     ).toBe(false);
     expect(
       codexProjectHookStatusReportSchema.safeParse({
         ...report,
         ownership: "absent",
         readiness: "not_applicable",
-        remediation: "install_available",
         privatePath: "/private/repository",
       }).success,
     ).toBe(false);

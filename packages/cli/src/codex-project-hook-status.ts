@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { type BigIntStats, constants } from "node:fs";
-import { type FileHandle, lstat, open, readdir, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { type FileHandle, lstat, open, opendir, realpath } from "node:fs/promises";
+import { isAbsolute, join, posix, relative, resolve, sep, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type CodexProjectHookBlocker,
@@ -58,10 +58,15 @@ export interface CodexProjectHookStatusDependencies {
   readonly loadAuthority?: typeof loadRepositoryAuthority;
   readonly nodeExecutable?: string;
   readonly nodeVersion?: string;
+  readonly openDirectory?: (path: string) => Promise<DirectoryReader>;
   readonly openFile?: typeof open;
-  readonly readDirectory?: (path: string) => Promise<string[]>;
   readonly realPath?: typeof realpath;
   readonly runTopologyGit?: typeof runBoundedGit;
+}
+
+interface DirectoryReader {
+  read(): Promise<{ readonly name: string } | null>;
+  close(): Promise<void>;
 }
 
 interface FixedFileObservation {
@@ -108,7 +113,6 @@ export async function statusCodexProjectHook(
       ownership: result.ownership,
       readiness: await result.readiness,
       blockers: result.blockers,
-      remediation: remediation(result.ownership),
       providersContacted: false,
     });
     throwIfCancelled(options);
@@ -148,7 +152,6 @@ function unsafeResult(format: OutputFormat): CheckResult {
     ownership: "unsafe",
     readiness: "not_applicable",
     blockers: [],
-    remediation: "resolve_unsafe_state",
     providersContacted: false,
   });
   return {
@@ -176,12 +179,14 @@ async function observeSnapshot(
   options: OperationContext,
   dependencies: CodexProjectHookStatusDependencies,
 ): Promise<Snapshot> {
+  const directoryListings = new Map<string, Promise<readonly string[]>>();
   const rootSignature = await assertRootIdentity(authority, options, dependencies);
   const topology = await detectLinkedWorktree(authority, options, dependencies);
   const hook = await observeFixedFile(
     authority.repositoryRoot,
     [".codex", "hooks.json"],
     maximumHookBytes,
+    directoryListings,
     options,
     dependencies,
   );
@@ -189,6 +194,7 @@ async function observeSnapshot(
     authority.repositoryRoot,
     [".agenthawk", "integrations", "codex-v1.json"],
     maximumReceiptBytes,
+    directoryListings,
     options,
     dependencies,
   );
@@ -196,6 +202,7 @@ async function observeSnapshot(
     authority.repositoryRoot,
     [".codex", "config.toml"],
     maximumConfigBytes,
+    directoryListings,
     options,
     dependencies,
   );
@@ -203,6 +210,7 @@ async function observeSnapshot(
     authority.repositoryRoot,
     [".agenthawk-codex-integration.lock"],
     maximumLockBytes,
+    directoryListings,
     options,
     dependencies,
   );
@@ -362,7 +370,7 @@ function parseTopologyOutput(output: string): readonly [string, string, string] 
   const values = match.slice(1) as [string, string, string];
   for (const value of values) {
     if (
-      !isAbsolute(value) ||
+      !isCanonicalNativeTopologyPath(value) ||
       value.length > 16_384 ||
       Buffer.byteLength(value, "utf8") > 16_384 ||
       /\p{C}/u.test(value)
@@ -403,13 +411,14 @@ async function observeFixedFile(
   root: string,
   segments: readonly string[],
   maximumBytes: number,
+  directoryListings: Map<string, Promise<readonly string[]>>,
   options: OperationContext,
   dependencies: CodexProjectHookStatusDependencies,
 ): Promise<FixedFileObservation> {
   let parent = root;
   const parentSignatures: string[] = [];
   for (const segment of segments.slice(0, -1)) {
-    const state = await exactEntry(parent, segment, options, dependencies);
+    const state = await exactEntry(parent, segment, directoryListings, options, dependencies);
     if (state === "absent") {
       return { state: "absent", signature: `absent:${parentSignatures.join("|")}` };
     }
@@ -419,7 +428,7 @@ async function observeFixedFile(
   }
   const name = segments.at(-1);
   if (!name) throw new Error("Fixed path is invalid.");
-  const state = await exactEntry(parent, name, options, dependencies);
+  const state = await exactEntry(parent, name, directoryListings, options, dependencies);
   if (state === "absent") {
     return { state: "absent", signature: `absent:${parentSignatures.join("|")}` };
   }
@@ -477,21 +486,58 @@ async function observeFixedFile(
 async function exactEntry(
   parent: string,
   expected: string,
+  directoryListings: Map<string, Promise<readonly string[]>>,
   options: OperationContext,
   dependencies: CodexProjectHookStatusDependencies,
 ): Promise<"absent" | "present"> {
   throwIfCancelled(options);
-  const entries = await (dependencies.readDirectory ?? (async (path) => await readdir(path)))(
-    parent,
-  );
+  let listing = directoryListings.get(parent);
+  if (!listing) {
+    listing = readBoundedDirectory(parent, options, dependencies);
+    directoryListings.set(parent, listing);
+  }
+  const entries = await listing;
   throwIfCancelled(options);
-  if (entries.length > maximumDirectoryEntries) throw new Error("Directory is too large.");
   const expectedKey = entryKey(expected);
   const equivalents = entries.filter((entry) => entryKey(entry) === expectedKey);
   if (equivalents.some((entry) => entry !== expected) || equivalents.length > 1) {
     throw new Error("Fixed path has an alias collision.");
   }
   return entries.includes(expected) ? "present" : "absent";
+}
+
+async function readBoundedDirectory(
+  path: string,
+  options: OperationContext,
+  dependencies: CodexProjectHookStatusDependencies,
+): Promise<readonly string[]> {
+  throwIfCancelled(options);
+  const directory = await (dependencies.openDirectory ?? opendir)(path);
+  const entries: string[] = [];
+  let readFailed = false;
+  let readError: unknown;
+  try {
+    while (true) {
+      throwIfCancelled(options);
+      const entry = await directory.read();
+      throwIfCancelled(options);
+      if (!entry) break;
+      entries.push(entry.name);
+      if (entries.length > maximumDirectoryEntries) throw new Error("Directory is too large.");
+    }
+  } catch (error) {
+    readFailed = true;
+    readError = error;
+  }
+  let closeError: unknown;
+  try {
+    await directory.close();
+  } catch (error) {
+    if (!hasErrorCode(error, "ERR_DIR_CLOSED")) closeError = error;
+  }
+  if (readFailed) throw readError;
+  if (closeError) throw closeError;
+  return entries;
 }
 
 async function stableContainedDirectory(
@@ -628,24 +674,28 @@ function entryKey(value: string): string {
   return value.normalize("NFKC").toLowerCase();
 }
 
+function isCanonicalNativeTopologyPath(value: string): boolean {
+  if (process.platform !== "win32") {
+    return (
+      posix.isAbsolute(value) && posix.normalize(value) === value && posix.resolve(value) === value
+    );
+  }
+  const native = value.replaceAll("/", "\\");
+  const fullyQualified =
+    /^[A-Za-z]:\\/u.test(native) || /^\\\\[^\\]+\\[^\\]+(?:\\|$)/u.test(native);
+  return fullyQualified && win32.normalize(native) === native && win32.resolve(native) === native;
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
+
 function directorySignature(observation: { path: string; stats: BigIntStats }): string {
   return `${observation.path}:${statSignature(observation.stats, "directory")}`;
 }
 
 function inspectBigInt(path: string): Promise<BigIntStats> {
   return lstat(path, { bigint: true });
-}
-
-function remediation(ownership: CodexProjectHookOwnership): string {
-  return {
-    absent: "install_available",
-    owned_inactive: "remove_then_install",
-    owned_exact: "remove_owned",
-    unowned_hook: "inspect_unowned_hook",
-    record_collision: "inspect_receipt_collision",
-    owned_modified: "inspect_modified_hook",
-    unsafe: "resolve_unsafe_state",
-  }[ownership];
 }
 
 function renderStatus(report: ReturnType<typeof codexProjectHookStatusReportSchema.parse>): string {
@@ -656,7 +706,6 @@ function renderStatus(report: ReturnType<typeof codexProjectHookStatusReportSche
     `Ownership: ${report.ownership}`,
     `Readiness: ${report.readiness}`,
     `Blockers: ${report.blockers.length === 0 ? "none" : report.blockers.join(", ")}`,
-    `Remediation: ${report.remediation}`,
     "",
     "This bounded snapshot does not prove Codex loaded, trusted, enabled, or executed the hook.",
     "No provider was contacted and no file was changed.",

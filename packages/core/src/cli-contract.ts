@@ -233,16 +233,6 @@ export const codexProjectHookBlockerSchema = z.enum([
 ]);
 export type CodexProjectHookBlocker = z.infer<typeof codexProjectHookBlockerSchema>;
 
-export const codexProjectHookRemediationSchema = z.enum([
-  "install_available",
-  "remove_then_install",
-  "remove_owned",
-  "inspect_unowned_hook",
-  "inspect_receipt_collision",
-  "inspect_modified_hook",
-  "resolve_unsafe_state",
-]);
-
 export const codexProjectHookStatusReportSchema = z
   .object({
     schemaVersion: z.literal("1.0"),
@@ -251,7 +241,6 @@ export const codexProjectHookStatusReportSchema = z
     ownership: codexProjectHookOwnershipSchema,
     readiness: codexProjectHookReadinessSchema,
     blockers: z.array(codexProjectHookBlockerSchema).max(3),
-    remediation: codexProjectHookRemediationSchema,
     providersContacted: z.literal(false),
   })
   .strict()
@@ -272,18 +261,6 @@ export const codexProjectHookStatusReportSchema = z
     );
     if ((report.readiness === "not_applicable") === hasValidReceipt) {
       context.addIssue({ code: "custom", message: "Codex status readiness is inconsistent." });
-    }
-    const remediationByOwnership = {
-      absent: "install_available",
-      owned_inactive: "remove_then_install",
-      owned_exact: "remove_owned",
-      unowned_hook: "inspect_unowned_hook",
-      record_collision: "inspect_receipt_collision",
-      owned_modified: "inspect_modified_hook",
-      unsafe: "resolve_unsafe_state",
-    } as const;
-    if (report.remediation !== remediationByOwnership[report.ownership]) {
-      context.addIssue({ code: "custom", message: "Codex status remediation is inconsistent." });
     }
   });
 export type CodexProjectHookStatusReport = z.infer<typeof codexProjectHookStatusReportSchema>;
