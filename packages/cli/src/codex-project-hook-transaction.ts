@@ -53,6 +53,7 @@ export interface CodexProjectHookLifecycleOptions extends OperationContext {
 
 export interface CodexProjectHookTransactionDependencies
   extends CodexProjectHookStatusDependencies {
+  readonly beforeUnlink?: (path: string) => Promise<void> | void;
   readonly checkpoint?: (name: TransactionCheckpoint) => Promise<void> | void;
   readonly createIdentifier?: () => string;
   readonly linkFile?: typeof link;
@@ -119,23 +120,31 @@ export async function installCodexProjectHook(
   const operationId = identifier(dependencies);
   let operationLock: OperationLock | undefined;
   let staging: TrackedDirectory | undefined;
+  let hookParent: TrackedDirectory | undefined;
+  let receiptParent: TrackedDirectory | undefined;
   const staged: TrackedFile[] = [];
   let receiptPublished: TrackedFile | undefined;
   let hookPublished: TrackedFile | undefined;
   try {
     throwIfCancelled(options);
+    const rootDirectory = await stableDirectory(cwd);
+    if (!sameIdentity(rootDirectory.stats, authority.repositoryIdentity)) {
+      throw new LifecycleInputError();
+    }
     operationLock = await acquireLock(cwd, operationId, dependencies);
     await checkpoint(dependencies, "lock_created");
-    await requireInstallable(cwd, options, dependencies, operationId);
+    await requireInstallable(cwd, options, dependencies, operationLock);
 
-    await ensureDirectory(cwd, ".codex", dependencies);
-    const agenthawk = await ensureDirectory(cwd, ".agenthawk", dependencies);
-    await ensureDirectory(agenthawk.path, "integrations", dependencies);
+    hookParent = await ensureDirectory(rootDirectory, ".codex", dependencies);
+    const agenthawk = await ensureDirectory(rootDirectory, ".agenthawk", dependencies);
+    receiptParent = await ensureDirectory(agenthawk, "integrations", dependencies);
     await checkpoint(dependencies, "parents_ready");
-    await requireInstallable(cwd, options, dependencies, operationId);
+    await requireTrackedDirectory(hookParent);
+    await requireTrackedDirectory(receiptParent);
+    await requireInstallable(cwd, options, dependencies, operationLock);
 
     const stagingName = `.agenthawk-codex-integration-${operationId}`;
-    staging = await createDirectory(cwd, stagingName, dependencies);
+    staging = await createDirectory(rootDirectory, stagingName, dependencies);
     await checkpoint(dependencies, "staging_ready");
 
     const adapterEntry = await realpath(
@@ -151,10 +160,7 @@ export async function installCodexProjectHook(
       undefined,
       dependencies,
     );
-    const rootStats = await stableDirectory(cwd);
-    if (!sameIdentity(rootStats.stats, authority.repositoryIdentity)) {
-      throw new LifecycleInputError();
-    }
+    await requireTrackedDirectory(rootDirectory);
     const artifacts = buildCodexProjectHookArtifacts({
       adapterBytes,
       adapterEntry,
@@ -162,18 +168,18 @@ export async function installCodexProjectHook(
       installationId: identifier(dependencies),
       nodeExecutable,
       nodeVersion: dependencies.nodeVersion ?? process.version,
-      repositoryIdentity: { dev: rootStats.stats.dev, ino: rootStats.stats.ino },
-      repositoryRoot: rootStats.path,
+      repositoryIdentity: { dev: rootDirectory.stats.dev, ino: rootDirectory.stats.ino },
+      repositoryRoot: rootDirectory.path,
     });
     const receiptStage = await createStageFile(
-      staging.path,
+      staging,
       "codex-v1.json",
       artifacts.receiptBytes,
       dependencies,
     );
     staged.push(receiptStage);
     const hookStage = await createStageFile(
-      staging.path,
+      staging,
       "hooks.json",
       artifacts.hookBytes,
       dependencies,
@@ -182,28 +188,44 @@ export async function installCodexProjectHook(
     await checkpoint(dependencies, "staged_files_ready");
     await verifyNoReplaceCapability(staging, receiptStage, hookStage, dependencies);
     await checkpoint(dependencies, "capability_verified");
-    await requireInstallable(cwd, options, dependencies, operationId);
+    await requireTrackedDirectory(staging);
+    await requireTrackedDirectory(hookParent);
+    await requireTrackedDirectory(receiptParent);
+    await requireInstallable(cwd, options, dependencies, operationLock);
 
     throwIfCancelled(options);
     await checkpoint(dependencies, "before_receipt_publish");
     throwIfCancelled(options);
     receiptPublished = await publish(
       receiptStage,
-      join(cwd, ".agenthawk", "integrations", "codex-v1.json"),
+      staging,
+      receiptParent,
+      "codex-v1.json",
+      operationLock,
       dependencies,
     );
     staged.splice(staged.indexOf(receiptStage), 1);
     await checkpoint(dependencies, "receipt_published");
     if (options.signal?.aborted) {
-      const rolledBack = await removeTrackedFile(receiptPublished, dependencies);
+      const rolledBack = await removeTrackedFile(receiptPublished, dependencies, receiptParent);
       receiptPublished = undefined;
       if (!rolledBack) throw new LifecycleRecoveryError();
+      const rolledBackState = await observe(cwd, {}, dependencies, operationLock.operationId);
+      await requireOperationLock(operationLock, dependencies);
+      if (rolledBackState.ownership !== "absent") throw new LifecycleRecoveryError();
       throw cancellationError(options.signal);
     }
 
     await checkpoint(dependencies, "before_hook_publish");
     throwIfCancelled(options);
-    hookPublished = await publish(hookStage, join(cwd, ".codex", "hooks.json"), dependencies);
+    hookPublished = await publish(
+      hookStage,
+      staging,
+      hookParent,
+      "hooks.json",
+      operationLock,
+      dependencies,
+    );
     staged.splice(staged.indexOf(hookStage), 1);
     await checkpoint(dependencies, "hook_published");
 
@@ -225,7 +247,7 @@ export async function installCodexProjectHook(
     const receiptRollback =
       hookPublished || !receiptPublished
         ? true
-        : await removeTrackedFile(receiptPublished, dependencies);
+        : await removeTrackedFile(receiptPublished, dependencies, receiptParent);
     const cleaned = await cleanupOperation(staged, staging, operationLock, dependencies);
     if (hookPublished || !receiptRollback || !cleaned || error instanceof LifecycleRecoveryError) {
       return lifecycleRecovery("install", options.format, cwd, dependencies);
@@ -265,13 +287,16 @@ export async function removeCodexProjectHook(
     throwIfCancelled(options);
     operationLock = await acquireLock(cwd, operationId, dependencies);
     await checkpoint(dependencies, "lock_created");
+    await requireOperationLock(operationLock, dependencies);
     const underLock = await observe(cwd, options, dependencies, operationId);
+    await requireOperationLock(operationLock, dependencies);
     if (!["owned_exact", "owned_inactive"].includes(underLock.ownership)) {
       throw new LifecycleInputError();
     }
     const receiptPath = join(cwd, ".agenthawk", "integrations", "codex-v1.json");
-    const receipt = await readRegular(receiptPath, maximumReceiptBytes, 1n, dependencies);
-    const parsedReceipt = parseCodexProjectHookReceiptBytes(receipt);
+    const receiptParent = await stableDirectory(join(cwd, ".agenthawk", "integrations"));
+    const receipt = await trackedExistingFile(receiptPath, maximumReceiptBytes, dependencies);
+    const parsedReceipt = parseCodexProjectHookReceiptBytes(receipt.bytes);
     const root = await stableDirectory(cwd);
     if (
       !sameIdentity(root.stats, authority.repositoryIdentity) ||
@@ -286,12 +311,16 @@ export async function removeCodexProjectHook(
 
     if (underLock.ownership === "owned_exact") {
       throwIfCancelled(options);
+      const hookParent = await stableDirectory(join(cwd, ".codex"));
       const hookPath = join(cwd, ".codex", "hooks.json");
       const hook = await trackedExistingFile(hookPath, maximumHookBytes, dependencies);
       if (!verifyCodexProjectHookBytes(parsedReceipt, hook.bytes)) throw new LifecycleInputError();
       await checkpoint(dependencies, "before_hook_remove");
       throwIfCancelled(options);
-      if (!(await removeTrackedFile(hook, dependencies))) throw new LifecycleRecoveryError();
+      await requireOperationLock(operationLock, dependencies);
+      if (!(await removeTrackedFile(hook, dependencies, hookParent))) {
+        throw new LifecycleRecoveryError();
+      }
       committed = true;
       await checkpoint(dependencies, "hook_removed");
     }
@@ -299,16 +328,14 @@ export async function removeCodexProjectHook(
     const settledOptions = committed ? {} : options;
     const inactive = await observe(cwd, settledOptions, dependencies, operationId);
     if (inactive.ownership !== "owned_inactive") throw new LifecycleRecoveryError();
-    const trackedReceipt = await trackedExistingFile(
-      receiptPath,
-      maximumReceiptBytes,
-      dependencies,
-    );
-    if (!trackedReceipt.bytes.equals(receipt)) throw new LifecycleRecoveryError();
+    if (!(await verifyTrackedFile(receipt, 1n, dependencies))) {
+      throw new LifecycleRecoveryError();
+    }
     if (!committed) throwIfCancelled(options);
     await checkpoint(dependencies, "before_receipt_remove");
     if (!committed) throwIfCancelled(options);
-    if (!(await removeTrackedFile(trackedReceipt, dependencies)))
+    await requireOperationLock(operationLock, dependencies);
+    if (!(await removeTrackedFile(receipt, dependencies, receiptParent)))
       throw new LifecycleRecoveryError();
     committed = true;
     await checkpoint(dependencies, "receipt_removed");
@@ -351,11 +378,28 @@ async function requireInstallable(
   cwd: string,
   options: OperationContext,
   dependencies: CodexProjectHookTransactionDependencies,
-  operationId: string,
+  operationLock: OperationLock,
 ): Promise<void> {
-  const report = await observe(cwd, options, dependencies, operationId);
+  await requireOperationLock(operationLock, dependencies);
+  const report = await observe(cwd, options, dependencies, operationLock.operationId);
+  await requireOperationLock(operationLock, dependencies);
   if (report.ownership !== "absent" || report.blockers.length > 0) {
     throw new LifecycleInputError();
+  }
+}
+
+async function requireOperationLock(
+  lock: OperationLock,
+  dependencies: CodexProjectHookTransactionDependencies,
+): Promise<void> {
+  const opened = await lock.handle.stat({ bigint: true });
+  const named = await trackedExistingFile(lock.path, lock.bytes.length, dependencies, 1n);
+  if (
+    !sameIdentity(opened, lock.stats) ||
+    !sameIdentity(named.stats, lock.stats) ||
+    !named.bytes.equals(lock.bytes)
+  ) {
+    throw new LifecycleRecoveryError();
   }
 }
 
@@ -394,27 +438,35 @@ async function acquireLock(
 }
 
 async function ensureDirectory(
-  parent: string,
+  parent: TrackedDirectory,
   name: string,
   dependencies: CodexProjectHookTransactionDependencies,
 ): Promise<TrackedDirectory> {
-  const path = join(parent, name);
+  await requireTrackedDirectory(parent);
+  const path = join(parent.path, name);
   try {
     await (dependencies.makeDirectory ?? mkdir)(path, { mode: 0o700 });
   } catch (error) {
     if (!hasCode(error, "EEXIST")) throw error;
   }
-  return await stableDirectory(path);
+  const created = await stableDirectory(path);
+  await requireTrackedDirectory(parent);
+  if (created.stats.dev !== parent.stats.dev) throw new LifecycleInputError();
+  return created;
 }
 
 async function createDirectory(
-  parent: string,
+  parent: TrackedDirectory,
   name: string,
   dependencies: CodexProjectHookTransactionDependencies,
 ): Promise<TrackedDirectory> {
-  const path = join(parent, name);
+  await requireTrackedDirectory(parent);
+  const path = join(parent.path, name);
   await (dependencies.makeDirectory ?? mkdir)(path, { mode: 0o700 });
-  return await stableDirectory(path);
+  const created = await stableDirectory(path);
+  await requireTrackedDirectory(parent);
+  if (created.stats.dev !== parent.stats.dev) throw new LifecycleInputError();
+  return created;
 }
 
 async function stableDirectory(path: string): Promise<TrackedDirectory> {
@@ -432,24 +484,33 @@ async function stableDirectory(path: string): Promise<TrackedDirectory> {
   return { path: resolve(canonical), stats };
 }
 
+async function requireTrackedDirectory(tracked: TrackedDirectory): Promise<void> {
+  const current = await stableDirectory(tracked.path);
+  if (!sameIdentity(current.stats, tracked.stats)) throw new LifecycleRecoveryError();
+}
+
 async function createStageFile(
-  parent: string,
+  parent: TrackedDirectory,
   name: string,
   bytes: Buffer,
   dependencies: CodexProjectHookTransactionDependencies,
 ): Promise<TrackedFile> {
-  const path = join(parent, name);
+  await requireTrackedDirectory(parent);
+  const path = join(parent.path, name);
   const handle = await (dependencies.openFile ?? open)(path, "wx+", 0o600);
   let stats: BigIntStats;
   try {
     await handle.writeFile(bytes);
     await handle.sync();
     stats = await handle.stat({ bigint: true });
-    if (!safeRegular(stats, bytes.length, 1n)) throw new Error("Stage file is unsafe.");
+    if (!safeRegular(stats, bytes.length, 1n) || stats.dev !== parent.stats.dev) {
+      throw new Error("Stage file is unsafe.");
+    }
   } finally {
     await handle.close();
   }
   const tracked = { bytes, path, stats };
+  await requireTrackedDirectory(parent);
   if (!(await verifyTrackedFile(tracked, 1n, dependencies))) throw new Error("Stage changed.");
   return tracked;
 }
@@ -460,12 +521,14 @@ async function verifyNoReplaceCapability(
   second: TrackedFile,
   dependencies: CodexProjectHookTransactionDependencies,
 ): Promise<void> {
+  await requireTrackedDirectory(staging);
   const probePath = join(staging.path, ".no-replace-probe");
   const linkFile = dependencies.linkFile ?? link;
   const attempts = await Promise.allSettled([
     linkFile(first.path, probePath),
     linkFile(second.path, probePath),
   ]);
+  await requireTrackedDirectory(staging);
   const winners = attempts
     .map((result, index) => ({ result, source: index === 0 ? first : second }))
     .filter(({ result }) => result.status === "fulfilled");
@@ -483,11 +546,11 @@ async function verifyNoReplaceCapability(
   if (!probe.bytes.equals(winner.bytes) || !sameIdentity(probe.stats, winner.stats)) {
     throw new LifecycleInputError();
   }
-  if (!(await removeTrackedFile(probe, dependencies))) throw new LifecycleInputError();
+  if (!(await removeTrackedFile(probe, dependencies, staging))) throw new LifecycleInputError();
   if (!(await verifyTrackedFile(winner, 1n, dependencies))) throw new LifecycleInputError();
   const occupiedPath = join(staging.path, ".occupied-probe");
   const occupied = await createStageFile(
-    staging.path,
+    staging,
     ".occupied-probe",
     Buffer.from("agenthawk-no-replace\n", "utf8"),
     dependencies,
@@ -499,16 +562,25 @@ async function verifyNoReplaceCapability(
     if (!hasCode(error, "EEXIST")) throw error;
   }
   if (!(await verifyTrackedFile(occupied, 1n, dependencies))) throw new LifecycleInputError();
-  if (!(await removeTrackedFile(occupied, dependencies))) throw new LifecycleInputError();
+  if (!(await removeTrackedFile(occupied, dependencies, staging))) throw new LifecycleInputError();
   if (!(await verifyTrackedFile(first, 1n, dependencies))) throw new LifecycleInputError();
   if (!(await verifyTrackedFile(second, 1n, dependencies))) throw new LifecycleInputError();
+  await requireTrackedDirectory(staging);
 }
 
 async function publish(
   source: TrackedFile,
-  destination: string,
+  sourceParent: TrackedDirectory,
+  parent: TrackedDirectory,
+  name: string,
+  operationLock: OperationLock,
   dependencies: CodexProjectHookTransactionDependencies,
 ): Promise<TrackedFile> {
+  await requireOperationLock(operationLock, dependencies);
+  await requireTrackedDirectory(sourceParent);
+  await requireTrackedDirectory(parent);
+  if (source.stats.dev !== parent.stats.dev) throw new LifecycleInputError();
+  const destination = join(parent.path, name);
   try {
     await (dependencies.linkFile ?? link)(source.path, destination);
   } catch {
@@ -521,15 +593,22 @@ async function publish(
       throw new LifecycleRecoveryError();
     }
   }
+  await requireOperationLock(operationLock, dependencies);
+  await requireTrackedDirectory(sourceParent);
+  await requireTrackedDirectory(parent);
   const published = await trackedExistingFile(destination, source.bytes.length, dependencies, 2n);
   if (!published.bytes.equals(source.bytes) || !sameIdentity(published.stats, source.stats)) {
     throw new LifecycleRecoveryError();
   }
-  if (!(await removeTrackedFile(source, dependencies))) throw new LifecycleRecoveryError();
+  if (!(await removeTrackedFile(source, dependencies, sourceParent))) {
+    throw new LifecycleRecoveryError();
+  }
   const final = await trackedExistingFile(destination, source.bytes.length, dependencies, 1n);
   if (!final.bytes.equals(source.bytes) || !sameIdentity(final.stats, source.stats)) {
     throw new LifecycleRecoveryError();
   }
+  await requireOperationLock(operationLock, dependencies);
+  await requireTrackedDirectory(parent);
   return final;
 }
 
@@ -607,19 +686,41 @@ async function verifyTrackedFile(
 async function removeTrackedFile(
   tracked: TrackedFile,
   dependencies: CodexProjectHookTransactionDependencies,
+  parent?: TrackedDirectory,
 ): Promise<boolean> {
+  let current: BigIntStats;
   try {
-    const current = await lstat(tracked.path, { bigint: true });
-    if (!sameIdentity(current, tracked.stats) || !current.isFile() || current.isSymbolicLink()) {
-      return false;
-    }
+    if (parent) await requireTrackedDirectory(parent);
+    current = await lstat(tracked.path, { bigint: true });
+  } catch (error) {
+    return hasCode(error, "ENOENT");
+  }
+  if (!sameIdentity(current, tracked.stats) || !current.isFile() || current.isSymbolicLink()) {
+    return false;
+  }
+  await dependencies.beforeUnlink?.(tracked.path);
+  let immediate: BigIntStats;
+  try {
+    immediate = await lstat(tracked.path, { bigint: true });
+  } catch {
+    return false;
+  }
+  if (
+    !sameIdentity(immediate, tracked.stats) ||
+    !immediate.isFile() ||
+    immediate.isSymbolicLink()
+  ) {
+    return false;
+  }
+  try {
     await (dependencies.unlinkFile ?? unlink)(tracked.path);
-    try {
-      await lstat(tracked.path, { bigint: true });
-      return false;
-    } catch (error) {
-      return hasCode(error, "ENOENT");
-    }
+  } catch {
+    return false;
+  }
+  try {
+    if (parent) await requireTrackedDirectory(parent);
+    await lstat(tracked.path, { bigint: true });
+    return false;
   } catch (error) {
     return hasCode(error, "ENOENT");
   }
@@ -633,7 +734,7 @@ async function cleanupOperation(
 ): Promise<boolean> {
   let confirmed = true;
   for (const file of [...staged].reverse()) {
-    confirmed = (await removeTrackedFile(file, dependencies)) && confirmed;
+    confirmed = (await removeTrackedFile(file, dependencies, staging)) && confirmed;
   }
   if (staging) confirmed = (await removeTrackedDirectory(staging, dependencies)) && confirmed;
   if (operationLock) confirmed = (await releaseLock(operationLock, dependencies)) && confirmed;
@@ -664,13 +765,19 @@ async function releaseLock(
   lock: OperationLock,
   dependencies: CodexProjectHookTransactionDependencies,
 ): Promise<boolean> {
+  let verified = true;
+  try {
+    await requireOperationLock(lock, dependencies);
+  } catch {
+    verified = false;
+  }
   let closed = true;
   try {
     await lock.handle.close();
   } catch {
     closed = false;
   }
-  return (await removeTrackedFile(lock, dependencies)) && closed;
+  return verified && (await removeTrackedFile(lock, dependencies)) && closed;
 }
 
 function safeRegular(stats: BigIntStats, expectedBytes?: number, expectedLinks?: bigint): boolean {

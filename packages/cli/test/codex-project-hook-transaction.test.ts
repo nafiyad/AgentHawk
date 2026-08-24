@@ -6,7 +6,9 @@ import {
   readdir,
   readFile,
   realpath,
+  rename,
   rm,
+  symlink,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -449,6 +451,106 @@ describe("Codex project-hook lifecycle", { timeout: 20_000 }, () => {
       ownership: "owned_exact",
       blockers: ["operation_locked"],
     });
+  });
+
+  it("rejects parent and staging identity replacement before publication", async () => {
+    for (const target of ["parent", "staging"] as const) {
+      const fixture = await lifecycleFixture();
+      const external = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-external-"));
+      roots.push(external);
+      const result = await installCodexProjectHook(
+        { format: "json" },
+        {
+          ...fixture.dependencies,
+          checkpoint: async (name) => {
+            if (target === "parent" && name === "before_receipt_publish") {
+              const parent = join(fixture.root, ".agenthawk", "integrations");
+              await rename(parent, `${parent}-replaced`);
+              await symlink(external, parent, process.platform === "win32" ? "junction" : "dir");
+            }
+            if (target === "staging" && name === "staged_files_ready") {
+              const entry = (await readdir(fixture.root)).find((value) =>
+                value.startsWith(".agenthawk-codex-integration-"),
+              );
+              if (!entry) throw new Error("staging directory was not found");
+              const staging = join(fixture.root, entry);
+              await rename(staging, `${staging}-replaced`);
+              await symlink(external, staging, process.platform === "win32" ? "junction" : "dir");
+            }
+          },
+        },
+      );
+      expect(result.exitCode).not.toBe(0);
+      expect(await readdir(external)).toEqual([]);
+    }
+  });
+
+  it("rejects byte-identical replacement of the acquired lock identity", async () => {
+    const fixture = await lifecycleFixture();
+    const lockPath = join(fixture.root, ".agenthawk-codex-integration.lock");
+    const result = await installCodexProjectHook(
+      { format: "json" },
+      {
+        ...fixture.dependencies,
+        checkpoint: async (name) => {
+          if (name === "capability_verified") {
+            const bytes = await readFile(lockPath);
+            await rename(lockPath, `${lockPath}.original`);
+            await writeFile(lockPath, bytes);
+          }
+        },
+      },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.output)).toMatchObject({ outcome: "recovery_required" });
+    await expect(readFile(join(fixture.root, ".codex", "hooks.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("never deletes byte-identical hook or receipt replacements", async () => {
+    const hookFixture = await lifecycleFixture();
+    expect(
+      (await installCodexProjectHook({ format: "json" }, hookFixture.dependencies)).exitCode,
+    ).toBe(0);
+    const hookPath = join(hookFixture.root, ".codex", "hooks.json");
+    const hookBytes = await readFile(hookPath);
+    const hookResult = await removeCodexProjectHook(
+      { format: "json" },
+      {
+        ...hookFixture.dependencies,
+        beforeUnlink: async (path) => {
+          if (path === hookPath) {
+            await rename(hookPath, `${hookPath}.original`);
+            await writeFile(hookPath, hookBytes);
+          }
+        },
+      },
+    );
+    expect(hookResult.exitCode).toBe(1);
+    await expect(readFile(hookPath)).resolves.toEqual(hookBytes);
+
+    const receiptFixture = await lifecycleFixture();
+    expect(
+      (await installCodexProjectHook({ format: "json" }, receiptFixture.dependencies)).exitCode,
+    ).toBe(0);
+    await unlink(join(receiptFixture.root, ".codex", "hooks.json"));
+    const receiptPath = join(receiptFixture.root, ".agenthawk", "integrations", "codex-v1.json");
+    const receiptBytes = await readFile(receiptPath);
+    const receiptResult = await removeCodexProjectHook(
+      { format: "json" },
+      {
+        ...receiptFixture.dependencies,
+        beforeUnlink: async (path) => {
+          if (path === receiptPath) {
+            await rename(receiptPath, `${receiptPath}.original`);
+            await writeFile(receiptPath, receiptBytes);
+          }
+        },
+      },
+    );
+    expect(receiptResult.exitCode).toBe(1);
+    await expect(readFile(receiptPath)).resolves.toEqual(receiptBytes);
   });
 });
 

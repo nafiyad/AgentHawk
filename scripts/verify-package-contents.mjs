@@ -268,6 +268,55 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
         installedReport.readiness === "current",
       "Packed Codex project-hook install smoke failed",
     );
+    const packedReceipt = JSON.parse(
+      await readFile(join(initDirectory, ".agenthawk", "integrations", "codex-v1.json"), "utf8"),
+    );
+    const projectLaunchArguments = [
+      `--agenthawk-deployment-trust=project`,
+      `--agenthawk-installation-id=${packedReceipt.installationId}`,
+      `--agenthawk-root-binding=${packedReceipt.rootBinding}`,
+    ];
+    const projectHookEntrypoint = join(dirname(cliEntrypoint), "codex-pretooluse-entry.js");
+    const projectInput = JSON.stringify({
+      cwd: initDirectory,
+      hook_event_name: "PreToolUse",
+      model: "packed-project-model",
+      permission_mode: "default",
+      session_id: "packed-project-session",
+      tool_input: { command: "npm install --global packed-project-fixture" },
+      tool_name: "Bash",
+      tool_use_id: "packed-project-tool",
+      transcript_path: null,
+      turn_id: "packed-project-turn",
+    });
+    const projectDenied = await executeWithInput(
+      process.execPath,
+      [projectHookEntrypoint, ...projectLaunchArguments],
+      { cwd: initDirectory, input: projectInput, timeout: 15_000 },
+    );
+    assert(
+      projectDenied.code === 0 &&
+        JSON.parse(projectDenied.stdout).hookSpecificOutput?.permissionDecision === "deny" &&
+        projectDenied.stderr === "",
+      "Packed Codex project invocation verification failed",
+    );
+    const rejectedLaunch = await executeWithInput(
+      process.execPath,
+      [
+        projectHookEntrypoint,
+        projectLaunchArguments[0],
+        `--agenthawk-installation-id=${"0".repeat(64)}`,
+        projectLaunchArguments[2],
+      ],
+      { cwd: initDirectory, input: projectInput, timeout: 15_000 },
+    );
+    assert(
+      rejectedLaunch.code === 2 &&
+        rejectedLaunch.stdout === "" &&
+        rejectedLaunch.stderr ===
+          "AgentHawk denied the tool call because security evaluation failed.\n",
+      "Packed Codex project invocation mismatch did not fail closed",
+    );
     const removed = await execute(
       process.execPath,
       [cliEntrypoint, "integrations", "codex", "remove", "--format", "json"],

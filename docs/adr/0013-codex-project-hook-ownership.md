@@ -256,17 +256,18 @@ filesystem claims to the publication primitives it proves.
 The implementation must acquire a fixed exclusive lock, re-establish root and
 target identities, construct bounded files in its exclusive staging directory,
 and validate the staged bytes before publication. Publication uses same-volume
-no-replace operations whose behavior is proven on supported local filesystems;
+no-replace operations whose behavior is capability-tested on the actual filesystem;
 an existence check followed by an overwriting rename is insufficient.
 
-The supported primitive must be demonstrated by adversarial tests on each
-claimed operating system and capability-tested again on the repository's actual
-filesystem before receipt publication. The test creates two different synced
-staged regular files, hard-links the first to one fixed probe name, requires a
-second link to that occupied name to fail without changing its identity or
-bytes, then removes only the verified probe. The real receipt and hook links
-still treat any occupied destination as a collision and are verified after
-publication. A failed or unprovable probe fails closed.
+The required behavior must be demonstrated by adversarial tests on each claimed
+operating system and capability-tested again on the repository's actual
+filesystem before receipt publication. The probe races two different synced
+staged regular files to one absent fixed name, requires exactly one winner and
+one `EEXIST`, verifies winner identity and bytes, then separately proves an
+occupied fixed target rejects another link without mutation. It removes only
+verified probe files. The real receipt and hook links remain authoritative,
+repeat the identity fences, and treat any foreign occupied destination as a
+collision. A failed or unprovable probe fails closed.
 
 This is a publication-capability boundary, not a locality classifier. Node's
 [`fs.statfs()`](https://nodejs.org/download/release/v22.18.0/docs/api/fs.html#fspromisesstatfspath-options)
