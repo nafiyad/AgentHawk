@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   assertLoopbackUrl,
   buildCodexConfig,
+  classifyFunctionOutput,
   closeServer,
   codexHostPlatform,
   encodeSse,
@@ -405,5 +406,18 @@ describe("Codex host verification tool pin", () => {
     expect(() => selectCommandTool({ tools: [] }, "git status", "shell_command")).toThrowError(
       new HostHarnessError("host_missing_tool:shell_command"),
     );
+  });
+});
+
+describe("Codex host result classification", () => {
+  it.each([
+    ["administrator policy rejected execution", "administrator_rejected"],
+    ["approval was required", "approval_rejected"],
+    ["Access is denied", "permission_rejected"],
+    ["hook timed out", "timeout"],
+  ])("maps bounded failure category for %j", (output, expected) => {
+    expect(
+      classifyFunctionOutput({ type: "function_call_output", call_id: "call", output }, "call"),
+    ).toBe(expected);
   });
 });

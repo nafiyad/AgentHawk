@@ -186,11 +186,19 @@ export function findFunctionOutput(value, callId) {
   return undefined;
 }
 
-function classifyFunctionOutput(value, callId) {
+export function classifyFunctionOutput(value, callId) {
   const output = findFunctionOutput(value, callId);
   if (output === undefined) return "missing";
   const serialized = JSON.stringify(output).toLowerCase();
   if (serialized.includes("agenthawk:")) return "denied";
+  if (serialized.includes("administrator") || serialized.includes("elevated")) {
+    return "administrator_rejected";
+  }
+  if (serialized.includes("approval")) return "approval_rejected";
+  if (serialized.includes("access is denied") || serialized.includes("permission denied")) {
+    return "permission_rejected";
+  }
+  if (serialized.includes("timed out") || serialized.includes("timeout")) return "timeout";
   if (serialized.includes("blocked by policy")) return "sandbox_rejected";
   if (serialized.includes("not recognized") || serialized.includes("not found")) return "not_found";
   if (
