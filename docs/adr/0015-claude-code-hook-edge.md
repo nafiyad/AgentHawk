@@ -66,7 +66,7 @@ only the current common fields required for framing plus:
 - `tool_use_id` as a bounded framing identifier that is never reported;
 - `cwd` as the untrusted action-directory candidate.
 
-Optional documented fields such as `prompt_id`, `permission_mode`, `effort`,
+Optional documented fields such as `prompt_id`, `effort`,
 `agent_id`, `agent_type`, `description`, tool timeout, and background state may
 be validated and discarded only when exact fixtures require them. Transcript
 paths, session identifiers, prompts, descriptions, environment values, and
@@ -74,6 +74,10 @@ unrelated tool input never enter evaluation, reports, digests, or diagnostics.
 Unknown top-level and tool-input fields remain closed unless an exact current
 fixture demonstrates a compatibility requirement and the security review accepts
 the field.
+
+The fixture edge validates every current documented `permission_mode`, including
+`auto`, and the optional closed `effort.level` enum, then discards both. They do
+not influence security policy or appear in output.
 
 `Bash` maps to the existing restricted `posix` qualifier only on an exact
 surface that proves Bash is the invoked shell. `PowerShell` maps to

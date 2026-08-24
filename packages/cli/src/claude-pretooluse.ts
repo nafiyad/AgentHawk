@@ -34,7 +34,15 @@ const boundedCommand = z
   .max(16_384)
   .refine((value) => Buffer.byteLength(value, "utf8") <= 16_384)
   .refine((value) => !value.includes("\u0000"));
-const permissionMode = z.enum(["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"]);
+const permissionMode = z.enum([
+  "default",
+  "acceptEdits",
+  "plan",
+  "auto",
+  "dontAsk",
+  "bypassPermissions",
+]);
+const effort = z.object({ level: z.enum(["low", "medium", "high", "xhigh", "max"]) }).strict();
 const toolInput = z
   .object({
     command: boundedCommand,
@@ -49,6 +57,7 @@ export const claudePreToolUseInputSchema = z
     agent_id: boundedIdentifier.optional(),
     agent_type: boundedIdentifier.optional(),
     cwd: z.string().min(1).max(4096),
+    effort: effort.optional(),
     hook_event_name: z.literal("PreToolUse"),
     permission_mode: permissionMode,
     prompt_id: boundedIdentifier.optional(),

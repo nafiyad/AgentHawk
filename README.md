@@ -95,9 +95,9 @@ Native enforcement remains unsupported. The exact Codex CLI `0.149.0` Windows
 x64 project-hook row has strong local compatibility evidence, but the pinned
 GitHub-hosted Windows environment rejects the exact restricted-token filesystem
 projection before the complete matrix can run. See the [support
-matrix](docs/support-matrix.md). Claude Code `2.1.241` currently has only an
-independent [research proposal](docs/adr/0015-claude-code-hook-edge.md), not an
-adapter. The published `0.1.0-alpha.1` package also
+matrix](docs/support-matrix.md). Claude Code `2.1.241` has a packaged, closed
+fixture adapter but no settings lifecycle, exact-host compatibility evidence, or
+supported native row. See [ADR 0015](docs/adr/0015-claude-code-hook-edge.md). The published `0.1.0-alpha.1` package also
 predates these lifecycle commands; protected `scan`/`diff` CI remains the final
 repository gate.
 

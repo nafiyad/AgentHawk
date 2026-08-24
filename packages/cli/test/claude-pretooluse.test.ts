@@ -64,6 +64,8 @@ describe("Claude Code PreToolUse contract", () => {
     ["unknown top-level field", { ...bashFixture, extra: true }],
     ["wrong event", { ...bashFixture, hook_event_name: "PostToolUse" }],
     ["unknown tool", { ...bashFixture, tool_name: "Shell" }],
+    ["unknown effort field", { ...bashFixture, effort: { level: "high", extra: true } }],
+    ["invalid effort level", { ...bashFixture, effort: { level: "unbounded" } }],
     ["unknown tool field", { ...bashFixture, tool_input: { command: "git status", extra: true } }],
     ["invalid timeout", { ...bashFixture, tool_input: { command: "git status", timeout: 0 } }],
     ["relative cwd", { ...bashFixture, cwd: "relative" }],
@@ -122,31 +124,34 @@ describe("Claude Code PreToolUse output", () => {
     expect(stdout).toEqual([]);
   });
 
-  it("denies PowerShell dependency syntax without loading providers", async () => {
-    const stdout: string[] = [];
-    const exitCode = await runClaudePreToolUse(
-      Readable.from([
-        JSON.stringify({
-          ...powershellFixture,
-          cwd: fixtureRoot,
-          tool_input: { command: "npm add example@1.0.0" },
-        }),
-      ]),
-      {
-        loadAuthority: async () => {
-          throw new Error("authority must not run");
+  it.each(["git status", "npm add example@1.0.0"])(
+    "denies every PowerShell command without loading providers: %s",
+    async (command) => {
+      const stdout: string[] = [];
+      const exitCode = await runClaudePreToolUse(
+        Readable.from([
+          JSON.stringify({
+            ...powershellFixture,
+            cwd: fixtureRoot,
+            tool_input: { command },
+          }),
+        ]),
+        {
+          loadAuthority: async () => {
+            throw new Error("authority must not run");
+          },
+          writeError: () => undefined,
+          writeOutput: (text) => {
+            stdout.push(text);
+          },
         },
-        writeError: () => undefined,
-        writeOutput: (text) => {
-          stdout.push(text);
-        },
-      },
-    );
-    expect(exitCode).toBe(0);
-    expect(JSON.parse(stdout.join(""))).toMatchObject({
-      hookSpecificOutput: { permissionDecision: "deny" },
-    });
-  });
+      );
+      expect(exitCode).toBe(0);
+      expect(JSON.parse(stdout.join(""))).toMatchObject({
+        hookSpecificOutput: { permissionDecision: "deny" },
+      });
+    },
+  );
 
   it.each([
     ["malformed input", { source: "not-json" }],
