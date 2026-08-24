@@ -20,7 +20,7 @@ Package specifications, registry URLs, registry responses, redirects, HTTP statu
 
 Policy configuration is also untrusted input. Strict schemas reject unknown nested fields, numeric thresholds must be non-negative, and the known-malicious action cannot be weakened below `block`.
 
-The Codex compatibility-candidate hook request path treats the complete payload, declared working directory, raw shell command text, host configuration, hook environment, and vendor failure behavior as untrusted. Only a release-pinned, bounded `PreToolUse` `Bash` shape reaches the transient action contract; deployment trust is fixed to `unknown`. A project hook is repository-controlled code, not an administrator boundary. Exact local Windows CLI and app-server real-host harnesses pass, but the candidate remains uninstalled and unsupported until its configuration-ownership and recovery boundary is reviewed. Future vendor edges remain untrusted independent boundaries. [ADR 0012](adr/0012-native-hook-enforcement-boundary.md) defines the complete gate.
+The Codex compatibility-candidate hook request path treats the complete payload, declared working directory, raw shell command text, host configuration, hook environment, and vendor failure behavior as untrusted. Only a release-pinned, bounded `PreToolUse` `Bash` shape reaches the transient action contract; deployment trust is fixed to `unknown`. A project hook is repository-controlled code, not an administrator boundary. Exact local Windows CLI and app-server real-host harnesses pass, and [ADR 0013](adr/0013-codex-project-hook-ownership.md) accepts an exclusive project-hook ownership design, but its installer, recovery, and project activation tests remain unimplemented. Future vendor edges remain untrusted independent boundaries. [ADR 0012](adr/0012-native-hook-enforcement-boundary.md) defines the complete native gate.
 
 ## Abuse cases and mitigations
 
@@ -69,7 +69,7 @@ The Codex compatibility-candidate hook request path treats the complete payload,
 
 ## Native-hook threats and implementation gates
 
-The Codex rows describe the implemented compatibility candidate; other vendor rows remain design requirements. The support matrix remains “no adapter supported” until the configuration-ownership, installation, recovery, and named real-host gates for a claimed surface are all tested.
+The Codex rows describe the implemented compatibility candidate; other vendor rows remain design requirements. Its ownership decision is accepted, but the support matrix remains “no adapter supported” until installation, recovery, manual-activation, and named real-host gates for a claimed surface are all tested.
 
 | Threat | Required implementation gate | Residual risk |
 |---|---|---|
@@ -80,6 +80,7 @@ The Codex rows describe the implemented compatibility candidate; other vendor ro
 | Hook failure, serializer failure, or timeout becomes an advertised fail-closed control | The Codex edge creates the shared eight-second deadline before input, disposes it after output, uses bounded framing and normal serialization, and has an independent constant non-empty exit-2 denial. The harness settles started work. Later edges require equivalent proof; document vendor timeout behavior and require Cursor `failClosed: true` | Filesystem cancellation is best effort, remote provider computation and universal process-tree termination are not guaranteed, and a process that cannot start, a host timeout, or a bypassed hook can still proceed; protected CI remains final |
 | Hook input or diagnostics disclose commands, prompts, paths, transcripts, or credentials | Read only bounded event/tool/command/cwd fields; keep raw commands transient; use fixed redacted reason codes; exclude sensitive fields from reports, digests, stdout, and stderr | The host itself supplies the hook environment and can log outside AgentHawk |
 | Repository or user hook is described as tamper-proof policy | Record `project`, `user`, `managed`, or `unknown` as a non-authoritative deployment declaration and state each tier's limits | A user or repository writer can disable mutable hooks; managed deployment still depends on host and binary integrity |
+| Setup overwrites a foreign hook, trusts itself, or removal deletes changed configuration | Use only fixed project targets, a strict paired receipt, exclusive no-replace publication, receipt-first install, hook-first removal, identity fences, bounded redacted states, and no merge/adopt/force/trust write; prove interruption recovery before support | A same-account or repository writer can still mutate the hook, receipt, runtime, package, or Codex settings after a check |
 | A vendor without neutral output forces AgentHawk to auto-allow, or a cloud surface hides warnings/provider failure | Keep Cursor unsupported until a real fail-closed harness proves neutral no-auto-approve output; treat Copilot cloud npm/OSV reachability as unavailable until administrator-enabled and tested; deny warnings without a visible neutral channel | Vendor contracts, enterprise firewall policy, and cloud UX can change independently |
 
 ## Unsupported claims

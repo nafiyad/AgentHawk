@@ -41,7 +41,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Stable redacted provider errors without package installation or execution
 - Read-only GitHub pull-request evaluation with an isolated opt-in write commenter
 - Fail-closed advisory templates for Codex, Claude Code, Cursor, and generic agents
-- A packaged, release-pinned Codex `PreToolUse` compatibility candidate with exact local Windows CLI and app-server host evidence, but no automatic installation or support claim pending configuration-ownership review
+- A packaged, release-pinned Codex `PreToolUse` compatibility candidate with exact local Windows CLI and app-server host evidence; project-hook ownership is designed, but installation, activation, recovery, and support remain unavailable
 - Exact release-package manifests, dual-use disclosure, checksummed CI artifacts, and protected stage-only trusted publishing for future versions
 - Offline fixtures and security regression tests
 
