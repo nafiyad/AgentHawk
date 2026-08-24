@@ -327,6 +327,18 @@ marker, definition mutation becoming untrusted/`owned_modified`, disabled hooks,
 managed-only rejection. The harness must use temporary roots and configuration;
 it must never modify the maintainer's real Codex home or trust state.
 
+The activation work is split at the managed-requirements boundary. The shipped
+Windows `0.149.0` app-server resolves `allow_managed_hooks_only` from the
+machine-wide known-folder `requirements.toml`; its alternate requirements path
+is an internal `LoaderOverrides` test facility reached by a debug-only
+environment hook, not a release-artifact interface. The first activation
+harness therefore proves project discovery, exact-definition trust, execution,
+denial, mutation, and the ordinary feature-disable boundary using temporary
+roots. It neither mutates machine policy nor represents a debug build as the
+official artifact. Managed-only exact-artifact evidence remains a separate
+environment-dependent gate and the adapter remains unsupported while it is
+unproven.
+
 No Codex native adapter becomes supported merely because this ADR is accepted
 or the files can be installed. Support remains gated on collision, cancellation,
 recovery, packed-consumer, exact-host activation, and removal tests plus the
@@ -375,9 +387,17 @@ not write configuration or activate the adapter.
 Project-scoped fixed-target `status`, collision-safe `install`, exact-owned
 `remove`, transactional filesystem helpers, and invocation-time root-bound pair
 verification are implemented. Publication is capability-tested on the actual
-filesystem and makes no locality or power-loss-durability claim. The next slice
-is the exact project-hook host activation harness, including untrusted, manually
-trusted exact definition, mutation, disabled-hooks, and managed-only states.
+filesystem and makes no locality or power-loss-durability claim. The isolated
+exact-version project-hook harness is implemented and passed on the
+checksum-verified official Windows `0.149.0` package: installed-untrusted,
+manually trusted exact definition, neutral execution, dependency-add denial
+with an absent fake-package-manager marker, mutation to Codex `modified` plus
+AgentHawk `owned_modified`, and feature-disabled empty discovery with zero
+provider requests. The release archive matched OpenAI's published
+`codex-package_SHA256SUMS` digest
+`bc470b4b90654c38ee52716056d6d5fc19a49afd08f419328034f4f324536459`.
+Managed-only exact-artifact rejection remains unverified and prevents a support
+claim.
 
 User/managed/plugin installation, portable committed configuration, trust
 automation, merge/adopt/force/repair/upgrade operations, arbitrary paths,

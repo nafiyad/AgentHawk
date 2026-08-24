@@ -4,8 +4,10 @@ import {
   appServerSurface,
   matchesHookNotification,
   selectExpectedHook,
+  validateDisabledHookInventory,
   validateHookNotification,
   validateInitializeResponse,
+  validateModifiedHook,
   validateThreadStart,
   validateTrustedHook,
 } from "./verify-codex-app-server.mjs";
@@ -28,6 +30,18 @@ function listedHook(trustStatus = "untrusted") {
       sourcePath: "C:\\fixture\\hooks.json",
       timeoutSec: 10,
       trustStatus,
+    },
+  };
+}
+
+function projectListedHook(trustStatus = "untrusted") {
+  const listed = listedHook(trustStatus);
+  return {
+    ...listed,
+    hook: {
+      ...listed.hook,
+      source: "project",
+      sourcePath: "C:\\fixture\\.codex\\hooks.json",
     },
   };
 }
@@ -99,6 +113,17 @@ describe("Codex app-server exact hook inventory", () => {
     ).toEqual(expected);
   });
 
+  it("binds an exact project hook and rejects a source substitution", () => {
+    const expected = projectListedHook();
+    const response = {
+      data: [{ cwd: expected.cwd, errors: [], warnings: [], hooks: [expected.hook] }],
+    };
+    expect(selectExpectedHook(response, "project")).toEqual(expected);
+    expect(() => selectExpectedHook(response, "user")).toThrowError(
+      new HostHarnessError("app_server_hook_invalid"),
+    );
+  });
+
   it("rejects warnings, extra hooks, and changed exact-hash trust", () => {
     const expected = listedHook();
     expect(() =>
@@ -112,7 +137,7 @@ describe("Codex app-server exact hook inventory", () => {
           },
         ],
       }),
-    ).toThrowError(new HostHarnessError("app_server_hooks_list_invalid"));
+    ).toThrowError(new HostHarnessError("app_server_hooks_list_warnings_present"));
     expect(() =>
       selectExpectedHook({
         data: [
@@ -124,7 +149,7 @@ describe("Codex app-server exact hook inventory", () => {
           },
         ],
       }),
-    ).toThrowError(new HostHarnessError("app_server_hooks_list_invalid"));
+    ).toThrowError(new HostHarnessError("app_server_hooks_list_hook_count_invalid"));
     expect(() =>
       validateTrustedHook(expected, {
         ...listedHook("trusted"),
@@ -135,6 +160,42 @@ describe("Codex app-server exact hook inventory", () => {
       validateTrustedHook(expected, { ...listedHook("trusted"), cwd: "C:\\other" }),
     ).toThrowError(new HostHarnessError("app_server_hook_trust_invalid"));
     expect(() => validateTrustedHook(expected, listedHook("trusted"))).not.toThrow();
+  });
+
+  it("requires a changed hash and Codex modified state after project-hook mutation", () => {
+    const trusted = projectListedHook("trusted");
+    expect(() =>
+      validateModifiedHook(trusted, {
+        ...projectListedHook("modified"),
+        hook: { ...projectListedHook("modified").hook, currentHash: "sha256:changed" },
+      }),
+    ).not.toThrow();
+    expect(() => validateModifiedHook(trusted, projectListedHook("modified"))).toThrowError(
+      new HostHarnessError("app_server_hook_mutation_invalid"),
+    );
+    expect(() =>
+      validateModifiedHook(trusted, {
+        ...projectListedHook("untrusted"),
+        hook: { ...projectListedHook("untrusted").hook, currentHash: "sha256:changed" },
+      }),
+    ).toThrowError(new HostHarnessError("app_server_hook_mutation_invalid"));
+  });
+
+  it("accepts only an empty, warning-free inventory when hooks are disabled", () => {
+    const response = {
+      data: [{ cwd: "C:\\fixture", errors: [], warnings: [], hooks: [] }],
+    };
+    expect(validateDisabledHookInventory(response)).toEqual({ cwd: "C:\\fixture" });
+    expect(() =>
+      validateDisabledHookInventory({
+        data: [{ ...response.data[0], hooks: [projectListedHook().hook] }],
+      }),
+    ).toThrowError(new HostHarnessError("app_server_hooks_disabled_invalid"));
+    expect(() =>
+      validateDisabledHookInventory({
+        data: [{ ...response.data[0], warnings: ["unexpected"] }],
+      }),
+    ).toThrowError(new HostHarnessError("app_server_hooks_disabled_invalid"));
   });
 });
 
@@ -169,6 +230,30 @@ describe("Codex app-server hook notification binding", () => {
         "completed",
         "run-1",
       ),
+    ).toThrowError(new HostHarnessError("app_server_hook_notification_invalid"));
+  });
+
+  it("rejects user/project notification source confusion", () => {
+    const params = {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      run: {
+        entries: [],
+        id: "run-1",
+        eventName: "preToolUse",
+        executionMode: "sync",
+        handlerType: "command",
+        scope: "turn",
+        source: "project",
+        sourcePath: "C:\\fixture\\.codex\\hooks.json",
+        status: "completed",
+      },
+    };
+    expect(() =>
+      validateHookNotification(params, "thread-1", "turn-1", "completed", "run-1", "project"),
+    ).not.toThrow();
+    expect(() =>
+      validateHookNotification(params, "thread-1", "turn-1", "completed", "run-1", "user"),
     ).toThrowError(new HostHarnessError("app_server_hook_notification_invalid"));
   });
 

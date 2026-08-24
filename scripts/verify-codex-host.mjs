@@ -528,7 +528,7 @@ export function assertExactVersion(result) {
   }
 }
 
-export function buildCodexConfig(providerUrl, platform = process.platform) {
+export function buildCodexConfig(providerUrl, platform = process.platform, hooksEnabled = true) {
   codexHostPlatform(platform);
   return [
     'model = "agenthawk-fixture"',
@@ -556,7 +556,7 @@ export function buildCodexConfig(providerUrl, platform = process.platform) {
     "",
     ...(platform === "win32" ? ["[windows]", 'sandbox = "unelevated"', ""] : []),
     "[features]",
-    "hooks = true",
+    `hooks = ${hooksEnabled ? "true" : "false"}`,
     `unified_exec = ${platform === "win32" ? "false" : "true"}`,
     "",
   ].join("\n");
