@@ -8,6 +8,7 @@ const DEFAULT_MAX_TOTAL_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_MESSAGES = 256;
 const DEFAULT_MAX_STDERR_BYTES = 128 * 1024;
 const CLOSE_TIMEOUT_MS = 5_000;
+const TERMINATION_CLOSE_TIMEOUT_MS = 5_000;
 
 function protocolError(code) {
   return new HostHarnessError(`app_server_${code}`);
@@ -54,12 +55,37 @@ export function spawnBoundedJsonl(entry, args, options) {
   let stderrBytes = 0;
   let failure;
   let closing = false;
-  let terminated = false;
+  let termination;
   let timer;
   let resolveClosed;
   const closed = new Promise((resolvePromise) => {
     resolveClosed = resolvePromise;
   });
+
+  const terminateAndWait = () => {
+    if (!termination) {
+      termination = (async () => {
+        await terminateChild(child);
+        let terminationTimer;
+        try {
+          await Promise.race([
+            closed,
+            new Promise((_, rejectTermination) => {
+              terminationTimer = setTimeout(
+                () => rejectTermination(protocolError("termination_close_timeout")),
+                options.terminationCloseTimeoutMs ?? TERMINATION_CLOSE_TIMEOUT_MS,
+              );
+              terminationTimer.unref();
+            }),
+          ]);
+        } finally {
+          if (terminationTimer) clearTimeout(terminationTimer);
+        }
+      })();
+      void termination.catch(() => undefined);
+    }
+    return termination;
+  };
 
   const rejectConsumers = (error) => {
     for (const request of pending.values()) request.reject(error);
@@ -71,10 +97,7 @@ export function spawnBoundedJsonl(entry, args, options) {
     if (failure) return;
     failure = error instanceof HostHarnessError ? error : protocolError("unexpected_failure");
     rejectConsumers(failure);
-    if (!terminated) {
-      terminated = true;
-      void terminateChild(child).catch(() => undefined);
-    }
+    void terminateAndWait();
   };
 
   const dispatchNotification = (message) => {
@@ -257,7 +280,7 @@ export function spawnBoundedJsonl(entry, args, options) {
         ]);
         if (failure) throw failure;
       } catch (error) {
-        await terminateChild(child).catch(() => undefined);
+        await terminateAndWait();
         throw error;
       } finally {
         if (closeTimer) clearTimeout(closeTimer);
@@ -266,7 +289,7 @@ export function spawnBoundedJsonl(entry, args, options) {
     async abort() {
       closing = true;
       clearTimeout(timer);
-      await terminateChild(child).catch(() => undefined);
+      await terminateAndWait();
     },
   };
 }

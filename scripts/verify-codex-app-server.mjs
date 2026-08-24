@@ -119,6 +119,7 @@ export function selectExpectedHook(result) {
 export function validateTrustedHook(before, after) {
   if (before.hook.trustStatus !== "untrusted") throw appServerError("hook_initial_trust_invalid");
   if (
+    after.cwd !== before.cwd ||
     after.hook.key !== before.hook.key ||
     after.hook.currentHash !== before.hook.currentHash ||
     after.hook.sourcePath !== before.hook.sourcePath ||
@@ -315,6 +316,8 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
   const providerUrl = await listenLoopback(fixture.server);
   let client;
   let succeeded = false;
+  let result;
+  let scenarioError;
   try {
     const configured = await configureScenario(root, providerUrl, adapterEntry);
     client = spawnBoundedJsonl(
@@ -380,6 +383,9 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
       }),
     );
     validateTrustedHook(before, after);
+    if (!(await sameCanonicalPath(after.cwd, configured.repository))) {
+      throw appServerError("hook_path_mismatch");
+    }
     const thread = validateThreadStart(
       await client.request("agenthawk-thread-start", "thread/start", {
         model: "agenthawk-fixture",
@@ -436,24 +442,40 @@ async function runScenario({ codexEntry, adapterEntry, scenario, expectedStatus,
     if (fixture.state.error) throw fixture.state.error;
     if (fixture.state.requests !== 2) throw appServerError("provider_request_count_mismatch");
     succeeded = true;
-    return {
+    result = {
       functionOutput: fixture.state.functionOutput,
       neutralMarker: join(configured.repository, "agenthawk-neutral.marker"),
       deniedMarker: join(configured.repository, "denied.marker"),
       root,
     };
-  } finally {
-    if (client) await client.abort();
-    let serverClosed = false;
+  } catch (error) {
+    scenarioError = error;
+  }
+  let cleanupError;
+  if (client) {
     try {
-      await closeServer(fixture.server);
-      serverClosed = true;
-    } finally {
-      if (!succeeded || !serverClosed) {
-        await rm(root, { recursive: true, force: true, maxRetries: 3 });
-      }
+      await client.abort();
+    } catch (error) {
+      cleanupError = error;
     }
   }
+  let serverClosed = false;
+  try {
+    await closeServer(fixture.server);
+    serverClosed = true;
+  } catch (error) {
+    cleanupError ??= error;
+  }
+  if (!cleanupError && (!succeeded || !serverClosed)) {
+    await rm(root, { recursive: true, force: true, maxRetries: 3 });
+  }
+  if (cleanupError) throw cleanupError;
+  if (scenarioError) throw scenarioError;
+  if (!result) {
+    await rm(root, { recursive: true, force: true, maxRetries: 3 });
+    throw appServerError("scenario_result_missing");
+  }
+  return result;
 }
 
 export async function verifyCodexAppServer({ codexEntry }) {

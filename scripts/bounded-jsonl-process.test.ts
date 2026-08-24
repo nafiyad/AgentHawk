@@ -1,6 +1,7 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { parseStrictJson } from "../packages/cli/src/hook-json.js";
@@ -150,11 +151,12 @@ process.stdin.on("end", () => process.exit(0));
     const fixture = await fakeProcess("setInterval(() => {}, 1000);");
     const transport = client(fixture.entry, fixture.root);
     const first = transport.request("one", "fixture/request", {});
+    const firstRejection = expect(first).rejects.toThrowError();
     await expect(transport.request("one", "fixture/request", {})).rejects.toThrowError(
       new HostHarnessError("app_server_request_id_duplicate"),
     );
     await transport.abort();
-    await expect(first).rejects.toThrowError();
+    await firstRejection;
   });
 
   it("times out and terminates an unresponsive process", async () => {
@@ -181,6 +183,43 @@ process.stdin.on("end", () => setInterval(() => {}, 1000));
       new HostHarnessError("app_server_close_timeout"),
     );
     await transport.abort();
+  });
+
+  it("waits for the process tree to be gone before abort returns", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-jsonl-tree-test-"));
+    roots.push(root);
+    const marker = join(root, "descendant-ran");
+    const pidFile = join(root, "descendant.pid");
+    const descendant = join(root, "descendant.mjs");
+    const parent = join(root, "parent.mjs");
+    await writeFile(
+      descendant,
+      `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => writeFileSync(${JSON.stringify(marker)}, "ran"), 800);`,
+      "utf8",
+    );
+    await writeFile(
+      parent,
+      `import { spawn } from "node:child_process"; spawn(process.execPath, [${JSON.stringify(descendant)}], { stdio: "ignore" }); setInterval(() => {}, 1000);`,
+      "utf8",
+    );
+    const transport = client(parent, root);
+    const pending = transport.request("one", "fixture/request", {});
+    const pendingRejection = expect(pending).rejects.toThrowError();
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try {
+        await access(pidFile);
+        break;
+      } catch {
+        await delay(25);
+      }
+    }
+    const descendantPid = Number.parseInt(await readFile(pidFile, "utf8"), 10);
+    expect(Number.isSafeInteger(descendantPid)).toBe(true);
+    await transport.abort();
+    await pendingRejection;
+    expect(() => process.kill(descendantPid, 0)).toThrow();
+    await delay(1_000);
+    await expect(access(marker)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 

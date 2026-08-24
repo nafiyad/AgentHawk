@@ -114,10 +114,25 @@ describe("Codex app-server exact hook inventory", () => {
       }),
     ).toThrowError(new HostHarnessError("app_server_hooks_list_invalid"));
     expect(() =>
+      selectExpectedHook({
+        data: [
+          {
+            cwd: expected.cwd,
+            errors: [],
+            warnings: [],
+            hooks: [expected.hook, expected.hook],
+          },
+        ],
+      }),
+    ).toThrowError(new HostHarnessError("app_server_hooks_list_invalid"));
+    expect(() =>
       validateTrustedHook(expected, {
         ...listedHook("trusted"),
         hook: { ...listedHook("trusted").hook, currentHash: "sha256:changed" },
       }),
+    ).toThrowError(new HostHarnessError("app_server_hook_trust_invalid"));
+    expect(() =>
+      validateTrustedHook(expected, { ...listedHook("trusted"), cwd: "C:\\other" }),
     ).toThrowError(new HostHarnessError("app_server_hook_trust_invalid"));
     expect(() => validateTrustedHook(expected, listedHook("trusted"))).not.toThrow();
   });
