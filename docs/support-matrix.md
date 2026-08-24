@@ -37,6 +37,8 @@ Advisory files do not prove that a host loaded or obeyed them. Protected CI rema
 
 `agenthawk integrations codex status` is also exercised on the six-job Node 22/24 matrix. Its Git-layout fixtures cover ordinary roots, linked worktrees, submodules, and main worktrees with a separate Git directory. It is a point-in-time read-only observation and does not claim atomic exclusion of every reparse type, bind mount, same-account race, or hostile/network filesystem behavior.
 
+`agenthawk integrations claude status` is exercised on the same six-job matrix as a read-only collision preflight. It observes only fixed project settings plus bounded topology and quiet ignore state; it does not install configuration or establish a supported Claude row. Its `activation: unproven` result is invariant because user, managed, plugin, session, SDK, trust, and command-line sources remain outside repository observation.
+
 ## Lifecycle policy
 
 The matrix is reviewed before each release against the official [Node.js release schedule](https://nodejs.org/en/about/previous-releases). AgentHawk does not perform a live lifecycle lookup during local checks or diagnostics. An older installed version therefore cannot know about lifecycle changes published after its bundled support snapshot.

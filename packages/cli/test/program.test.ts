@@ -178,6 +178,10 @@ describe("CLI runner JSON parser failures", () => {
       "unknown Codex status option",
       ["integrations", "codex", "status", "--format", "json", "--unknown"],
     ],
+    [
+      "unknown Claude status option",
+      ["integrations", "claude", "status", "--format", "json", "--unknown"],
+    ],
     ["unknown init option", ["init", "--format", "json", "--unknown"]],
   ])("envelopes %s", async (_label, args) => {
     let output = "";

@@ -2,9 +2,9 @@
 
 ## Status
 
-Accepted as the design boundary for read-only status. No Claude Code settings
-mutation, installation, removal, activation, or native support is authorized by
-this decision.
+Accepted and implemented for read-only status. No Claude Code settings mutation,
+installation, removal, activation, or native support is authorized by this
+decision.
 
 ## Context
 
@@ -61,7 +61,8 @@ reduces accidental publication of runtime-specific absolute paths but cannot
 prevent a user from force-adding an ignored file.
 
 The first read-only preflight may observe only these fixed contained targets after loading
-the canonical co-root repository authority:
+canonical co-root identity. It does not load AgentHawk policy, approvals, or the
+repository manifest:
 
 ```text
 <root>/.claude/settings.json
@@ -207,10 +208,11 @@ The report also carries `activation: "unproven"` as a fixed explicit boundary.
 It returns only schema/tool version, command, the five observations, blockers,
 activation, `providersContacted: false`, and a stable exit meaning. It never
 returns paths, commands, settings, identifiers, digests, file contents, user or
-managed state, environment values, or parser errors. Both settings absent,
-`localSettingsIgnored: "ignored"`, and no observable blocker is healthy only as
-a future installation-precondition
-result, never healthy enforcement.
+managed state, environment values, or parser errors. An absent local settings
+file, safely observed absent or present shared settings with no relevant
+declaration, `localSettingsIgnored: "ignored"`, and no observable blocker is
+healthy only as a future installation-precondition result, never healthy
+enforcement. Unrelated shared settings do not become a collision.
 
 The eventual receipt-aware lifecycle may add `owned_inactive`, `owned_exact`,
 `record_collision`, `owned_modified`, and artifact-readiness states only after a

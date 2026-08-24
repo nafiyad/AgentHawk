@@ -1,6 +1,6 @@
 # CLI JSON contract
 
-AgentHawk JSON output is intended for automation and coding-agent integrations. Successful `init`, `check`, `scan`, `diff`, `policy validate`, `approvals verify`, `doctor`, and `integrations codex status|install|remove` reports and CLI failures use schema version `1.0`. Consumers must parse the process exit code and JSON together and fail closed on malformed output, unsupported schema versions, or unknown values.
+AgentHawk JSON output is intended for automation and coding-agent integrations. Successful `init`, `check`, `scan`, `diff`, `policy validate`, `approvals verify`, `doctor`, `integrations codex status|install|remove`, and `integrations claude status` reports and CLI failures use schema version `1.0`. Consumers must parse the process exit code and JSON together and fail closed on malformed output, unsupported schema versions, or unknown values.
 
 ## Compatibility policy
 
@@ -37,6 +37,8 @@ Only exit `0` plus an explicitly acceptable parsed verdict permits an automated 
 
 For `integrations codex status`, exit `0` means either no owned state exists and no mutation blocker was observed, or an exact owned pair has current local artifacts and no blocker. Exit `1` means the completed snapshot requires attention; exit `4` is an unexpected reporting failure. The report is not an admission verdict and never proves Codex loaded, trusted, enabled, or executed a hook.
 
+For `integrations claude status`, exit `0` means only that local settings are absent, shared settings were safely absent or contained no relevant blocker, the exact future local settings path is currently ignored, and no repository-visible blocker was observed. Exit `1` means the preflight requires attention; exit `4` is an unexpected redacted reporting failure. Activation is always `unproven`; the report is neither an admission verdict nor proof that Claude would load or enforce a hook.
+
 ## Report families
 
 - `check npm` returns a package target, verdict and original verdict, findings, provider status, policy/evidence digests, optional approval metadata, and a human-readable exit-code meaning.
@@ -47,9 +49,10 @@ For `integrations codex status`, exit `0` means either no owned state exists and
 - `doctor` returns fixed runtime, package-alignment, cache, Git, configuration, and integration-presence states. It returns no paths, contents, environment values, child-process diagnostics, or provider data.
 - `init` returns its selected integration and fixed created/unchanged target identifiers. It returns no absolute paths, contents, temporary names, filesystem diagnostics, or provider data.
 - `integrations codex status` returns one of seven ownership states, independent current-artifact readiness, and ordered configuration/operation/linked-worktree blockers. It returns no absolute paths, identifiers, hashes, file contents, environment values, trust assertion, or provider data and performs no write.
+- `integrations claude status` returns five bounded settings/declaration/ignore observations, ordered collision blockers, fixed activation `unproven`, and one of two stable exit meanings. It returns no paths, settings, commands, identifiers, digests, ignore patterns, source locations, parser diagnostics, environment values, or provider data and performs no write.
 - `integrations codex install|remove` returns a strict lifecycle outcome (`installed`, `removed`, or `recovery_required`) plus the same redacted ownership, readiness, and blocker enums. Exit `0` is reserved for the exact completed outcome; recovery requires attention and foreign or unsafe input fails closed.
 
-Runtime schemas are exported by `@agenthawk/core` as `evaluationReportSchema`, `scanReportSchema`, `diffReportSchema`, `inventoryReportSchema`, `policyValidationReportSchema`, `approvalValidationReportSchema`, `doctorReportSchema`, `initReportSchema`, `codexProjectHookStatusReportSchema`, `codexProjectHookLifecycleReportSchema`, and `cliErrorReportSchema`.
+Runtime schemas are exported by `@agenthawk/core` as `evaluationReportSchema`, `scanReportSchema`, `diffReportSchema`, `inventoryReportSchema`, `policyValidationReportSchema`, `approvalValidationReportSchema`, `doctorReportSchema`, `initReportSchema`, `codexProjectHookStatusReportSchema`, `codexProjectHookLifecycleReportSchema`, `claudeProjectHookStatusReportSchema`, and `cliErrorReportSchema`.
 
 ## Planned native-hook internal contracts
 

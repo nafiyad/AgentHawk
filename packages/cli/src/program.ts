@@ -3,6 +3,10 @@ import { Command } from "commander";
 import { verifyApprovalFile } from "./approvals.js";
 import { type CheckDependencies, checkNpmPackage, type OutputFormat } from "./check.js";
 import {
+  type ClaudeProjectHookStatusDependencies,
+  statusClaudeProjectHook,
+} from "./claude-project-hook-status.js";
+import {
   type CodexProjectHookStatusDependencies,
   statusCodexProjectHook,
 } from "./codex-project-hook-status.js";
@@ -19,6 +23,7 @@ import { escapeTerminal } from "./terminal.js";
 import { AGENTHAWK_CLI_VERSION } from "./version.js";
 
 export type ProgramDependencies = CheckDependencies &
+  ClaudeProjectHookStatusDependencies &
   DoctorDependencies &
   InitDependencies &
   CodexProjectHookStatusDependencies & {
@@ -223,6 +228,20 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     const format = parseOutputFormat(options.format, dependencies);
     if (!format) return;
     writeResult(await removeCodexProjectHook({ format }, dependencies), dependencies);
+  });
+  const claudeIntegration = integrations
+    .command("claude")
+    .description("Inspect the Claude Code project-hook preflight.")
+    .configureOutput(safeOutput);
+  const claudeStatus = claudeIntegration
+    .command("status")
+    .description("Observe fixed Claude project settings without changing files.")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  claudeStatus.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    writeResult(await statusClaudeProjectHook({ format }, dependencies), dependencies);
   });
 
   const diff = program

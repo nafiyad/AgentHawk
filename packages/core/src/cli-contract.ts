@@ -265,6 +265,113 @@ export const codexProjectHookStatusReportSchema = z
   });
 export type CodexProjectHookStatusReport = z.infer<typeof codexProjectHookStatusReportSchema>;
 
+export const claudeSettingsStateSchema = z.enum(["absent", "present", "unsafe"]);
+export type ClaudeSettingsState = z.infer<typeof claudeSettingsStateSchema>;
+
+export const claudeSharedPreToolUseSchema = z.enum(["absent", "present", "unknown"]);
+export type ClaudeSharedPreToolUse = z.infer<typeof claudeSharedPreToolUseSchema>;
+
+export const claudeSharedDisableAllHooksSchema = z.union([z.boolean(), z.literal("unknown")]);
+export type ClaudeSharedDisableAllHooks = z.infer<typeof claudeSharedDisableAllHooksSchema>;
+
+export const claudeLocalSettingsIgnoredSchema = z.enum(["ignored", "not_ignored", "unknown"]);
+export type ClaudeLocalSettingsIgnored = z.infer<typeof claudeLocalSettingsIgnoredSchema>;
+
+export const claudeProjectHookBlockerSchema = z.enum([
+  "local_settings_unsafe",
+  "shared_settings_unsafe",
+  "local_settings_present",
+  "local_settings_not_ignored",
+  "ignore_status_unavailable",
+  "project_hooks_present",
+  "project_hooks_declared_disabled",
+  "linked_worktree",
+]);
+export type ClaudeProjectHookBlocker = z.infer<typeof claudeProjectHookBlockerSchema>;
+
+export const claudeProjectHookStatusReportSchema = z
+  .object({
+    schemaVersion: z.literal("1.0"),
+    toolVersion: z.string().min(1).max(128),
+    command: z.literal("integrations_claude_status"),
+    localSettings: claudeSettingsStateSchema,
+    sharedSettings: claudeSettingsStateSchema,
+    sharedPreToolUse: claudeSharedPreToolUseSchema,
+    sharedDisableAllHooks: claudeSharedDisableAllHooksSchema,
+    localSettingsIgnored: claudeLocalSettingsIgnoredSchema,
+    blockers: z.array(claudeProjectHookBlockerSchema).max(8),
+    activation: z.literal("unproven"),
+    providersContacted: z.literal(false),
+    exitCodeMeaning: z.enum(["future_installation_precondition_met", "attention_required"]),
+  })
+  .strict()
+  .superRefine((report, context) => {
+    const blockerOrder = claudeProjectHookBlockerSchema.options;
+    if (
+      new Set(report.blockers).size !== report.blockers.length ||
+      report.blockers.some(
+        (blocker, index) =>
+          blockerOrder.indexOf(blocker) <
+          blockerOrder.indexOf(report.blockers[index - 1] ?? blocker),
+      )
+    ) {
+      context.addIssue({ code: "custom", message: "Claude status blockers are inconsistent." });
+    }
+
+    const expectedBlockers: ClaudeProjectHookBlocker[] = [];
+    if (report.localSettings === "unsafe") expectedBlockers.push("local_settings_unsafe");
+    if (report.sharedSettings === "unsafe") expectedBlockers.push("shared_settings_unsafe");
+    if (report.localSettings === "present") expectedBlockers.push("local_settings_present");
+    if (report.localSettingsIgnored === "not_ignored")
+      expectedBlockers.push("local_settings_not_ignored");
+    if (report.localSettingsIgnored === "unknown")
+      expectedBlockers.push("ignore_status_unavailable");
+    if (report.sharedPreToolUse === "present") expectedBlockers.push("project_hooks_present");
+    if (report.sharedDisableAllHooks === true)
+      expectedBlockers.push("project_hooks_declared_disabled");
+    if (report.blockers.includes("linked_worktree")) expectedBlockers.push("linked_worktree");
+    if (JSON.stringify(report.blockers) !== JSON.stringify(expectedBlockers)) {
+      context.addIssue({ code: "custom", message: "Claude status blockers do not match state." });
+    }
+
+    if (
+      report.sharedSettings === "unsafe" &&
+      (report.sharedPreToolUse !== "unknown" || report.sharedDisableAllHooks !== "unknown")
+    ) {
+      context.addIssue({ code: "custom", message: "Unsafe Claude shared state must be unknown." });
+    }
+    if (
+      report.sharedSettings === "absent" &&
+      (report.sharedPreToolUse !== "absent" || report.sharedDisableAllHooks !== false)
+    ) {
+      context.addIssue({ code: "custom", message: "Absent Claude shared state is inconsistent." });
+    }
+    if (
+      report.sharedSettings === "present" &&
+      (report.sharedPreToolUse === "unknown" || report.sharedDisableAllHooks === "unknown")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Present Claude shared state must have known observations.",
+      });
+    }
+
+    const healthy =
+      report.localSettings === "absent" &&
+      report.sharedSettings !== "unsafe" &&
+      report.sharedPreToolUse === "absent" &&
+      report.sharedDisableAllHooks === false &&
+      report.localSettingsIgnored === "ignored" &&
+      report.blockers.length === 0;
+    if (
+      report.exitCodeMeaning !==
+      (healthy ? "future_installation_precondition_met" : "attention_required")
+    ) {
+      context.addIssue({ code: "custom", message: "Claude status exit meaning is inconsistent." });
+    }
+  });
+export type ClaudeProjectHookStatusReport = z.infer<typeof claudeProjectHookStatusReportSchema>;
+
 export const codexProjectHookLifecycleReportSchema = z
   .object({
     schemaVersion: z.literal("1.0"),

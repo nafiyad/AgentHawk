@@ -42,7 +42,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Read-only GitHub pull-request evaluation with an isolated opt-in write commenter
 - Fail-closed advisory templates for Codex, Claude Code, Cursor, and generic agents
 - A packaged, release-pinned Codex `PreToolUse` compatibility candidate with exact local Windows CLI and app-server host evidence, root-bound hook/receipt lifecycle commands, and invocation-time pair verification; activation and support remain gated
-- A packaged, release-pinned Claude Code `PreToolUse` fixture edge for strict `Bash`/`PowerShell` framing and deny-only output; configuration and native support remain gated
+- A packaged, release-pinned Claude Code `PreToolUse` fixture edge plus read-only project-settings collision preflight; configuration mutation and native support remain gated
 - Exact release-package manifests, dual-use disclosure, checksummed CI artifacts, and protected stage-only trusted publishing for future versions
 - Offline fixtures and security regression tests
 
@@ -83,6 +83,7 @@ pnpm agenthawk init --integration none --format json
 pnpm agenthawk integrations codex status --format json
 pnpm agenthawk integrations codex install --format json
 pnpm agenthawk integrations codex remove --format json
+pnpm agenthawk integrations claude status --format json
 pnpm agenthawk scan --format json
 pnpm agenthawk diff --base origin/main --strict --format json
 ```
@@ -91,14 +92,16 @@ pnpm agenthawk diff --base origin/main --strict --format json
 
 `integrations codex install` exclusively publishes one root-bound receipt and hook without replacing existing configuration; `remove` deletes only an exact or inactive owned pair. Invocation re-verifies the pair before declaring project deployment trust. These commands do not trust or enable the hook, and successful publication does not prove that Codex loaded or executed it. A foreign or abandoned lock and every unprovable crash state fail closed for operator review; no PID, age, locality, hostile-filesystem, or power-loss-durability claim is made.
 
+`integrations claude status` is read-only. It observes only the fixed project shared/local settings targets, a bounded Git topology snapshot, and the quiet ignore result for `.claude/settings.local.json`. It reports collisions and relevant shared `PreToolUse`/`disableAllHooks` declarations without returning settings, paths, ignore patterns, or parser diagnostics. Exit `0` means only that the future installation preconditions currently hold; activation is always `unproven`, and no install/remove command exists.
+
 Native enforcement remains unsupported. The exact Codex CLI `0.149.0` Windows
 x64 project-hook row has strong local compatibility evidence, but the pinned
 GitHub-hosted Windows environment rejects the exact restricted-token filesystem
 projection before the complete matrix can run. See the [support
 matrix](docs/support-matrix.md). Claude Code `2.1.241` has a packaged, closed
-fixture adapter but no settings lifecycle, exact-host compatibility evidence, or
-supported native row. See [ADR 0015](docs/adr/0015-claude-code-hook-edge.md). The published `0.1.0-alpha.1` package also
-predates these lifecycle commands; protected `scan`/`diff` CI remains the final
+fixture adapter and read-only collision preflight but no settings lifecycle,
+exact-host compatibility evidence, or supported native row. See [ADR 0015](docs/adr/0015-claude-code-hook-edge.md) and [ADR 0016](docs/adr/0016-claude-project-hook-ownership.md). The published `0.1.0-alpha.1` package also
+predates these source-revision commands; protected `scan`/`diff` CI remains the final
 repository gate.
 
 Exit codes are `0` for allowed/non-strict or ready diagnostic results, `1` for strict review/block findings or diagnostic attention, `2` for invalid input or policy, `3` for required provider/evaluation failure, and `4` for unexpected internal failure.
