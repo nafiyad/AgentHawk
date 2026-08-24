@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { access, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, get } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -107,13 +107,50 @@ describe("Codex host neutral execution proof", () => {
       const linuxMarker = join(root, "linux-marker");
       const windowsMarker = join(root, "windows-marker");
       await writeFile(linuxMarker, "");
-      await writeFile(windowsMarker, "executed\r\n");
+      await writeFile(windowsMarker, "executed");
       await expect(verifyNeutralMarker(linuxMarker, "linux")).resolves.toBe(true);
       await expect(verifyNeutralMarker(windowsMarker, "win32")).resolves.toBe(true);
       await writeFile(linuxMarker, "unexpected");
       await expect(verifyNeutralMarker(linuxMarker, "linux")).rejects.toThrowError(
         new HostHarnessError("neutral_marker_invalid"),
       );
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 3 });
+    }
+  });
+
+  it("rejects oversized and padded marker content", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-neutral-marker-test-"));
+    try {
+      const oversized = join(root, "oversized");
+      const padded = join(root, "padded");
+      await writeFile(oversized, Buffer.alloc(1024 * 1024, 0x78));
+      await writeFile(padded, " executed ");
+      await expect(verifyNeutralMarker(oversized, "linux")).rejects.toThrowError(
+        new HostHarnessError("neutral_marker_invalid"),
+      );
+      await expect(verifyNeutralMarker(padded, "win32")).rejects.toThrowError(
+        new HostHarnessError("neutral_marker_invalid"),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true, maxRetries: 3 });
+    }
+  });
+
+  it("rejects a path replacement after the bounded marker read", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agenthawk-neutral-marker-test-"));
+    try {
+      const marker = join(root, "marker");
+      const displaced = join(root, "displaced");
+      await writeFile(marker, "");
+      await expect(
+        verifyNeutralMarker(marker, "linux", {
+          afterRead: async () => {
+            await rename(marker, displaced);
+            await writeFile(marker, "");
+          },
+        }),
+      ).rejects.toThrowError(new HostHarnessError("neutral_marker_not_regular"));
     } finally {
       await rm(root, { recursive: true, force: true, maxRetries: 3 });
     }

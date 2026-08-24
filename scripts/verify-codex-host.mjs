@@ -211,7 +211,8 @@ export function codexHostPlatform(platform = process.platform) {
     case "win32":
       return {
         commandTool: "shell_command",
-        neutralCommand: "Set-Content -LiteralPath agenthawk-neutral.marker -Value executed",
+        neutralCommand:
+          "Set-Content -NoNewline -LiteralPath agenthawk-neutral.marker -Value executed",
         surface: "local-cli-windows-shell-command",
       };
     case "linux":
@@ -231,8 +232,9 @@ export function codexHostPlatform(platform = process.platform) {
   }
 }
 
-export async function verifyNeutralMarker(marker, platform = process.platform) {
+export async function verifyNeutralMarker(marker, platform = process.platform, dependencies = {}) {
   codexHostPlatform(platform);
+  const expected = platform === "win32" ? Buffer.from("executed", "utf8") : Buffer.alloc(0);
   const observedBefore = await lstat(marker, { bigint: true }).catch((error) => {
     if (error?.code === "ENOENT") throw new HostHarnessError("neutral_marker_missing");
     throw new HostHarnessError("neutral_marker_check_failed");
@@ -245,27 +247,37 @@ export async function verifyNeutralMarker(marker, platform = process.platform) {
     throw new HostHarnessError("neutral_marker_check_failed");
   });
   try {
-    const [observedAfter, opened] = await Promise.all([
+    const openedBefore = await handle.stat({ bigint: true });
+    if (
+      !openedBefore.isFile() ||
+      observedBefore.dev !== openedBefore.dev ||
+      observedBefore.ino !== openedBefore.ino
+    ) {
+      throw new HostHarnessError("neutral_marker_not_regular");
+    }
+    if (openedBefore.size !== BigInt(expected.length)) {
+      throw new HostHarnessError("neutral_marker_invalid");
+    }
+    const bounded = Buffer.alloc(expected.length + 1);
+    const { bytesRead } = await handle.read(bounded, 0, bounded.length, 0);
+    await dependencies.afterRead?.();
+    const [observedAfter, openedAfter] = await Promise.all([
       lstat(marker, { bigint: true }),
       handle.stat({ bigint: true }),
     ]);
     if (
       !observedAfter.isFile() ||
       observedAfter.isSymbolicLink() ||
-      !opened.isFile() ||
-      observedBefore.dev !== opened.dev ||
-      observedBefore.ino !== opened.ino ||
-      observedAfter.dev !== opened.dev ||
-      observedAfter.ino !== opened.ino
+      !openedAfter.isFile() ||
+      observedAfter.dev !== openedAfter.dev ||
+      observedAfter.ino !== openedAfter.ino
     ) {
       throw new HostHarnessError("neutral_marker_not_regular");
     }
-    const contents = await handle.readFile();
-    if (platform === "win32") {
-      if (contents.toString("utf8").trim() !== "executed") {
-        throw new HostHarnessError("neutral_marker_invalid");
-      }
-    } else if (contents.length !== 0) {
+    if (openedAfter.size !== BigInt(expected.length)) {
+      throw new HostHarnessError("neutral_marker_invalid");
+    }
+    if (bytesRead !== expected.length || !bounded.subarray(0, bytesRead).equals(expected)) {
       throw new HostHarnessError("neutral_marker_invalid");
     }
     return true;
