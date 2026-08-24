@@ -453,8 +453,8 @@ describe("Codex project-hook lifecycle", { timeout: 20_000 }, () => {
     });
   });
 
-  it("rejects parent and staging identity replacement before publication", async () => {
-    for (const target of ["parent", "staging"] as const) {
+  it("rejects full parent-chain and staging identity replacement before publication", async () => {
+    for (const target of ["leaf", "intermediate", "root", "staging"] as const) {
       const fixture = await lifecycleFixture();
       const external = await mkdtemp(join(await realpath(tmpdir()), "agenthawk-external-"));
       roots.push(external);
@@ -463,10 +463,33 @@ describe("Codex project-hook lifecycle", { timeout: 20_000 }, () => {
         {
           ...fixture.dependencies,
           checkpoint: async (name) => {
-            if (target === "parent" && name === "before_receipt_publish") {
+            if (target === "leaf" && name === "before_receipt_publish") {
               const parent = join(fixture.root, ".agenthawk", "integrations");
               await rename(parent, `${parent}-replaced`);
               await symlink(external, parent, process.platform === "win32" ? "junction" : "dir");
+            }
+            if (target === "intermediate" && name === "before_receipt_publish") {
+              const parent = join(fixture.root, ".agenthawk");
+              const replaced = `${parent}-replaced`;
+              await rename(parent, replaced);
+              await mkdir(parent);
+              await rename(join(replaced, "integrations"), join(parent, "integrations"));
+            }
+            if (target === "root" && name === "before_receipt_publish") {
+              const replaced = `${fixture.root}-replaced`;
+              roots.push(replaced);
+              await rename(fixture.root, replaced);
+              await mkdir(fixture.root);
+              const entries = await readdir(replaced);
+              for (const entry of entries.filter(
+                (value) =>
+                  value === ".codex" ||
+                  value === ".agenthawk" ||
+                  value === ".agenthawk-codex-integration.lock" ||
+                  value.startsWith(".agenthawk-codex-integration-"),
+              )) {
+                await rename(join(replaced, entry), join(fixture.root, entry));
+              }
             }
             if (target === "staging" && name === "staged_files_ready") {
               const entry = (await readdir(fixture.root)).find((value) =>
@@ -482,6 +505,66 @@ describe("Codex project-hook lifecycle", { timeout: 20_000 }, () => {
       );
       expect(result.exitCode).not.toBe(0);
       expect(await readdir(external)).toEqual([]);
+    }
+  });
+
+  it("does not remove a replacement staging directory during cleanup", async () => {
+    const fixture = await lifecycleFixture();
+    let replacedPath = "";
+    let originalPath = "";
+    const result = await installCodexProjectHook(
+      { format: "json" },
+      {
+        ...fixture.dependencies,
+        beforeRmdir: async (path) => {
+          if (!path.includes(".agenthawk-codex-integration-")) return;
+          replacedPath = path;
+          originalPath = `${path}.original`;
+          await rename(path, originalPath);
+          await mkdir(path);
+        },
+      },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.output)).toMatchObject({ outcome: "recovery_required" });
+    await expect(readdir(replacedPath)).resolves.toEqual([]);
+    await expect(readdir(originalPath)).resolves.toEqual([]);
+  });
+
+  it("rejects intermediate and root identity replacement before removal", async () => {
+    for (const target of ["intermediate", "root"] as const) {
+      const fixture = await lifecycleFixture();
+      expect(
+        (await installCodexProjectHook({ format: "json" }, fixture.dependencies)).exitCode,
+      ).toBe(0);
+      const hookPath = join(fixture.root, ".codex", "hooks.json");
+      const hookBytes = await readFile(hookPath);
+      const result = await removeCodexProjectHook(
+        { format: "json" },
+        {
+          ...fixture.dependencies,
+          checkpoint: async (name) => {
+            if (name !== "before_hook_remove") return;
+            if (target === "intermediate") {
+              const parent = join(fixture.root, ".agenthawk");
+              const replaced = `${parent}-replaced`;
+              await rename(parent, replaced);
+              await mkdir(parent);
+              await rename(join(replaced, "integrations"), join(parent, "integrations"));
+            } else {
+              const replaced = `${fixture.root}-replaced`;
+              roots.push(replaced);
+              await rename(fixture.root, replaced);
+              await mkdir(fixture.root);
+              for (const entry of await readdir(replaced)) {
+                await rename(join(replaced, entry), join(fixture.root, entry));
+              }
+            }
+          },
+        },
+      );
+      expect(result.exitCode).not.toBe(0);
+      await expect(readFile(hookPath)).resolves.toEqual(hookBytes);
     }
   });
 

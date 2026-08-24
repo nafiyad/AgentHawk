@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -278,7 +278,7 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
     ];
     const projectHookEntrypoint = join(dirname(cliEntrypoint), "codex-pretooluse-entry.js");
     const projectInput = JSON.stringify({
-      cwd: initDirectory,
+      cwd: await realpath(initDirectory),
       hook_event_name: "PreToolUse",
       model: "packed-project-model",
       permission_mode: "default",
