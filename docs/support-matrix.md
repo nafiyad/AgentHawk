@@ -24,12 +24,12 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 | Integration | Current status |
 | --- | --- |
-| Codex | Advisory template; `0.149.0` `PreToolUse` compatibility candidate with exact local Windows CLI/app-server evidence; fixed-target lifecycle, root-bound verification, project discovery/trust/neutral/deny/mutation/disable, and disposable hosted managed-only suppression pass. [ADR 0014](adr/0014-codex-support-scope.md) keeps it unsupported until the exact CLI project-hook outcome matrix passes |
+| Codex | Advisory template plus one native row supported in this source revision: exact CLI `0.149.0`, Windows x64, local ordinary `codex exec`, project-owned synchronous `PreToolUse` `shell_command`, trusted exact hook hash, hooks enabled, Code Mode paths disabled, `workspace-write`, `approval_policy = "never"`, and `windows.sandbox = "unelevated"`. See [ADR 0014](adr/0014-codex-support-scope.md) |
 | Claude Code | Advisory project instruction template |
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |
 | GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
-| Native pre-action hooks | Codex candidate and isolated host harnesses implemented; exact 0.149.0 local Windows CLI/app-server neutral/deny, root-bound lifecycle, project activation, and disposable hosted managed-only suppression pass. Linux Docker evidence failed closed when the native sandbox namespace was unavailable; IDE, desktop, Remote, cloud, other operating systems and versions remain unproven, so no native adapter is supported |
+| Native pre-action hooks | Only the exact Codex CLI row above is supported. Its matrix proves unrelated zero-provider execution, allow through a fake package-manager marker, visible warn denial, distinct review/block/error denial, malformed emergency denial, enabled-tool binding, exact removal, and bounded live evidence. IDE, desktop, app-server, Remote, cloud, managed-only, elevated sandbox, Code Mode, Linux, macOS, other versions, and other vendors remain unsupported |
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 

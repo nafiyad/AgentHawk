@@ -1,6 +1,6 @@
 # ADR 0014: Codex native support scope
 
-Status: Accepted — no native adapter is supported yet
+Status: Accepted — one exact Codex CLI row is supported in this source revision
 
 Date: 2026-08-24
 
@@ -38,9 +38,8 @@ Primary sources, accessed 2026-08-24:
 
 ## Decision
 
-AgentHawk does not yet describe any Codex native adapter as supported. Passing
-managed-only suppression completes an authority gate; it does not waive the
-remaining supported-adapter exit criteria.
+AgentHawk supports only the exact row below in this source revision. Passing a
+different host or authority gate does not extend that row.
 
 The first eligible support target is deliberately narrow:
 
@@ -55,9 +54,8 @@ The first eligible support target is deliberately narrow:
 - cooperative `project` deployment trust only; and
 - protected scan/diff CI as the final repository boundary.
 
-Before that row may be supported, one exact-artifact CLI project-hook harness
-must use the production installer and prove all of the following without a real
-package manager or package code:
+The exact-artifact CLI project-hook harness uses the production installer and
+proves all of the following without a real package manager or package code:
 
 1. exact installed hook discovery and trust;
 2. unrelated command execution with zero provider calls;
@@ -105,8 +103,10 @@ receive deterministic policy enforcement.
 
 ## Consequences
 
-Public installation guidance and the support matrix continue to say that no
-native adapter is supported. The next implementation slice is not another
-vendor: it is the exact Windows CLI project-hook outcome matrix above. Claude
-Code work remains dependency-ordered after the first Codex row either passes or
-is explicitly closed as unsupported by another reviewed decision.
+Public guidance names only the exact supported row and keeps every other Codex
+surface, version, operating system, authority, sandbox, and tool configuration
+unsupported. The checksum-pinned official archive is exercised in a dedicated
+GitHub-hosted Windows workflow. The harness inventories the enabled tool set,
+uses ordinary `codex exec`, and records live-evidence time without changing the
+decision when the target is missed. Claude Code is the next dependency-ordered
+adapter research target; it inherits no Codex evidence.

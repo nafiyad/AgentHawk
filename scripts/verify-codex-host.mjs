@@ -169,7 +169,7 @@ function containsFunctionOutput(value, callId) {
   return Object.values(value).some((item) => containsFunctionOutput(item, callId));
 }
 
-function findFunctionOutput(value, callId) {
+export function findFunctionOutput(value, callId) {
   if (Array.isArray(value)) {
     for (const item of value) {
       const found = findFunctionOutput(item, callId);
@@ -306,7 +306,7 @@ async function readBoundedJson(request) {
   }
 }
 
-export function createFixtureServer(command, expectedTool) {
+export function createFixtureServer(command, expectedTool, options = {}) {
   const state = { requests: 0, error: undefined };
   const server = createServer(async (request, response) => {
     try {
@@ -317,6 +317,7 @@ export function createFixtureServer(command, expectedTool) {
       const body = await readBoundedJson(request);
       let events;
       if (state.requests === 1) {
+        options.validateToolSet?.(body);
         const selected = selectCommandTool(body, command, expectedTool);
         events = [
           responseCreated("resp-agenthawk-call"),
@@ -327,7 +328,9 @@ export function createFixtureServer(command, expectedTool) {
         if (!containsFunctionOutput(body, "call-agenthawk")) {
           throw new HostHarnessError("provider_missing_function_output");
         }
+        state.functionOutputRaw = findFunctionOutput(body, "call-agenthawk");
         state.functionOutput = classifyFunctionOutput(body, "call-agenthawk");
+        options.onFunctionOutput?.(state.functionOutputRaw);
         events = [
           responseCreated("resp-agenthawk-finished"),
           assistantMessage("msg-agenthawk-finished", "fixture complete"),
@@ -400,14 +403,15 @@ export function minimalEnvironment(codexHome, taskRoot, fakeBin) {
     TMP: taskRoot,
     USERPROFILE: taskRoot,
   };
-  for (const key of ["PATH", "Path", "PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR", "ComSpec"]) {
+  for (const key of ["PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR", "ComSpec"]) {
     const value = process.env[key];
     if (value !== undefined) {
       environment[key] = value;
     }
   }
-  const pathKey = Object.hasOwn(environment, "Path") ? "Path" : "PATH";
-  environment[pathKey] = `${fakeBin}${delimiter}${environment[pathKey] ?? ""}`;
+  const inheritedPath = process.env.Path ?? process.env.PATH ?? "";
+  environment[process.platform === "win32" ? "Path" : "PATH"] =
+    `${fakeBin}${delimiter}${inheritedPath}`;
   return environment;
 }
 
@@ -459,6 +463,18 @@ export async function terminateChild(child, spawnTreeKiller = spawn) {
 
 export async function runBounded(entry, args, options) {
   const command = commandForEntry(entry, args);
+  const input = options.input;
+  if (
+    input !== undefined &&
+    typeof input !== "string" &&
+    !Buffer.isBuffer(input) &&
+    !(input instanceof Uint8Array)
+  ) {
+    throw new HostHarnessError("host_input_invalid");
+  }
+  if (input !== undefined && Buffer.byteLength(input) > 64 * 1024) {
+    throw new HostHarnessError("host_input_too_large");
+  }
   return await new Promise((resolveRun, rejectRun) => {
     const child = spawn(command.file, command.args, {
       cwd: options.cwd,
@@ -466,8 +482,9 @@ export async function runBounded(entry, args, options) {
       shell: false,
       detached: process.platform !== "win32",
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    if (input !== undefined) child.stdin.end(input);
     const output = { stdout: [], stderr: [], bytes: 0 };
     let settled = false;
     let terminating = false;

@@ -90,6 +90,13 @@ pnpm agenthawk diff --base origin/main --strict --format json
 
 `integrations codex install` exclusively publishes one root-bound receipt and hook without replacing existing configuration; `remove` deletes only an exact or inactive owned pair. Invocation re-verifies the pair before declaring project deployment trust. These commands do not trust or enable the hook, and successful publication does not prove that Codex loaded or executed it. A foreign or abandoned lock and every unprovable crash state fail closed for operator review; no PID, age, locality, hostile-filesystem, or power-loss-durability claim is made.
 
+Native enforcement is supported only for the exact Codex CLI `0.149.0`
+Windows x64 project-hook row documented in the [support
+matrix](docs/support-matrix.md). The published `0.1.0-alpha.1` package predates
+this capability. All other Codex versions, clients, operating systems,
+authorities, sandboxes, alternate tool modes, and other agents remain advisory
+or unsupported; protected `scan`/`diff` CI is still the final repository gate.
+
 Exit codes are `0` for allowed/non-strict or ready diagnostic results, `1` for strict review/block findings or diagnostic attention, `2` for invalid input or policy, `3` for required provider/evaluation failure, and `4` for unexpected internal failure.
 
 ## Development

@@ -1,0 +1,88 @@
+name: Codex CLI project-hook matrix
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/codex-cli-project-matrix.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/codex-provider-preload.mjs"
+      - "scripts/verify-codex-app-server.mjs"
+      - "scripts/verify-codex-app-server.test.ts"
+      - "scripts/verify-codex-cli-project-matrix.mjs"
+      - "scripts/verify-codex-cli-project-matrix.test.ts"
+      - "scripts/verify-codex-host.mjs"
+      - "scripts/verify-codex-host.test.ts"
+      - "packages/cli/**"
+      - "packages/core/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/codex-cli-project-matrix.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/codex-provider-preload.mjs"
+      - "scripts/verify-codex-app-server.mjs"
+      - "scripts/verify-codex-app-server.test.ts"
+      - "scripts/verify-codex-cli-project-matrix.mjs"
+      - "scripts/verify-codex-cli-project-matrix.test.ts"
+      - "scripts/verify-codex-host.mjs"
+      - "scripts/verify-codex-host.test.ts"
+      - "packages/cli/**"
+      - "packages/core/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  project-hook-matrix:
+    name: project-hook matrix (Windows 2025, Node 22)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify exact official Codex artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted') { throw 'Refusing non-hosted runner.' }
+          if ($env:RUNNER_OS -cne 'Windows') { throw 'Refusing non-Windows runner.' }
+          $archive = Join-Path $env:RUNNER_TEMP 'codex-package-x86_64-pc-windows-msvc.tar.gz'
+          $extract = Join-Path $env:RUNNER_TEMP 'agenthawk-codex-0.149.0'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/openai/codex/releases/download/rust-v0.149.0/codex-package-x86_64-pc-windows-msvc.tar.gz' -OutFile $archive
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = 'bc470b4b90654c38ee52716056d6d5fc19a49afd08f419328034f4f324536459'
+          if ($actual -cne $expected) { throw 'Codex archive digest mismatch.' }
+          New-Item -ItemType Directory -Path $extract | Out-Null
+          tar -xzf $archive -C $extract
+          if ($LASTEXITCODE -ne 0) { throw 'Codex archive extraction failed.' }
+          $entries = @(Get-ChildItem -LiteralPath $extract -Filter 'codex.exe' -File -Recurse)
+          if ($entries.Count -ne 1) { throw 'Expected exactly one Codex executable.' }
+          $entry = $entries[0].FullName
+          $version = & $entry --version
+          if ($LASTEXITCODE -ne 0 -or $version -cne 'codex-cli 0.149.0') {
+            throw 'Unexpected Codex executable version.'
+          }
+          "CODEX_ENTRY=$entry" >> $env:GITHUB_ENV
+
+      - name: Prove exact CLI project-hook outcome matrix
+        run: node scripts/verify-codex-cli-project-matrix.mjs --codex-entry "$env:CODEX_ENTRY"
