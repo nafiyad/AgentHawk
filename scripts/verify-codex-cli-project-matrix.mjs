@@ -426,7 +426,16 @@ async function runUnrelatedScenario({
     ) {
       throw matrixError("unrelated_provider_request_observed");
     }
-    await verifyNeutralMarker(marker, "win32");
+    try {
+      await verifyNeutralMarker(marker, "win32");
+    } catch (error) {
+      if (error instanceof HostHarnessError) {
+        throw matrixError(
+          `unrelated_marker_missing:${modelFixture.state.functionOutput ?? "missing"}`,
+        );
+      }
+      throw error;
+    }
   } finally {
     await Promise.all([
       closeServer(modelFixture.server).catch(() => undefined),
