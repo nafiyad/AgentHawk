@@ -70,30 +70,61 @@ symbolic links, junctions/reparse-point aliases, non-regular files, unexpected
 parents, identity changes, and paths outside the established root. Cleanup and
 rollback are fixed-target and non-recursive.
 
+Existing `.codex`, `.agenthawk`, and `.agenthawk/integrations` directories may
+contain unrelated entries and are never owned as a whole. When one is absent,
+the installer creates only that fixed directory with exclusive no-replace
+semantics, immediately records and rechecks its canonical containment and file
+identity, and retains it even if the operation later fails. Existing parents
+must be real contained directories with stable identities; a file, link,
+reparse point, case/Unicode alias, or identity swap fails closed. AgentHawk
+never removes these parent directories or any unrelated child.
+
+The exclusive staging directory contains exactly two bounded regular files,
+`codex-v1.json` and `hooks.json`, plus no user-controlled names. Its 256-bit
+operation identifier comes from the operating system CSPRNG and is lowercase
+base64url without padding. The lock is an exclusively created bounded regular
+file containing that operation identifier and a closed schema version. Neither
+identifier is a credential or authority proof.
+
 The generated `hooks.json` contains exactly one synchronous `PreToolUse` command
 hook matching `Bash`, with a ten-second host timeout and a visible status
 message. Its command uses the canonical absolute current Node executable and
 the canonical absolute packaged `codex-pretooluse-entry.js` sibling, with
-platform-correct quoting and a trusted fixed launch argument declaring
-`deploymentTrust=project`. It must not use `PATH`, `npx`, a package-manager
-launcher, shell substitution, or repository-provided executable code. The hook
-remains machine-local and is not a portable configuration to commit.
+platform-correct quoting and trusted fixed launch arguments declaring
+`deploymentTrust=project`, the installation identifier, and the root binding.
+The installation identifier is 256 CSPRNG bits encoded as lowercase base64url
+without padding. The root binding is a domain-separated SHA-256 digest over the
+identifier, canonical root bytes, and the repository authority loader's exact
+bigint filesystem-identity tuple. Both values appear in the generated hook and
+receipt. At invocation, the adapter re-establishes repository authority and
+must match the recomputed binding and paired receipt before evaluation; a copied
+pair therefore fails in a different root. The binding exposes no raw path and
+is not authentication against a same-account writer.
+
+The command must not use `PATH`, `npx`, a package-manager launcher, shell
+substitution, or repository-provided executable code. The hook remains
+machine-local and is not a portable configuration to commit.
 
 An absolute command reduces executable-name hijacking but does not make the
-Node runtime, installed package, or same-account filesystem immutable. Status
-must revalidate the command and packaged adapter identities instead of assuming
-that an old receipt still describes current bytes.
+Node runtime, installed package, or same-account filesystem immutable. The
+receipt records the generated launch-argument digest, packaged-adapter byte
+digest, and generating Node version, but not a Node-executable byte digest.
+Readiness compares the literal absolute executable path with the current
+canonical `process.execPath`, the recorded/current Node version, and the adapter
+bytes. It does not detect replacement of Node bytes at the same path and version
+and must not claim that it does.
 
 ### Exclusive ownership and collision policy
 
 AgentHawk owns a project hook only when both its strict receipt and exact hook
-file validate as one installation. Similar bytes without the receipt are
-unowned. A receipt without the hook is inactive recovery state, not an
-installation. The receipt is a closed, versioned JSON object containing a
-random installation identifier, the adapter/package version, and digests for
-the expected hook definition, launch arguments, and packaged adapter. It stores
-no raw repository path, user name, environment value, command text observed
-from an agent, credential, or trust-state assertion.
+file validate as one root-bound installation. Similar bytes without the receipt
+are unowned. A receipt without the hook is inactive recovery state, not an
+installation. The receipt is a closed, versioned JSON object containing the
+installation identifier, root binding, adapter/package and Node versions, and
+digests for the published hook bytes, normalized hook definition, launch
+arguments, and packaged adapter. It stores no raw repository path, user name,
+environment value, command text observed from an agent, credential, or
+trust-state assertion.
 
 Installation refuses rather than merges, adopts, repairs, or overwrites when:
 
@@ -114,27 +145,51 @@ by this decision.
 
 ### State model
 
-`status` classifies observed state without mutating it:
+`status` classifies observed state without mutating it. Classification first
+rejects an unsafe or unstable target, then computes exactly one ownership state
+from receipt and hook bytes, and finally reports independent readiness and
+mutation blockers. `config.toml` and an operation lock are blockers, not
+ownership states, so they cannot hide a removable owned pair.
+
+The ownership precedence is exact: unsafe observation produces `unsafe`; an
+absent receipt produces `absent` or `unowned_hook` according to hook absence; a
+present receipt that fails its closed schema, root binding, or fixed-target
+checks produces `record_collision`; a valid receipt with no hook produces
+`owned_inactive`; a valid receipt with its exact recorded hook bytes produces
+`owned_exact`; and any other present hook paired with a valid receipt produces
+`owned_modified`.
 
 | State | Meaning | Safe next operation |
 | --- | --- | --- |
 | `absent` | Neither owned receipt nor hook exists | `install` |
-| `recorded_inactive` | A valid receipt exists and the hook is absent | `remove`, then a fresh `install` |
-| `installed` | Receipt and hook exactly match current expected identities | `remove` |
+| `owned_inactive` | A valid root-bound receipt exists and the hook is absent | `remove`, then a fresh `install` |
+| `owned_exact` | Receipt and hook are the exact root-bound pair originally published, independent of current runtime/package readiness | `remove` |
 | `unowned_hook` | A hook exists without the matching receipt | Human review; AgentHawk does not modify it |
 | `record_collision` | The receipt path exists but is not a valid owned record | Human review; AgentHawk does not modify it |
-| `drifted` | A formerly paired record and hook no longer match | Human review; no automatic repair or removal |
-| `mixed_configuration` | Project TOML and/or another representation prevents exclusive reasoning | Human review; AgentHawk does not install |
-| `operation_locked` | Another operation or an abandoned fixed lock prevents exclusive mutation | Wait for the owner or manually inspect the fixed lock; no automatic break |
+| `owned_modified` | A valid root-bound receipt exists, but a present hook no longer matches its recorded published bytes | Human review; AgentHawk does not delete the changed hook |
+| `unsafe` | A target or parent is linked, aliased, unstable, unsupported, or has an unexpected type | No mutation |
+
+Readiness is separately `current`, `artifact_unavailable`, or `artifact_drift`.
+It never changes `owned_exact` into an unowned state, so a still-identical old
+pair remains safely removable after Node moves, the package is upgraded, or the
+adapter artifact is unavailable. Mutation blockers are `config_collision` and
+`operation_locked`. `config_collision` prevents a fresh install or activation
+claim but never prevents removal of `owned_exact` or `owned_inactive`.
 
 The first implementation does not guess that a lock is stale or break it by
 process identifier or elapsed time; both checks are vulnerable to reuse and
 clock/race ambiguity. An abandoned lock is a visible, fixed-file recovery task.
+Recovery requires the human to stop and coordinate all AgentHawk operations for
+that repository, verify the fixed lock is a contained non-linked regular file,
+and remove only that fixed file while exclusive access is maintained. If no
+such exclusion can be established, the lock is preserved. AgentHawk never
+automates this recovery or treats PID/time as proof that deletion is race-free.
+
 Output uses these bounded categories and remediation text. It does not reveal
 absolute paths, installation identifiers, raw file contents, hook hashes, or
-adapter hashes. `installed` means only that AgentHawk's declaration is intact at
-the instant checked. It does not mean Codex loaded, trusted, enabled, or could
-execute the hook.
+adapter hashes. `owned_exact` plus `current` means only that AgentHawk's
+declaration is intact and its current artifacts match at the instant checked.
+It does not mean Codex loaded, trusted, enabled, or could execute the hook.
 
 ### Transaction and recovery ordering
 
@@ -144,18 +199,40 @@ and validate the staged bytes before publication. Publication uses same-volume
 no-replace operations whose behavior is proven on supported local filesystems;
 an existence check followed by an overwriting rename is insufficient.
 
+The supported primitive must be demonstrated by adversarial tests on each
+claimed local filesystem and operating system. Network, virtual, or other
+filesystems without a proven exclusive same-volume publication primitive fail
+closed before receipt publication.
+
 Installation publishes the receipt first and the hook second. Interruption can
-therefore leave `recorded_inactive`, but must never leave an enabled-looking
+therefore leave `owned_inactive`, but must never leave an enabled-looking
 AgentHawk hook without its ownership record. If hook publication fails, the
 command may remove only the still-identical receipt it just created; otherwise
 it reports recovery state and leaves the evidence intact.
 
 Removal deletes the still-identical hook first and the still-identical receipt
-second. Interruption can again leave only `recorded_inactive`. It must not
+second. Interruption can again leave only `owned_inactive`. It must not
 remove a changed hook, an unowned hook, an unknown receipt, `.codex` itself, or
 unrelated files. Errors and cancellation release the lock and remove only the
 operation's verified staging files. Recovery never scans or recursively deletes
 the repository.
+
+Cancellation has explicit linearization semantics. Before receipt publication,
+installation may return cancelled after cleanup. After receipt publication but
+before hook publication, it first attempts to remove only the still-identical
+receipt: successful rollback is re-read as `absent` and returns cancelled;
+failed or unprovable rollback is re-read and reports `owned_inactive` recovery,
+not plain cancellation. Once the hook no-replace publication succeeds,
+installation is committed: cancellation is deferred until the complete state
+is re-read and the command reports `owned_exact` (or a bounded recovery state),
+rather than reporting failure while a complete hook is live.
+
+Removal is symmetric. Before hook deletion it may return cancelled. Once the
+still-identical hook is deleted, removal is committed and cancellation is
+deferred until receipt deletion is attempted and the resulting `absent` or
+`owned_inactive` state is re-read and reported. Lock release and staging cleanup
+occur only after the committed state has been classified. Cancellation cannot
+turn a post-commit success into an ambiguous failure response.
 
 ### Activation and support claims
 
@@ -215,7 +292,7 @@ The next implementation slice can add only project-scoped `status`, `install`,
 and `remove`, the strict receipt, transactional filesystem helpers, and the
 exact project-hook host harness. It must add adversarial tests for collisions,
 links and reparse points, identity races, cancellation at every publication
-boundary, stale locks, changed artifacts, interrupted install/removal, hostile
+boundary, abandoned locks, changed artifacts, interrupted install/removal, hostile
 file contents, and bounded redacted output on Windows, Linux, and macOS where
 the local-filesystem primitives are claimed.
 
