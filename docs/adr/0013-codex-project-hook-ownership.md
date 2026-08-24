@@ -28,8 +28,8 @@ This decision uses public primary sources, accessed 2026-08-24:
   to bound the compatibility candidate. Source review informs exact-version
   tests; it does not replace the public contract or prove another host version.
 - The same pinned loader [redirects linked-worktree hook declarations to the
-  root checkout](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/config/src/loader/mod.rs#L1022-L1031)
-  and [replaces worktree-local hooks with that root-checkout source](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/config/src/loader/mod.rs#L1502-L1524).
+  root checkout](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/config/src/loader/mod.rs#L1083-L1093)
+  and [replaces worktree-local hooks with that root-checkout source](https://github.com/openai/codex/blob/rust-v0.149.0/codex-rs/config/src/loader/mod.rs#L1590-L1613).
 
 Codex combines matching hooks from multiple sources. A higher-precedence source
 does not replace a lower-precedence hook, and project `hooks.json` can coexist

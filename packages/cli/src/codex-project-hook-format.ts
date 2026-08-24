@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { isAbsolute } from "node:path";
+import { isAbsolute, normalize, posix, resolve, win32 } from "node:path";
 import { z } from "zod";
 import { CODEX_CONTRACT_RELEASE } from "./codex-pretooluse.js";
 
@@ -56,6 +56,9 @@ export interface CodexProjectHookLaunchContext {
 }
 
 const rootBindingDomain = Buffer.from("AgentHawk Codex root binding v1\0", "ascii");
+const maximumPathCodeUnits = 16_384;
+const maximumPathUtf8Bytes = 16_384;
+const maximumFilesystemIdentity = (1n << 64n) - 1n;
 
 export function createCodexProjectHookIdentifier(
   generate: (size: number) => Buffer = randomBytes,
@@ -73,18 +76,16 @@ export function computeCodexProjectRootBinding(input: {
   readonly repositoryRoot: string;
 }): string {
   const installationId = hexadecimal256.parse(input.installationId);
-  if (input.repositoryIdentity.dev < 0n || input.repositoryIdentity.ino <= 0n) {
+  if (
+    input.repositoryIdentity.dev < 0n ||
+    input.repositoryIdentity.dev > maximumFilesystemIdentity ||
+    input.repositoryIdentity.ino <= 0n ||
+    input.repositoryIdentity.ino > maximumFilesystemIdentity
+  ) {
     throw new Error("Codex project-hook repository identity is invalid.");
   }
+  validateCanonicalPortableAbsolutePath(input.repositoryRoot);
   const root = Buffer.from(input.repositoryRoot, "utf8");
-  if (
-    !input.repositoryRoot ||
-    !isAbsolute(input.repositoryRoot) ||
-    root.length > 16_384 ||
-    root.toString("utf8") !== input.repositoryRoot
-  ) {
-    throw new Error("Codex project-hook repository root is invalid.");
-  }
   const fields = [
     Buffer.from(installationId, "hex"),
     root,
@@ -123,6 +124,7 @@ export function buildCodexProjectHookArtifacts(
 ): CodexProjectHookArtifacts {
   validateAbsoluteLaunchPath(input.nodeExecutable);
   validateAbsoluteLaunchPath(input.adapterEntry);
+  validateCanonicalNativeAbsolutePath(input.repositoryRoot, "repository root");
   const installationId = hexadecimal256.parse(input.installationId);
   const adapterVersion = boundedVersion.parse(input.adapterVersion);
   const nodeVersion = boundedVersion.parse(input.nodeVersion);
@@ -197,7 +199,36 @@ function digest(value: Uint8Array): string {
 
 function validateAbsoluteLaunchPath(value: string): void {
   validateLaunchArgument(value);
-  if (!isAbsolute(value)) throw new Error("Codex project-hook launch path is invalid.");
+  validateCanonicalNativeAbsolutePath(value, "launch path");
+}
+
+function validateCanonicalNativeAbsolutePath(value: string, label: string): void {
+  if (!isAbsolute(value) || normalize(value) !== value || resolve(value) !== value) {
+    throw new Error(`Codex project-hook ${label} is invalid.`);
+  }
+}
+
+function validateCanonicalPortableAbsolutePath(value: string): void {
+  validateBoundedUtf8Path(value);
+  const canonicalPosix = posix.isAbsolute(value) && posix.normalize(value) === value;
+  const fullyQualifiedWindows =
+    /^[A-Za-z]:\\/u.test(value) || /^\\\\[^\\]+\\[^\\]+(?:\\|$)/u.test(value);
+  const canonicalWindows =
+    fullyQualifiedWindows && win32.isAbsolute(value) && win32.normalize(value) === value;
+  if (!canonicalPosix && !canonicalWindows) {
+    throw new Error("Codex project-hook repository root is invalid.");
+  }
+}
+
+function validateBoundedUtf8Path(value: string): void {
+  if (
+    !value ||
+    value.length > maximumPathCodeUnits ||
+    Buffer.byteLength(value, "utf8") > maximumPathUtf8Bytes ||
+    /\p{C}/u.test(value)
+  ) {
+    throw new Error("Codex project-hook repository root is invalid.");
+  }
 }
 
 function validateLaunchArgument(value: string): void {

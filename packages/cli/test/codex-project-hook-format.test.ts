@@ -44,24 +44,32 @@ describe("Codex project-hook root binding", () => {
     { dev: -1n, ino: 2n },
     { dev: 1n, ino: 0n },
     { dev: 1n, ino: -1n },
+    { dev: 1n << 64n, ino: 2n },
+    { dev: 1n, ino: 1n << 64n },
   ])("rejects invalid bigint identity $dev/$ino", (repositoryIdentity) => {
     expect(() =>
       computeCodexProjectRootBinding({ installationId, repositoryIdentity, repositoryRoot }),
     ).toThrow();
   });
 
-  it.each(["", "relative/repository", `/${"x".repeat(16_385)}`, "/invalid\ud800root"])(
-    "rejects a noncanonical repository root: %j",
-    (candidate) => {
-      expect(() =>
-        computeCodexProjectRootBinding({
-          installationId,
-          repositoryIdentity: { dev: 1n, ino: 2n },
-          repositoryRoot: candidate,
-        }),
-      ).toThrow();
-    },
-  );
+  it.each([
+    "",
+    "relative/repository",
+    "/repo/../other",
+    "C:relative\\repository",
+    "C:\\repo\\..\\other",
+    `/${"x".repeat(16_385)}`,
+    `/${"😀".repeat(8_193)}`,
+    "/invalid\ud800root",
+  ])("rejects a noncanonical repository root: %j", (candidate) => {
+    expect(() =>
+      computeCodexProjectRootBinding({
+        installationId,
+        repositoryIdentity: { dev: 1n, ino: 2n },
+        repositoryRoot: candidate,
+      }),
+    ).toThrow();
+  });
 
   it("requires exactly 32 CSPRNG bytes", () => {
     expect(createCodexProjectHookIdentifier(() => Buffer.alloc(32, 0xab))).toBe("ab".repeat(32));
@@ -186,6 +194,48 @@ describe("Codex project-hook format", () => {
       ).toThrow();
     },
   );
+
+  it.runIf(process.platform === "win32")(
+    "rejects current-drive-rooted Windows launch and repository paths",
+    () => {
+      const base = {
+        adapterBytes: Buffer.from("adapter"),
+        adapterEntry: resolve("adapter.js"),
+        adapterVersion: "0.1.0-alpha.1",
+        installationId,
+        nodeExecutable: resolve("node.exe"),
+        nodeVersion: "v22.18.0",
+        repositoryIdentity: { dev: 1n, ino: 2n },
+        repositoryRoot,
+      };
+      expect(() =>
+        buildCodexProjectHookArtifacts({ ...base, nodeExecutable: "/node.exe" }),
+      ).toThrow();
+      expect(() =>
+        buildCodexProjectHookArtifacts({ ...base, adapterEntry: "\\adapter.js" }),
+      ).toThrow();
+      expect(() => buildCodexProjectHookArtifacts({ ...base, repositoryRoot: "/repo" })).toThrow();
+    },
+  );
+
+  it("rejects drive-relative and dot-segment launch paths", () => {
+    const base = {
+      adapterBytes: Buffer.from("adapter"),
+      adapterEntry: resolve("adapter.js"),
+      adapterVersion: "0.1.0-alpha.1",
+      installationId,
+      nodeExecutable: resolve("node"),
+      nodeVersion: "v22.18.0",
+      repositoryIdentity: { dev: 1n, ino: 2n },
+      repositoryRoot,
+    };
+    expect(() =>
+      buildCodexProjectHookArtifacts({ ...base, nodeExecutable: "C:node.exe" }),
+    ).toThrow();
+    expect(() =>
+      buildCodexProjectHookArtifacts({ ...base, adapterEntry: "C:\\adapter\\..\\entry.js" }),
+    ).toThrow();
+  });
 
   it("rejects a generated command over the aggregate UTF-8 bound", () => {
     const longSegment = "😀".repeat(2_020);
