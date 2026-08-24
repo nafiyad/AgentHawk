@@ -24,12 +24,12 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 | Integration | Current status |
 | --- | --- |
-| Codex | Advisory template plus one native row supported in this source revision: exact CLI `0.149.0`, Windows x64, local ordinary `codex exec`, project-owned synchronous `PreToolUse` `shell_command`, trusted exact hook hash, hooks enabled, Code Mode paths disabled, `workspace-write`, `approval_policy = "never"`, and `windows.sandbox = "unelevated"`. See [ADR 0014](adr/0014-codex-support-scope.md) |
+| Codex | Advisory template; exact CLI `0.149.0` Windows x64 project-hook compatibility candidate with a complete local standard-user matrix, but unsupported because the pinned GitHub-hosted administrator environment rejects ordinary sandboxed execution before that matrix can run. See [ADR 0014](adr/0014-codex-support-scope.md) |
 | Claude Code | Advisory project instruction template |
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |
 | GitHub pull requests | Read-only dependency evaluation with isolated opt-in diagnostic commenter |
-| Native pre-action hooks | Only the exact Codex CLI row above is supported. Its matrix proves unrelated zero-provider execution, allow through a fake package-manager marker, visible warn denial, distinct review/block/error denial, malformed emergency denial, enabled-tool binding, exact removal, and bounded live evidence. IDE, desktop, app-server, Remote, cloud, managed-only, elevated sandbox, Code Mode, Linux, macOS, other versions, and other vendors remain unsupported |
+| Native pre-action hooks | No native adapter is supported. The Codex candidate's local matrix proves unrelated zero-provider execution, controlled allow, visible warn denial, distinct review/block/error denial, malformed emergency denial, enabled-tool binding, exact removal, and controlled performance; the hosted gate positively proves its administrator exclusion. Every other surface, version, operating system, authority, and vendor remains separate |
 
 Advisory files do not prove that a host loaded or obeyed them. Protected CI remains the final repository gate.
 

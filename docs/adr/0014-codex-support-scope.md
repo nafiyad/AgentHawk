@@ -1,6 +1,6 @@
 # ADR 0014: Codex native support scope
 
-Status: Accepted — one exact Codex CLI row is supported in this source revision
+Status: Accepted — no native adapter is supported yet
 
 Date: 2026-08-24
 
@@ -38,8 +38,9 @@ Primary sources, accessed 2026-08-24:
 
 ## Decision
 
-AgentHawk supports only the exact row below in this source revision. Passing a
-different host or authority gate does not extend that row.
+AgentHawk does not support a Codex native adapter in this source revision. The
+row below remains the first eligibility target; passing a different host or
+authority gate does not establish it.
 
 The first eligible support target is deliberately narrow:
 
@@ -54,8 +55,10 @@ The first eligible support target is deliberately narrow:
 - cooperative `project` deployment trust only; and
 - protected scan/diff CI as the final repository boundary.
 
-The exact-artifact CLI project-hook harness uses the production installer and
-proves all of the following without a real package manager or package code:
+The exact-artifact CLI project-hook harness uses the production installer. A
+local standard-user run proves the following without a real package manager or
+package code, but that result is not independently reproducible in the current
+hosted gate:
 
 1. exact installed hook discovery and trust;
 2. unrelated command execution with zero provider calls;
@@ -77,6 +80,15 @@ Evidence from app-server stdio may supplement that CLI row, but it cannot
 substitute for the user-facing launch proof. Desktop, IDE/extension, Remote,
 cloud, elevated sandbox, Linux, macOS, managed installation, other Codex
 versions, and other vendors remain separate unsupported rows.
+
+The checksum-pinned official artifact on GitHub-hosted Windows runs under an
+administrator account. Codex `0.149.0` rejects the ordinary sandboxed neutral
+command in that environment before the matrix can establish execution. The
+hosted workflow now asserts that fixed administrator rejection, zero provider
+traffic, and exact-owned removal as positive exclusion evidence. AgentHawk does
+not disable the sandbox, use danger-full-access, or convert that rejection into
+support. A fresh standard-user Windows runner with the same exact-artifact
+matrix is still required before this row can become supported.
 
 ## Alternatives
 
@@ -103,11 +115,11 @@ receive deterministic policy enforcement.
 
 ## Consequences
 
-Public guidance names only the exact supported row and keeps every other Codex
-surface, version, operating system, authority, sandbox, and tool configuration
-unsupported. The checksum-pinned official archive is exercised in a dedicated
-GitHub-hosted Windows workflow. The harness inventories the enabled tool set,
-uses ordinary `codex exec`, records each host scenario's live-evidence time, and
-measures controlled nearest-rank p95 unrelated qualification, fresh cache-hit,
-and loopback live-evidence targets without changing verdicts. Claude Code is the next dependency-ordered
-adapter research target; it inherits no Codex evidence.
+Public guidance keeps all native adapters unsupported. The local harness
+inventories the enabled tool set, uses ordinary `codex exec`, records each host
+scenario's live-evidence time, and measures controlled nearest-rank p95
+unrelated qualification, fresh cache-hit, and loopback live-evidence targets
+without changing verdicts. The hosted administrator exclusion is separately
+checksum-pinned and green by requiring the observed rejection. Claude Code is
+the next dependency-ordered research target under the roadmap's explicit
+unsupported-closure rule; it inherits no Codex evidence.

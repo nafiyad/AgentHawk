@@ -15,15 +15,17 @@ Merge the relevant section into an existing instruction file rather than overwri
 
 For a fresh target, `agenthawk init --integration <codex|claude|cursor|generic>` creates the canonical policy and selected template with collision-safe fixed paths. It refuses different existing content; use the copy table above for a manual reviewed merge instead. See [initialization and recovery](initialization.md).
 
-## Narrow Codex native enforcement row
+## Codex native compatibility candidate
 
-This source revision supports one exact native row: Codex CLI `0.149.0` on
-Windows x64, launched locally through ordinary `codex exec`, with the
+No native row is supported. Codex CLI `0.149.0` on Windows x64, launched
+locally through ordinary `codex exec`, with the
 project-owned synchronous `PreToolUse` `shell_command` hook installed by
 AgentHawk. The exact hook hash must be trusted in Codex; hooks must be enabled;
 experimental Code Mode paths must remain disabled; and the run must use
 `workspace-write`, `approval_policy = "never"`, and the documented unelevated
-Windows sandbox. No broader Codex or cross-vendor claim follows from this row.
+Windows sandbox has a complete local compatibility matrix. The pinned hosted
+Windows environment runs as administrator, where Codex rejects ordinary
+sandboxed execution, so that local result is not a supported product boundary.
 
 From the canonical Git repository root, inspect before mutation, install only
 into empty AgentHawk-owned fixed targets, and inspect again:
@@ -34,7 +36,8 @@ agenthawk integrations codex install --format json
 agenthawk integrations codex status --format json
 ```
 
-Codex intentionally requires a human to trust the exact discovered project-hook
+These lifecycle commands are compatibility-candidate operations, not supported
+enforcement. Codex intentionally requires a human to trust the exact discovered project-hook
 definition. AgentHawk does not automate or bypass that host decision. If the
 status is not exact and ready, or Codex exposes an alternate execution tool,
 stop and use protected `scan`/`diff` CI instead. To recover, close Codex, confirm

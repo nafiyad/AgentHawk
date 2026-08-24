@@ -25,6 +25,12 @@ const FIXTURE_VERSION = "1.0.0";
 const FIXTURE_TIMESTAMP = "2020-01-01T00:00:00.000Z";
 const PERFORMANCE_SAMPLES = 25;
 
+function parseMatrixArguments(argv) {
+  const expectAdministratorRejection = argv.includes("--expect-administrator-rejection");
+  const hostArguments = argv.filter((argument) => argument !== "--expect-administrator-rejection");
+  return { ...parseArguments(hostArguments), expectAdministratorRejection };
+}
+
 export const MATRIX_SCENARIOS = Object.freeze({
   allow: Object.freeze({
     expectedMessage: undefined,
@@ -533,6 +539,7 @@ async function runCliScenario({
 async function runUnrelatedScenario({
   codexEntry,
   codexHome,
+  expectAdministratorRejection = false,
   fakeBin,
   preloadEntry,
   repository,
@@ -586,12 +593,19 @@ async function runUnrelatedScenario({
       await verifyNeutralMarker(marker, "win32");
     } catch (error) {
       if (error instanceof HostHarnessError) {
+        if (
+          expectAdministratorRejection &&
+          modelFixture.state.functionOutput === "administrator_rejected"
+        ) {
+          return "administrator_rejected";
+        }
         throw matrixError(
           `unrelated_marker_missing:${modelFixture.state.functionOutput ?? "missing"}`,
         );
       }
       throw error;
     }
+    return "passed";
   } finally {
     await Promise.all([
       closeServer(modelFixture.server).catch(() => undefined),
@@ -617,7 +631,26 @@ async function verifyEmergencyDenial(adapterEntry, environment, repository) {
   }
 }
 
-export async function verifyCodexCliProjectMatrix({ codexEntry }) {
+async function removeProjectHook(repository) {
+  const { removeCodexProjectHook } = await import(
+    "../packages/cli/dist/codex-project-hook-transaction.js"
+  );
+  const removal = await removeCodexProjectHook({ format: "json" }, { cwd: repository });
+  const removalReport = JSON.parse(removal.output);
+  if (
+    removal.exitCode !== 0 ||
+    removalReport?.command !== "integrations_codex_remove" ||
+    removalReport?.ownership !== "absent" ||
+    removalReport?.outcome !== "removed"
+  ) {
+    throw matrixError("project_hook_removal_invalid");
+  }
+}
+
+export async function verifyCodexCliProjectMatrix({
+  codexEntry,
+  expectAdministratorRejection = false,
+}) {
   if (process.platform !== "win32") throw matrixError("windows_required");
   await access(codexEntry);
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -641,7 +674,29 @@ export async function verifyCodexCliProjectMatrix({ codexEntry }) {
   const codexHome = join(root, "codex-home");
   const fakeBin = join(repository, ".agenthawk-host-bin");
   try {
-    await runUnrelatedScenario({ codexEntry, codexHome, fakeBin, preloadEntry, repository, root });
+    const unrelated = await runUnrelatedScenario({
+      codexEntry,
+      codexHome,
+      expectAdministratorRejection,
+      fakeBin,
+      preloadEntry,
+      repository,
+      root,
+    });
+    if (unrelated === "administrator_rejected") {
+      await removeProjectHook(repository);
+      return {
+        schemaVersion: "1.0",
+        host: "codex-cli-project-hook",
+        version: EXPECTED_CODEX_VERSION,
+        surface: "github-hosted-windows-administrator",
+        administratorBoundary: "rejected",
+        providerRequests: 0,
+        removal: "passed",
+        support: "unsupported",
+      };
+    }
+    if (expectAdministratorRejection) throw matrixError("administrator_rejection_missing");
     const liveEvidenceMilliseconds = {};
     for (const scenarioName of ["allow", "warn", "review", "block", "error"]) {
       liveEvidenceMilliseconds[scenarioName] = await runCliScenario({
@@ -660,19 +715,7 @@ export async function verifyCodexCliProjectMatrix({ codexEntry }) {
       repository,
     );
     const performance = await measureControlledPerformance(root);
-    const { removeCodexProjectHook } = await import(
-      "../packages/cli/dist/codex-project-hook-transaction.js"
-    );
-    const removal = await removeCodexProjectHook({ format: "json" }, { cwd: repository });
-    const removalReport = JSON.parse(removal.output);
-    if (
-      removal.exitCode !== 0 ||
-      removalReport?.command !== "integrations_codex_remove" ||
-      removalReport?.ownership !== "absent" ||
-      removalReport?.outcome !== "removed"
-    ) {
-      throw matrixError("project_hook_removal_invalid");
-    }
+    await removeProjectHook(repository);
     return {
       schemaVersion: "1.0",
       host: "codex-cli-project-hook",
@@ -700,7 +743,7 @@ export async function verifyCodexCliProjectMatrix({ codexEntry }) {
 
 async function main() {
   try {
-    const result = await verifyCodexCliProjectMatrix(parseArguments(process.argv.slice(2)));
+    const result = await verifyCodexCliProjectMatrix(parseMatrixArguments(process.argv.slice(2)));
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } catch (error) {
     const code = error instanceof HostHarnessError ? error.code : "unexpected_failure";

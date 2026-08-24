@@ -425,10 +425,11 @@ The pinned exact artifact also passed the separate GitHub-hosted Windows gate:
 the project hook was present before policy, `configRequirements/read` reported
 `allowManagedHooksOnly: true`, hook inventory was empty under that requirement,
 and the fixture provider received zero requests. This evidence does not promote
-another host surface. The separate ordinary CLI project-hook outcome matrix and
-alternate-tool exclusion now pass, so [ADR 0014](0014-codex-support-scope.md)
-supports only that exact row. Other named host gates remain separate and do not
-block or inherit that decision.
+another host surface. The separate local ordinary CLI project-hook outcome
+matrix and alternate-tool exclusion pass, but the pinned hosted administrator
+environment rejects ordinary sandboxed execution. [ADR 0014](0014-codex-support-scope.md)
+therefore keeps the candidate unsupported. Other named host gates remain
+separate and do not inherit that decision.
 
 User/managed/plugin installation, portable committed configuration, trust
 automation, merge/adopt/force/repair/upgrade operations, arbitrary paths,

@@ -1,4 +1,4 @@
-name: Codex CLI project-hook matrix
+name: Codex hosted administrator boundary
 
 on:
   pull_request:
@@ -37,8 +37,8 @@ permissions:
   contents: read
 
 jobs:
-  project-hook-matrix:
-    name: project-hook matrix (Windows 2025, Node 22)
+  hosted-administrator-boundary:
+    name: hosted administrator rejection (Windows 2025, Node 22)
     runs-on: windows-2025
     timeout-minutes: 20
     steps:
@@ -84,5 +84,5 @@ jobs:
           }
           "CODEX_ENTRY=$entry" >> $env:GITHUB_ENV
 
-      - name: Prove exact CLI project-hook outcome matrix
-        run: node scripts/verify-codex-cli-project-matrix.mjs --codex-entry "$env:CODEX_ENTRY"
+      - name: Prove hosted administrator boundary fails closed
+        run: node scripts/verify-codex-cli-project-matrix.mjs --codex-entry "$env:CODEX_ENTRY" --expect-administrator-rejection
