@@ -24,6 +24,7 @@ import {
   type TransactionCheckpoint,
 } from "../src/codex-project-hook-transaction.js";
 import { createProgram } from "../src/program.js";
+import { loadRepositoryAuthority } from "../src/repository-authority.js";
 
 const run = promisify(execFile);
 const roots: string[] = [];
@@ -566,6 +567,61 @@ describe("Codex project-hook lifecycle", { timeout: 20_000 }, () => {
       expect(result.exitCode).not.toBe(0);
       await expect(readFile(hookPath)).resolves.toEqual(hookBytes);
     }
+  });
+
+  it("rejects authority identity drift before install or removal mutation", async () => {
+    const installFixture = await lifecycleFixture();
+    let installAuthorityCall = 0;
+    const installResult = await installCodexProjectHook(
+      { format: "json" },
+      {
+        ...installFixture.dependencies,
+        loadAuthority: async (root, options) => {
+          const authority = await loadRepositoryAuthority(root, options);
+          installAuthorityCall += 1;
+          return installAuthorityCall === 1
+            ? {
+                ...authority,
+                repositoryIdentity: {
+                  ...authority.repositoryIdentity,
+                  ino: authority.repositoryIdentity.ino + 1n,
+                },
+              }
+            : authority;
+        },
+      },
+    );
+    expect(installResult.exitCode).toBe(2);
+    expect(await status(installFixture)).toMatchObject({ ownership: "absent" });
+
+    const removeFixture = await lifecycleFixture();
+    expect(
+      (await installCodexProjectHook({ format: "json" }, removeFixture.dependencies)).exitCode,
+    ).toBe(0);
+    const hookPath = join(removeFixture.root, ".codex", "hooks.json");
+    const hookBytes = await readFile(hookPath);
+    let removeAuthorityCall = 0;
+    const removeResult = await removeCodexProjectHook(
+      { format: "json" },
+      {
+        ...removeFixture.dependencies,
+        loadAuthority: async (root, options) => {
+          const authority = await loadRepositoryAuthority(root, options);
+          removeAuthorityCall += 1;
+          return removeAuthorityCall === 1
+            ? {
+                ...authority,
+                repositoryIdentity: {
+                  ...authority.repositoryIdentity,
+                  ino: authority.repositoryIdentity.ino + 1n,
+                },
+              }
+            : authority;
+        },
+      },
+    );
+    expect(removeResult.exitCode).toBe(2);
+    await expect(readFile(hookPath)).resolves.toEqual(hookBytes);
   });
 
   it("rejects byte-identical replacement of the acquired lock identity", async () => {
