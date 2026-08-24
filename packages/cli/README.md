@@ -11,7 +11,7 @@ agenthawk --version
 
 The currently published `0.1.0-alpha.1` package does not include `agenthawk init`. Initialization is implemented in the source revision that contains this README and is available only after that revision is released. Check `agenthawk --help` for the commands present in your installed version.
 
-This source revision also packages `agenthawk-codex-pretooluse` as a release-pinned compatibility candidate and adds read-only `agenthawk integrations codex status`. Status observes only fixed project paths and returns bounded ownership/readiness/blocker enums; it does not write, trust, activate, or prove host enforcement. These commands are not present in `0.1.0-alpha.1`, no installer exists, and Codex is not yet a supported enforcement integration. Host evidence is scoped to exact named surfaces and cannot be generalized across operating systems, clients, deployment authorities, or versions.
+This source revision also packages `agenthawk-codex-pretooluse` as a release-pinned compatibility candidate and adds fixed-target `agenthawk integrations codex status|install|remove`. Installation uses exclusive, capability-tested no-replace publication; removal deletes only an exact or inactive owned pair; invocation re-verifies the root-bound pair before project trust is declared. These commands are not present in `0.1.0-alpha.1`, do not trust or enable the hook, and Codex is not yet a supported enforcement integration. Host evidence is scoped to exact named surfaces and cannot be generalized across operating systems, filesystems, clients, deployment authorities, or versions.
 
 ```bash
 agenthawk check npm example-package@1.0.0 --strict --format json
@@ -27,6 +27,8 @@ From a source checkout containing the initialization milestone:
 ```bash
 pnpm agenthawk init --integration none --format json
 pnpm agenthawk integrations codex status --format json
+pnpm agenthawk integrations codex install --format json
+pnpm agenthawk integrations codex remove --format json
 ```
 
 See the repository [README](https://github.com/nafiyad/AgentHawk#readme), [security policy](https://github.com/nafiyad/AgentHawk/blob/main/SECURITY.md), and [JSON contract](https://github.com/nafiyad/AgentHawk/blob/main/docs/json-contract.md).

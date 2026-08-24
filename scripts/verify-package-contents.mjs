@@ -249,6 +249,43 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
         statusReport.providersContacted === false,
       "Packed Codex project-hook status smoke failed",
     );
+    const installed = await execute(
+      process.execPath,
+      [cliEntrypoint, "integrations", "codex", "install", "--format", "json"],
+      {
+        cwd: initDirectory,
+        encoding: "utf8",
+        maxBuffer: 65_536,
+        timeout: 15_000,
+        windowsHide: true,
+      },
+    );
+    const installedReport = JSON.parse(installed.stdout);
+    assert(
+      installedReport.command === "integrations_codex_install" &&
+        installedReport.outcome === "installed" &&
+        installedReport.ownership === "owned_exact" &&
+        installedReport.readiness === "current",
+      "Packed Codex project-hook install smoke failed",
+    );
+    const removed = await execute(
+      process.execPath,
+      [cliEntrypoint, "integrations", "codex", "remove", "--format", "json"],
+      {
+        cwd: initDirectory,
+        encoding: "utf8",
+        maxBuffer: 65_536,
+        timeout: 15_000,
+        windowsHide: true,
+      },
+    );
+    const removedReport = JSON.parse(removed.stdout);
+    assert(
+      removedReport.command === "integrations_codex_remove" &&
+        removedReport.outcome === "removed" &&
+        removedReport.ownership === "absent",
+      "Packed Codex project-hook remove smoke failed",
+    );
     await verifyPackedCodexHook(consumerDirectory);
   } finally {
     await rm(consumerDirectory, { force: true, recursive: true });

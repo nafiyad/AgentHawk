@@ -33,6 +33,25 @@ export const codexProjectHookLockSchema = z
   .object({ operationId: hexadecimal256, schemaVersion: z.literal("1.0") })
   .strict();
 
+export type CodexProjectHookLock = z.infer<typeof codexProjectHookLockSchema>;
+
+export function buildCodexProjectHookLockBytes(operationId: string): Buffer {
+  return serializeJson(codexProjectHookLockSchema.parse({ operationId, schemaVersion: "1.0" }));
+}
+
+export function parseCodexProjectHookLockBytes(
+  lockBytes: Uint8Array,
+): CodexProjectHookLock | undefined {
+  try {
+    if (lockBytes.byteLength > 1_024) return undefined;
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(lockBytes);
+    const lock = codexProjectHookLockSchema.parse(parseStrictJson(source));
+    return Buffer.from(lockBytes).equals(serializeJson(lock)) ? lock : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface CodexProjectHookFormatInput {
   readonly adapterBytes: Uint8Array;
   readonly adapterEntry: string;

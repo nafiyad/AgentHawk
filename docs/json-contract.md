@@ -1,6 +1,6 @@
 # CLI JSON contract
 
-AgentHawk JSON output is intended for automation and coding-agent integrations. Successful `init`, `check`, `scan`, `diff`, `policy validate`, `approvals verify`, `doctor`, and `integrations codex status` reports and CLI failures use schema version `1.0`. Consumers must parse the process exit code and JSON together and fail closed on malformed output, unsupported schema versions, or unknown values.
+AgentHawk JSON output is intended for automation and coding-agent integrations. Successful `init`, `check`, `scan`, `diff`, `policy validate`, `approvals verify`, `doctor`, and `integrations codex status|install|remove` reports and CLI failures use schema version `1.0`. Consumers must parse the process exit code and JSON together and fail closed on malformed output, unsupported schema versions, or unknown values.
 
 ## Compatibility policy
 
@@ -46,9 +46,10 @@ For `integrations codex status`, exit `0` means either no owned state exists and
 - `approvals verify` returns command identity, tool/file schema versions, bounded time-eligible/expired/not-yet-effective counts, one checked instant, and a semantic approval digest. It does not return the requested path or approval contents, apply an approval, or make a provider request.
 - `doctor` returns fixed runtime, package-alignment, cache, Git, configuration, and integration-presence states. It returns no paths, contents, environment values, child-process diagnostics, or provider data.
 - `init` returns its selected integration and fixed created/unchanged target identifiers. It returns no absolute paths, contents, temporary names, filesystem diagnostics, or provider data.
-- `integrations codex status` returns one of seven ownership states, independent current-artifact readiness, and ordered configuration/operation/linked-worktree blockers. It deliberately provides no install/remove remediation until those commands exist. It returns no absolute paths, identifiers, hashes, file contents, environment values, trust assertion, or provider data and performs no write.
+- `integrations codex status` returns one of seven ownership states, independent current-artifact readiness, and ordered configuration/operation/linked-worktree blockers. It returns no absolute paths, identifiers, hashes, file contents, environment values, trust assertion, or provider data and performs no write.
+- `integrations codex install|remove` returns a strict lifecycle outcome (`installed`, `removed`, or `recovery_required`) plus the same redacted ownership, readiness, and blocker enums. Exit `0` is reserved for the exact completed outcome; recovery requires attention and foreign or unsafe input fails closed.
 
-Runtime schemas are exported by `@agenthawk/core` as `evaluationReportSchema`, `scanReportSchema`, `diffReportSchema`, `inventoryReportSchema`, `policyValidationReportSchema`, `approvalValidationReportSchema`, `doctorReportSchema`, `initReportSchema`, `codexProjectHookStatusReportSchema`, and `cliErrorReportSchema`.
+Runtime schemas are exported by `@agenthawk/core` as `evaluationReportSchema`, `scanReportSchema`, `diffReportSchema`, `inventoryReportSchema`, `policyValidationReportSchema`, `approvalValidationReportSchema`, `doctorReportSchema`, `initReportSchema`, `codexProjectHookStatusReportSchema`, `codexProjectHookLifecycleReportSchema`, and `cliErrorReportSchema`.
 
 ## Planned native-hook internal contracts
 

@@ -265,6 +265,51 @@ export const codexProjectHookStatusReportSchema = z
   });
 export type CodexProjectHookStatusReport = z.infer<typeof codexProjectHookStatusReportSchema>;
 
+export const codexProjectHookLifecycleReportSchema = z
+  .object({
+    schemaVersion: z.literal("1.0"),
+    toolVersion: z.string().min(1).max(128),
+    command: z.enum(["integrations_codex_install", "integrations_codex_remove"]),
+    outcome: z.enum(["installed", "removed", "recovery_required"]),
+    ownership: codexProjectHookOwnershipSchema,
+    readiness: codexProjectHookReadinessSchema,
+    blockers: z.array(codexProjectHookBlockerSchema).max(3),
+    providersContacted: z.literal(false),
+  })
+  .strict()
+  .superRefine((report, context) => {
+    const blockerOrder = ["config_collision", "operation_locked", "linked_worktree"] as const;
+    if (
+      new Set(report.blockers).size !== report.blockers.length ||
+      report.blockers.some(
+        (blocker, index) =>
+          blockerOrder.indexOf(blocker) <
+          blockerOrder.indexOf(report.blockers[index - 1] ?? blocker),
+      )
+    ) {
+      context.addIssue({ code: "custom", message: "Codex lifecycle blockers are inconsistent." });
+    }
+    if (
+      report.outcome === "installed" &&
+      (report.command !== "integrations_codex_install" ||
+        report.ownership !== "owned_exact" ||
+        report.readiness !== "current" ||
+        report.blockers.length !== 0)
+    ) {
+      context.addIssue({ code: "custom", message: "Installed Codex lifecycle state is invalid." });
+    }
+    if (
+      report.outcome === "removed" &&
+      (report.command !== "integrations_codex_remove" ||
+        report.ownership !== "absent" ||
+        report.readiness !== "not_applicable" ||
+        report.blockers.includes("operation_locked"))
+    ) {
+      context.addIssue({ code: "custom", message: "Removed Codex lifecycle state is invalid." });
+    }
+  });
+export type CodexProjectHookLifecycleReport = z.infer<typeof codexProjectHookLifecycleReportSchema>;
+
 export const directDependencySchema = z
   .object({
     name: z.string().min(1).max(214),

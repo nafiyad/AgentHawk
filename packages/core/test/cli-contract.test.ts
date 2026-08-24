@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   approvalValidationReportSchema,
   cliErrorReportSchema,
+  codexProjectHookLifecycleReportSchema,
   codexProjectHookStatusReportSchema,
   diffReportSchema,
   doctorReportSchema,
@@ -12,6 +13,71 @@ import {
 } from "../src/index.js";
 
 describe("CLI JSON contract", () => {
+  it("enforces closed and internally consistent Codex project-hook lifecycle reports", () => {
+    const installed = {
+      schemaVersion: "1.0",
+      toolVersion: "0.1.0-alpha.1",
+      command: "integrations_codex_install",
+      outcome: "installed",
+      ownership: "owned_exact",
+      readiness: "current",
+      blockers: [],
+      providersContacted: false,
+    } as const;
+    expect(codexProjectHookLifecycleReportSchema.parse(installed)).toEqual(installed);
+    expect(
+      codexProjectHookLifecycleReportSchema.safeParse({
+        ...installed,
+        ownership: "owned_inactive",
+      }).success,
+    ).toBe(false);
+    expect(
+      codexProjectHookLifecycleReportSchema.safeParse({
+        ...installed,
+        outcome: "removed",
+      }).success,
+    ).toBe(false);
+    expect(
+      codexProjectHookLifecycleReportSchema.safeParse({ ...installed, privatePath: "C:/secret" })
+        .success,
+    ).toBe(false);
+    const removed = {
+      ...installed,
+      command: "integrations_codex_remove",
+      outcome: "removed",
+      ownership: "absent",
+      readiness: "not_applicable",
+    } as const;
+    expect(codexProjectHookLifecycleReportSchema.parse(removed)).toEqual(removed);
+    expect(
+      codexProjectHookLifecycleReportSchema.safeParse({
+        ...removed,
+        blockers: ["operation_locked"],
+      }).success,
+    ).toBe(false);
+    expect(
+      codexProjectHookLifecycleReportSchema.safeParse({
+        ...removed,
+        blockers: ["linked_worktree", "config_collision"],
+      }).success,
+    ).toBe(false);
+    expect(
+      codexProjectHookLifecycleReportSchema.safeParse({
+        ...removed,
+        blockers: ["config_collision", "config_collision"],
+      }).success,
+    ).toBe(false);
+    expect(
+      codexProjectHookLifecycleReportSchema.safeParse({
+        ...removed,
+        outcome: "recovery_required",
+        ownership: "owned_inactive",
+        readiness: "current",
+        blockers: ["operation_locked"],
+      }).success,
+    ).toBe(true);
+  });
+
   it("enforces closed and internally consistent Codex project-hook status reports", () => {
     const report = {
       schemaVersion: "1.0",

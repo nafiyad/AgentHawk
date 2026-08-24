@@ -24,7 +24,7 @@ pnpm 10 is the development package manager. AgentHawk evaluates npm registry dep
 
 | Integration | Current status |
 | --- | --- |
-| Codex | Advisory repository instruction template; `0.149.0` `PreToolUse` compatibility candidate implemented with exact local Windows CLI and app-server evidence; project-hook ownership design, root-bound artifact format, and read-only fixed-target status are implemented, but installer, recovery, activation, and removal remain unavailable and unsupported |
+| Codex | Advisory template; `0.149.0` `PreToolUse` compatibility candidate with exact local Windows CLI/app-server evidence; fixed-target status, collision-safe install, exact-owned remove, and invocation-time root-bound verification are implemented, but trust/activation and remaining named host gates are still unsupported |
 | Claude Code | Advisory project instruction template |
 | Cursor | Advisory project rule template |
 | Generic coding agent | Advisory instruction template |

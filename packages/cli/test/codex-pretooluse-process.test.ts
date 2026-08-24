@@ -22,15 +22,35 @@ describe("Codex PreToolUse process boundary", () => {
     expect(result.stdout).not.toContain('"allow"');
     expect(result.stdout).not.toContain("updatedInput");
   });
+
+  it("fails closed for malformed project launch arguments without disclosing input", async () => {
+    const result = await runEntry(JSON.stringify(payload("git status")), [
+      "--agenthawk-deployment-trust=project",
+    ]);
+    expect(result).toEqual({ exitCode: 2, stderr: CODEX_EMERGENCY_DENIAL, stdout: "" });
+  });
+
+  it("fails closed when a declared project pair is absent", async () => {
+    const result = await runEntry(JSON.stringify(payload("git status")), [
+      "--agenthawk-deployment-trust=project",
+      `--agenthawk-installation-id=${"ab".repeat(32)}`,
+      `--agenthawk-root-binding=${"cd".repeat(32)}`,
+    ]);
+    expect(result).toEqual({ exitCode: 2, stderr: CODEX_EMERGENCY_DENIAL, stdout: "" });
+    expect(result.stderr).not.toMatch(/agenthawk-codex|session-process|turn-process/u);
+  });
 });
 
-async function runEntry(input: string): Promise<{
+async function runEntry(
+  input: string,
+  launchArguments: readonly string[] = [],
+): Promise<{
   exitCode: number | null;
   stderr: string;
   stdout: string;
 }> {
   return await new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [tsxCli, entry], {
+    const child = spawn(process.execPath, [tsxCli, entry, ...launchArguments], {
       cwd: root,
       env: { ...process.env, NO_COLOR: "1" },
       shell: false,
