@@ -30,11 +30,12 @@ This decision uses public primary sources, accessed 2026-08-27:
   local executable paths should be absolute.
 - [Claude Code settings](https://code.claude.com/docs/en/settings#where-claude-code-keeps-the-local-file-in-a-git-repository)
   documents an important location exception. Since `2.1.211`, local settings
-  normally move to the Git root, but remain in the starting directory on
-  Windows, in linked worktrees, when the repository root is the user's home, or
-  when ownership checks fail. Shared project settings remain relative to the
-  starting directory; older local files may remain additive; and the Agent SDK
-  helper always reads local settings from the starting directory.
+  normally move to the Git root; a linked worktree instead uses the main
+  checkout's root. Local settings remain with shared settings on Windows, when
+  the repository root is the user's home, or when ownership checks fail. Shared
+  project settings remain relative to the session's primary working directory;
+  older local files may remain additive; and the Agent SDK helper always reads
+  local settings from the starting directory.
 - [Claude Code permissions](https://code.claude.com/docs/en/permissions)
   documents that `PreToolUse` runs before the permission prompt and that a
   blocking hook takes precedence over allow rules. This does not make a missing
@@ -88,7 +89,8 @@ file, containment escape, or identity change fails closed.
 Path overrides, user or managed settings, plugins, session hooks, SDK settings,
 trust-state writes, `--settings`, `--bare`, environment mutation, and Git ignore
 changes remain outside scope. Linked worktrees remain non-installable until a
-pinned-host discovery matrix proves which local settings file the host loads.
+pinned-host lifecycle coordinates ownership with the main checkout rather than
+writing an apparently owned file at the linked worktree root.
 The first candidate also requires Claude Code to start at the exact canonical
 root. This is mandatory on Windows and prevents a root-fixed status result from
 being generalized to a nested-start or starting-directory settings source.
@@ -189,6 +191,23 @@ launchArgumentsSha256: <sha256 of the exact argument vector>
 adapterSha256: <sha256 of packaged claude-pretooluse-entry.js bytes>
 ```
 
+`launchArgumentsSha256` is SHA-256 over this canonical byte sequence:
+
+```text
+ASCII "AgentHawk Claude launch arguments v1" || 0x00
+|| u64be(argument count)
+|| field(argument 0 UTF-8 bytes)
+|| ...
+|| field(argument n UTF-8 bytes)
+```
+
+`field` has the same unsigned 64-bit big-endian length framing as the root
+binding. The array contains the adapter entry path followed by the six exact
+project launch arguments in generated-settings order. Every argument must be
+valid bounded UTF-8 without NUL or control characters. The serialization has no
+terminating LF. The implementation must add a fixed launch-vector test; joining
+arguments with a delimiter is forbidden.
+
 Unknown, missing, duplicated, mistyped, non-canonical, oversized, or unstable
 receipt data is a collision. `contractRelease` records the fixture contract and
 is not a claim that the installed host has that version. The receipt stores no
@@ -227,10 +246,19 @@ removable after an upgrade or runtime move.
 Existing shared settings observations, quiet-ignore state, and linked-worktree
 state remain independent blockers. Safe unrelated shared settings do not block.
 Shared `PreToolUse`, shared `disableAllHooks: true`, a not-ignored or unknown
-local path, an operation lock, or a linked worktree prevents install and any
-readiness claim but cannot hide or prevent removal of `owned_exact` or
-`owned_inactive`. Status remains minimum-disclosure and keeps effective
-activation `unproven` in every state.
+local path, local ownership artifacts that are not ignored, an operation lock,
+or a linked worktree prevents install and any readiness claim. Shared-setting
+and ignore drift cannot hide or prevent removal of `owned_exact` or
+`owned_inactive`, but any foreign or unrecognized operation lock blocks every
+mutation, including remove. Status remains minimum-disclosure and keeps
+effective activation `unproven` in every state.
+
+Receipt-aware status adds `integration_artifacts_not_ignored` and
+`integration_ignore_status_unavailable` blockers. They summarize the exact
+receipt, lock, and lock-derived staging targets without returning which path or
+ignore source caused the result. An operation that owns the exact open lock may
+ignore its own `operation_locked` blocker internally only after revalidating the
+lock identity and bytes; another command never may.
 
 ### Invocation-time verification
 
@@ -253,15 +281,18 @@ configuration and therefore never claims effective activation.
 Every mutation must:
 
 1. establish root-only authority and the complete status snapshot;
-2. acquire the fixed lock by exclusive create;
-3. re-establish root, topology, parents, shared blockers, ignore state, and
-   absence or exact ownership under the lock;
-4. create an exclusive 256-bit-ID staging directory;
-5. write, sync, close, reopen, and validate exact bounded receipt/settings bytes;
-6. capability-test same-volume no-replace publication on the actual filesystem;
-7. publish through verified no-replace primitives while identity-fencing every
+2. generate the operation identifier in memory and preflight ignored/untracked
+   state for all four exact candidate paths before creating any artifact;
+3. acquire the fixed lock by exclusive create;
+4. re-establish root, topology, parents, shared blockers, ignore state for every
+   persistent or crash-retained target, and absence or exact ownership under the
+   lock;
+5. create an exclusive 256-bit-ID staging directory;
+6. write, sync, close, reopen, and validate exact bounded receipt/settings bytes;
+7. capability-test same-volume no-replace publication on the actual filesystem;
+8. publish through verified no-replace primitives while identity-fencing every
    parent and fixed target; and
-8. re-read the final state before releasing the lock and cleaning only verified
+9. re-read the final state before releasing the lock and cleaning only verified
    staging files.
 
 An existence check followed by overwriting rename is forbidden. The capability
@@ -272,6 +303,18 @@ without mutation. A failed or unprovable probe fails closed. This is an observed
 filesystem capability, not a claim that the filesystem is local, race-free, or
 power-loss durable.
 
+Before creating any local artifact, quiet shell-free Git checks must prove that
+all four exact candidate paths are ignored and untracked: local settings,
+receipt, lock, and the operation-ID staging directory. The operation identifier
+is generated before these checks. After exclusive lock creation, the same four
+checks repeat while the lock is verified as this operation's exact untracked
+file and before any other artifact is created. A retained lock lets status
+derive the one staging name without scanning. Exit `1`, fatal Git status,
+changing ignore results, or a tracked candidate fails closed. AgentHawk never
+edits `.gitignore`, the repository exclude file, or a global exclude file. This
+intentionally means the first installer is unavailable until the maintainer or
+user configures an applicable ignore rule for every machine-local target family.
+
 Install publishes the receipt first and settings second. Before receipt
 publication, cancellation may clean verified staging state and return
 cancelled. After receipt publication but before settings publication, rollback
@@ -281,7 +324,8 @@ returns cancelled, while failed or unprovable rollback reports
 cancellation is deferred until final classification reports `owned_exact` or a
 bounded recovery state.
 
-Remove deletes still-identical settings first and the still-identical receipt
+Remove first refuses any pre-existing foreign or unrecognized operation lock,
+then acquires and continuously verifies its own lock. It deletes still-identical settings first and the still-identical receipt
 second. Before settings deletion it may return cancelled. After settings
 deletion, removal is committed and cancellation is deferred until receipt
 deletion is attempted and the resulting `absent` or `owned_inactive` state is
@@ -292,6 +336,8 @@ Errors release only the operation's still-identical lock and staging files.
 Cleanup is fixed-target and non-recursive. A lock is never guessed stale from a
 PID or clock. Manual recovery requires external exclusion, fixed-path identity
 verification, and removal of only that lock; AgentHawk does not automate it.
+Crash-retained lock and staging state remains covered by the pre-proven ignore
+boundary and therefore is not silently exposed to ordinary Git addition.
 
 ### Activation and support boundary
 
