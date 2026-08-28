@@ -245,13 +245,13 @@ removable after an upgrade or runtime move.
 
 Existing shared settings observations, quiet-ignore state, and linked-worktree
 state remain independent blockers. Safe unrelated shared settings do not block.
-Shared `PreToolUse`, shared `disableAllHooks: true`, a not-ignored or unknown
-local path, local ownership artifacts that are not ignored, an operation lock,
-or a linked worktree prevents install and any readiness claim. Shared-setting
-and ignore drift cannot hide or prevent removal of `owned_exact` or
-`owned_inactive`, but any foreign or unrecognized operation lock blocks every
-mutation, including remove. Status remains minimum-disclosure and keeps
-effective activation `unproven` in every state.
+Shared `PreToolUse`, shared `disableAllHooks: true`, or a linked worktree
+prevents install and any readiness claim, but shared-setting drift cannot hide
+or prevent removal of `owned_exact` or `owned_inactive`. A not-ignored, unknown,
+or tracked candidate path blocks every mutation, including removal, until the
+operator restores ignored-and-untracked state. Any foreign or unrecognized
+operation lock likewise blocks every mutation, including remove. Status remains
+minimum-disclosure and keeps effective activation `unproven` in every state.
 
 Receipt-aware status adds `integration_artifacts_not_ignored` and
 `integration_ignore_status_unavailable` blockers. They summarize the exact
