@@ -361,10 +361,11 @@ the candidate and every other surface is unsupported.
 
 ### Dependency-ordered implementation slices
 
-This ADR authorizes design only. Later PRs remain single-flight and ordered:
+The design is accepted and implementation remains single-flight and ordered:
 
-1. pure canonical settings/receipt/root-binding format plus known vectors;
-2. invocation-time project verification and fail-closed process tests;
+1. pure canonical settings/receipt/root-binding format plus known vectors —
+   complete;
+2. invocation-time project verification and fail-closed process tests — next;
 3. receipt-aware read-only status states and minimum-disclosure schema;
 4. install/remove transaction with filesystem capability tests; and
 5. exact-host activation matrices and a separate support decision.
@@ -405,8 +406,10 @@ they do not create an atomic hostile-filesystem guarantee.
 
 ## Consequences
 
-The lifecycle will reject repositories with foreign local settings, relevant
-shared hooks, an effective shared disable declaration, uncertain ignore state,
-linked worktrees, unsafe paths, collisions, or locks. That conservative cost is
-accepted to keep ownership explainable and removal bounded. This ADR changes no
-runtime behavior and makes no support claim.
+The pure-format implementation adds no command and performs no filesystem or
+provider operation. The later lifecycle will reject repositories with foreign
+local settings, relevant shared hooks, an effective shared disable declaration,
+uncertain ignore state, linked worktrees, unsafe paths, collisions, or locks.
+That conservative cost is
+accepted to keep ownership explainable and removal bounded. No current format
+result changes status, deployment trust, effective activation, or support.
