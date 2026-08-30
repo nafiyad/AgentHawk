@@ -1,8 +1,9 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
   packageSpecifications,
@@ -374,13 +375,13 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       "Packed Codex project-hook remove smoke failed",
     );
     await verifyPackedCodexHook(consumerDirectory);
-    await verifyPackedClaudeHook(consumerDirectory);
+    await verifyPackedClaudeHook(consumerDirectory, initDirectory);
   } finally {
     await rm(consumerDirectory, { force: true, recursive: true });
   }
 }
 
-async function verifyPackedClaudeHook(consumerDirectory) {
+async function verifyPackedClaudeHook(consumerDirectory, projectDirectory) {
   const hookEntrypoint = join(
     consumerDirectory,
     "node_modules",
@@ -440,6 +441,79 @@ async function verifyPackedClaudeHook(consumerDirectory) {
     neutral.code === 0 && neutral.stdout === "" && neutral.stderr === "",
     "Packed Claude hook neutral result is inconsistent",
   );
+
+  const canonicalRoot = await realpath(projectDirectory);
+  const rootStats = await lstat(canonicalRoot, { bigint: true });
+  const canonicalHookEntrypoint = await realpath(hookEntrypoint);
+  const formatModule = await import(
+    pathToFileURL(join(dirname(hookEntrypoint), "claude-project-hook-format.js")).href
+  );
+  const artifacts = formatModule.buildClaudeProjectHookArtifacts({
+    adapterBytes: await readFile(canonicalHookEntrypoint),
+    adapterEntry: canonicalHookEntrypoint,
+    adapterVersion: releaseVersion,
+    installationId: "ab".repeat(32),
+    nodeExecutable: await realpath(process.execPath),
+    nodeVersion: process.version,
+    repositoryIdentity: { dev: rootStats.dev, ino: rootStats.ino },
+    repositoryRoot: canonicalRoot,
+  });
+  const settingsPath = join(canonicalRoot, ".claude", "settings.local.json");
+  const receiptPath = join(canonicalRoot, ".agenthawk", "integrations", "claude-v1.json");
+  await mkdir(dirname(settingsPath), { recursive: true });
+  await mkdir(dirname(receiptPath), { recursive: true });
+  await writeFile(settingsPath, artifacts.settingsBytes, { flag: "wx" });
+  await writeFile(receiptPath, artifacts.receiptBytes, { flag: "wx" });
+  const projectArguments = artifacts.launchArguments.slice(1);
+  const projectNeutral = await executeWithInput(
+    process.execPath,
+    [hookEntrypoint, ...projectArguments],
+    {
+      cwd: canonicalRoot,
+      input: JSON.stringify({
+        cwd: canonicalRoot,
+        hook_event_name: "PreToolUse",
+        permission_mode: "default",
+        session_id: "packed-project-session",
+        tool_input: { command: "git status" },
+        tool_name: "Bash",
+        tool_use_id: "packed-project-tool",
+        transcript_path: join(canonicalRoot, "project-transcript.jsonl"),
+      }),
+      timeout: 15_000,
+    },
+  );
+  assert(
+    projectNeutral.code === 0 && projectNeutral.stdout === "" && projectNeutral.stderr === "",
+    "Packed Claude project invocation verification failed",
+  );
+  const rejectedProject = await executeWithInput(
+    process.execPath,
+    [hookEntrypoint, ...projectArguments.slice(0, -1), "cd".repeat(32)],
+    {
+      cwd: canonicalRoot,
+      input: JSON.stringify({
+        cwd: canonicalRoot,
+        hook_event_name: "PreToolUse",
+        permission_mode: "default",
+        session_id: "packed-rejected-session",
+        tool_input: { command: "git status" },
+        tool_name: "Bash",
+        tool_use_id: "packed-rejected-tool",
+        transcript_path: join(canonicalRoot, "rejected-transcript.jsonl"),
+      }),
+      timeout: 15_000,
+    },
+  );
+  assert(
+    rejectedProject.code === 2 &&
+      rejectedProject.stdout === "" &&
+      rejectedProject.stderr ===
+        "AgentHawk denied the tool call because security evaluation failed.\n",
+    "Packed Claude project invocation mismatch did not fail closed",
+  );
+  await rm(settingsPath);
+  await rm(receiptPath);
 }
 
 async function verifyPackedCodexHook(consumerDirectory) {
