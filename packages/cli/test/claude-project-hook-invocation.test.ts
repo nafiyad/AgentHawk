@@ -98,6 +98,25 @@ describe("Claude project-hook invocation verification", () => {
     }
   });
 
+  it("rejects case-folded and Unicode compatibility aliases at every fixed segment", async () => {
+    const mutations: Array<(fixture: Awaited<ReturnType<typeof ownedFixture>>) => Promise<void>> = [
+      async (fixture) => await mkdir(join(fixture.root, ".ｃlaude")),
+      async (fixture) => await mkdir(join(fixture.root, ".agenthawk", "integratｉons")),
+      async (fixture) =>
+        await writeFile(join(fixture.root, ".claude", "settings.local．json"), "alias\n"),
+      async (fixture) =>
+        await writeFile(
+          join(fixture.root, ".agenthawk", "integrations", "CLAUDE-V1.JSON"),
+          "alias\n",
+        ),
+    ];
+    for (const mutate of mutations) {
+      const fixture = await ownedFixture();
+      await mutate(fixture);
+      await expect(verify(fixture)).resolves.toBe(false);
+    }
+  });
+
   it("rejects every operation lock and current runtime or adapter drift", async () => {
     const locked = await ownedFixture();
     await writeFile(join(locked.root, ".agenthawk-claude-integration.lock"), "foreign\n");

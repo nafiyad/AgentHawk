@@ -359,7 +359,7 @@ function sameIdentity(left: BigIntStats, right: BigIntStats): boolean {
 }
 
 function entryKey(value: string): string {
-  return process.platform === "win32" ? value.toLocaleLowerCase("en-US") : value;
+  return value.normalize("NFKC").toLowerCase();
 }
 
 function inspectBigInt(path: string): Promise<BigIntStats> {
