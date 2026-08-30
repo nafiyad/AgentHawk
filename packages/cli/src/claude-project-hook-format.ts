@@ -87,6 +87,17 @@ export interface ClaudeProjectHookArtifacts {
   readonly settingsBytes: Buffer;
 }
 
+export interface ClaudeProjectHookLaunchContext {
+  readonly deploymentTrust: "project";
+  readonly installationId: string;
+  readonly rootBinding: string;
+}
+
+export interface VerifiedClaudeProjectHookSettings {
+  readonly adapterEntry: string;
+  readonly nodeExecutable: string;
+}
+
 const rootBindingDomain = Buffer.from("AgentHawk Claude root binding v1\0", "ascii");
 const launchArgumentsDomain = Buffer.from("AgentHawk Claude launch arguments v1\0", "ascii");
 const maximumFilesystemIdentity = (1n << 64n) - 1n;
@@ -140,6 +151,66 @@ export function computeClaudeLaunchArgumentsSha256(arguments_: readonly string[]
   hash.update(count);
   for (const field of fields) updateFramedField(hash, field);
   return hash.digest("hex");
+}
+
+export function parseClaudeProjectHookLaunchArguments(
+  arguments_: readonly string[],
+): ClaudeProjectHookLaunchContext {
+  if (
+    arguments_.length !== 6 ||
+    arguments_[0] !== "--deployment-trust" ||
+    arguments_[1] !== "project" ||
+    arguments_[2] !== "--installation-id" ||
+    arguments_[4] !== "--root-binding"
+  ) {
+    throw new Error("Claude project-hook launch declaration is invalid.");
+  }
+  return {
+    deploymentTrust: "project",
+    installationId: hexadecimal256.parse(arguments_[3]),
+    rootBinding: hexadecimal256.parse(arguments_[5]),
+  };
+}
+
+export function verifyClaudeProjectHookReceiptBinding(
+  receipt: ClaudeProjectHookReceipt,
+  repositoryRoot: string,
+  repositoryIdentity: { readonly dev: bigint; readonly ino: bigint },
+): boolean {
+  try {
+    return (
+      computeClaudeProjectRootBinding({
+        installationId: receipt.installationId,
+        repositoryIdentity,
+        repositoryRoot,
+      }) === receipt.rootBinding
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function verifyClaudeProjectHookSettingsBytes(
+  receipt: ClaudeProjectHookReceipt,
+  settingsBytes: Uint8Array,
+): VerifiedClaudeProjectHookSettings | undefined {
+  try {
+    if (digest(settingsBytes) !== receipt.settingsSha256) return undefined;
+    const settings = parseClaudeProjectHookSettingsBytes(settingsBytes);
+    if (!settings) return undefined;
+    const handler = settings.hooks.PreToolUse[0].hooks[0];
+    const context = parseClaudeProjectHookLaunchArguments(handler.args.slice(1));
+    if (
+      context.installationId !== receipt.installationId ||
+      context.rootBinding !== receipt.rootBinding ||
+      computeClaudeLaunchArgumentsSha256(handler.args) !== receipt.launchArgumentsSha256
+    ) {
+      return undefined;
+    }
+    return { adapterEntry: handler.args[0], nodeExecutable: handler.command };
+  } catch {
+    return undefined;
+  }
 }
 
 export function buildClaudeProjectHookArtifacts(

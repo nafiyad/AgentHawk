@@ -7,13 +7,15 @@ this decision.
 
 ## Context
 
-The release-pinned Claude Code `2.1.241` fixture edge and the repository-only
-collision preflight are complete. They do not establish ownership, mutate
-settings, verify invocation-time artifacts, or prove that Claude Code loaded a
-hook. A mutating lifecycle needs a closed ownership record and an interruption
-model before it can safely create `.claude/settings.local.json`.
+The release-pinned Claude Code `2.1.241` fixture edge, repository-only collision
+preflight, canonical ownership format, and invocation-time verifier are
+complete. They do not mutate settings, expose receipt-aware status, or prove
+that Claude Code loaded a hook. A mutating lifecycle needs a closed ownership
+record and an interruption model before it can safely create
+`.claude/settings.local.json`.
 
-This decision uses public primary sources, accessed 2026-08-27:
+This decision uses public primary sources, accessed 2026-08-27 and rechecked
+2026-08-30 for the implemented invocation boundary:
 
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks) documents that
   project-local hooks live under the `hooks` key in settings, `PreToolUse` can
@@ -365,8 +367,9 @@ The design is accepted and implementation remains single-flight and ordered:
 
 1. pure canonical settings/receipt/root-binding format plus known vectors —
    complete;
-2. invocation-time project verification and fail-closed process tests — next;
-3. receipt-aware read-only status states and minimum-disclosure schema;
+2. invocation-time project verification and fail-closed process tests —
+   complete;
+3. receipt-aware read-only status states and minimum-disclosure schema — next;
 4. install/remove transaction with filesystem capability tests; and
 5. exact-host activation matrices and a separate support decision.
 
@@ -406,8 +409,11 @@ they do not create an atomic hostile-filesystem guarantee.
 
 ## Consequences
 
-The pure-format implementation adds no command and performs no filesystem or
-provider operation. The later lifecycle will reject repositories with foreign
+The pure-format implementation and invocation verifier add no lifecycle command
+or mutation. Project invocation performs bounded, identity-fenced reads of only
+the fixed receipt, local settings, lock, current adapter, and repository
+authority. It reaches providers only after the exact pair and current artifacts
+verify. The later lifecycle will reject repositories with foreign
 local settings, relevant shared hooks, an effective shared disable declaration,
 uncertain ignore state, linked worktrees, unsafe paths, collisions, or locks.
 That conservative cost is

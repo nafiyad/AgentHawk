@@ -67,6 +67,8 @@ export const packageSpecifications = [
       "dist/claude-pretooluse.js",
       "dist/claude-project-hook-format.d.ts",
       "dist/claude-project-hook-format.js",
+      "dist/claude-project-hook-invocation.d.ts",
+      "dist/claude-project-hook-invocation.js",
       "dist/claude-project-hook-status.d.ts",
       "dist/claude-project-hook-status.js",
       "dist/codex-project-hook-format.d.ts",

@@ -22,6 +22,25 @@ describe("Claude Code PreToolUse process boundary", () => {
     expect(result).toEqual({ exitCode: 0, stderr: "", stdout: "" });
   });
 
+  it("fails closed for malformed project launch arguments", async () => {
+    expect(
+      await runEntry(JSON.stringify(payload("git status")), ["--deployment-trust", "project"]),
+    ).toEqual({ exitCode: 2, stderr: CLAUDE_EMERGENCY_DENIAL, stdout: "" });
+  });
+
+  it("fails closed before providers when a declared project pair is absent", async () => {
+    const result = await runEntry(JSON.stringify(payload("npm add private-package@1.0.0")), [
+      "--deployment-trust",
+      "project",
+      "--installation-id",
+      "ab".repeat(32),
+      "--root-binding",
+      "cd".repeat(32),
+    ]);
+    expect(result).toEqual({ exitCode: 2, stderr: CLAUDE_EMERGENCY_DENIAL, stdout: "" });
+    expect(result.stderr).not.toContain("private-package");
+  });
+
   it("denies a PowerShell dependency-like command without disclosing input", async () => {
     const privateCommand = "npm add private-package@1.0.0";
     const result = await runEntry(
@@ -37,13 +56,16 @@ describe("Claude Code PreToolUse process boundary", () => {
   });
 });
 
-async function runEntry(input: string): Promise<{
+async function runEntry(
+  input: string,
+  launchArguments: readonly string[] = [],
+): Promise<{
   exitCode: number | null;
   stderr: string;
   stdout: string;
 }> {
   return await new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [tsxCli, entry], {
+    const child = spawn(process.execPath, [tsxCli, entry, ...launchArguments], {
       cwd: root,
       env: { ...process.env, PRIVATE_SENTINEL: "must-not-appear" },
       shell: false,

@@ -4,6 +4,8 @@ import {
   type AgentDecision,
   agentActionSchema,
   agentDecisionSchema,
+  type OperationContext,
+  throwIfCancelled,
 } from "@agenthawk/core";
 import { z } from "zod";
 import {
@@ -12,7 +14,9 @@ import {
   evaluateAgentAction,
   type OwnedActionDeadline,
 } from "./action-evaluation.js";
+import type { ClaudeProjectHookLaunchContext } from "./claude-project-hook-format.js";
 import { readBoundedJsonInput } from "./hook-json.js";
+import type { RepositoryAuthority } from "./repository-authority.js";
 import { AGENTHAWK_CLI_VERSION } from "./version.js";
 
 export const CLAUDE_CONTRACT_RELEASE = "v2.1.241";
@@ -86,7 +90,15 @@ export interface ClaudeHookDependencies extends ActionEvaluationDependencies {
   readonly createDeadline?: typeof createActionDeadline;
   readonly evaluateAction?: typeof evaluateAgentAction;
   readonly readInput?: typeof readBoundedJsonInput;
+  readonly parseProjectLaunchArguments?: (
+    arguments_: readonly string[],
+  ) => ClaudeProjectHookLaunchContext;
   readonly serializeDecision?: typeof serializeClaudePreToolUseDecision;
+  readonly verifyProjectInvocation?: (
+    authority: RepositoryAuthority,
+    context: ClaudeProjectHookLaunchContext,
+    options?: OperationContext,
+  ) => Promise<boolean>;
   readonly writeError: (text: string) => Promise<void> | void;
   readonly writeOutput: (text: string) => Promise<void> | void;
 }
@@ -95,13 +107,16 @@ export function parseClaudePreToolUseInput(input: unknown): ClaudePreToolUseInpu
   return claudePreToolUseInputSchema.parse(input);
 }
 
-export function translateClaudePreToolUse(input: ClaudePreToolUseInput): AgentAction {
+export function translateClaudePreToolUse(
+  input: ClaudePreToolUseInput,
+  deploymentTrust: "project" | "unknown" = "unknown",
+): AgentAction {
   return agentActionSchema.parse({
     adapter: {
       id: "claude_code",
       version: `contract-${CLAUDE_CONTRACT_RELEASE}/agenthawk-${AGENTHAWK_CLI_VERSION}`,
     },
-    deploymentTrust: "unknown",
+    deploymentTrust,
     event: "pre_tool_use",
     repositoryRoot: input.cwd,
     schemaVersion: "1.0",
@@ -133,16 +148,51 @@ export function serializeClaudePreToolUseDecision(rawDecision: AgentDecision): s
 export async function runClaudePreToolUse(
   input: Readable,
   dependencies: ClaudeHookDependencies,
+  launchArguments: readonly string[] = [],
 ): Promise<number> {
   let deadline: OwnedActionDeadline | undefined;
   try {
     deadline = (dependencies.createDeadline ?? createActionDeadline)();
     const rawInput = await (dependencies.readInput ?? readBoundedJsonInput)(input, deadline.signal);
-    const action = translateClaudePreToolUse(parseClaudePreToolUseInput(rawInput));
+    const parsed = parseClaudePreToolUseInput(rawInput);
+    let authority: RepositoryAuthority | undefined;
+    let deploymentTrust: "project" | "unknown" = "unknown";
+    if (launchArguments.length > 0) {
+      if (
+        !dependencies.parseProjectLaunchArguments ||
+        !dependencies.verifyProjectInvocation ||
+        !dependencies.loadAuthority
+      ) {
+        throw new Error("Claude project-hook verification is unavailable.");
+      }
+      const context = dependencies.parseProjectLaunchArguments(launchArguments);
+      authority = await dependencies.loadAuthority(parsed.cwd, { signal: deadline.signal });
+      if (
+        !(await dependencies.verifyProjectInvocation(authority, context, {
+          signal: deadline.signal,
+        }))
+      ) {
+        throw new Error("Claude project-hook verification failed.");
+      }
+      deploymentTrust = "project";
+    }
+    const action = translateClaudePreToolUse(parsed, deploymentTrust);
+    const evaluationDependencies: ActionEvaluationDependencies = authority
+      ? {
+          ...dependencies,
+          loadAuthority: async (actionDirectory, options = {}) => {
+            throwIfCancelled(options);
+            if (actionDirectory !== authority.repositoryRoot) {
+              throw new Error("Claude project authority does not match the action root.");
+            }
+            return authority;
+          },
+        }
+      : dependencies;
     const decision = await (dependencies.evaluateAction ?? evaluateAgentAction)(
       action,
       deadline,
-      dependencies,
+      evaluationDependencies,
     );
     const output = (dependencies.serializeDecision ?? serializeClaudePreToolUseDecision)(decision);
     if (output.length > 0) await dependencies.writeOutput(output);

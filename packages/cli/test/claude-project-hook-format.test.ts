@@ -9,8 +9,11 @@ import {
   computeClaudeLaunchArgumentsSha256,
   computeClaudeProjectRootBinding,
   createClaudeProjectHookIdentifier,
+  parseClaudeProjectHookLaunchArguments,
   parseClaudeProjectHookReceiptBytes,
   parseClaudeProjectHookSettingsBytes,
+  verifyClaudeProjectHookReceiptBinding,
+  verifyClaudeProjectHookSettingsBytes,
 } from "../src/claude-project-hook-format.js";
 
 const installationId = "00".repeat(32);
@@ -99,6 +102,32 @@ describe("Claude project-hook format", () => {
         "ab".repeat(32),
       ]),
     ).toBe("748c3ebbd4e94aab12c832bba0d8f29ef9ebee9a8658eff421d303bd1c486aef");
+  });
+
+  it("parses only the exact six project launch arguments", () => {
+    const rootBinding = "ab".repeat(32);
+    const arguments_ = [
+      "--deployment-trust",
+      "project",
+      "--installation-id",
+      installationId,
+      "--root-binding",
+      rootBinding,
+    ];
+    expect(parseClaudeProjectHookLaunchArguments(arguments_)).toEqual({
+      deploymentTrust: "project",
+      installationId,
+      rootBinding,
+    });
+    for (const candidate of [
+      arguments_.slice(0, -1),
+      [...arguments_, "extra"],
+      ["--deployment-trust", "managed", ...arguments_.slice(2)],
+      [...arguments_.slice(0, 3), "A".repeat(64), ...arguments_.slice(4)],
+      [...arguments_.slice(0, 5), "0".repeat(63)],
+    ]) {
+      expect(() => parseClaudeProjectHookLaunchArguments(candidate)).toThrow();
+    }
   });
 
   it("matches the fixed native artifact vector", () => {
@@ -270,6 +299,40 @@ describe("Claude project-hook format", () => {
     expect(replacedAdapterEntry.receipt.launchArgumentsSha256).not.toBe(
       original.receipt.launchArgumentsSha256,
     );
+  });
+
+  it("verifies receipt binding and the exact settings declaration", () => {
+    const artifacts = buildFixture();
+    expect(
+      verifyClaudeProjectHookReceiptBinding(artifacts.receipt, repositoryRoot, {
+        dev: 7n,
+        ino: 42n,
+      }),
+    ).toBe(true);
+    expect(
+      verifyClaudeProjectHookReceiptBinding(artifacts.receipt, repositoryRoot, {
+        dev: 7n,
+        ino: 43n,
+      }),
+    ).toBe(false);
+    expect(
+      verifyClaudeProjectHookSettingsBytes(artifacts.receipt, artifacts.settingsBytes),
+    ).toEqual({
+      adapterEntry: artifacts.launchArguments[0],
+      nodeExecutable: artifacts.settings.hooks.PreToolUse[0].hooks[0].command,
+    });
+    expect(
+      verifyClaudeProjectHookSettingsBytes(
+        { ...artifacts.receipt, launchArgumentsSha256: "ff".repeat(32) },
+        artifacts.settingsBytes,
+      ),
+    ).toBeUndefined();
+    expect(
+      verifyClaudeProjectHookSettingsBytes(
+        artifacts.receipt,
+        Buffer.concat([Buffer.from(" "), artifacts.settingsBytes]),
+      ),
+    ).toBeUndefined();
   });
 
   it.each(["relative/node", "line\nbreak", `/${"x".repeat(4_097)}`])(
