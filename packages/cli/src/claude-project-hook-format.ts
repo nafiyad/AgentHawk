@@ -29,6 +29,31 @@ export const claudeProjectHookReceiptSchema = z
 
 export type ClaudeProjectHookReceipt = z.infer<typeof claudeProjectHookReceiptSchema>;
 
+export const claudeProjectHookLockSchema = z
+  .object({ operationId: hexadecimal256, schemaVersion: z.literal("1.0") })
+  .strict();
+
+export type ClaudeProjectHookLock = z.infer<typeof claudeProjectHookLockSchema>;
+
+export function buildClaudeProjectHookLockBytes(operationId: string): Buffer {
+  return serializeCompactJson(
+    claudeProjectHookLockSchema.parse({ operationId, schemaVersion: "1.0" }),
+  );
+}
+
+export function parseClaudeProjectHookLockBytes(
+  lockBytes: Uint8Array,
+): ClaudeProjectHookLock | undefined {
+  try {
+    if (lockBytes.byteLength > 1_024) return undefined;
+    const source = new TextDecoder("utf-8", { fatal: true }).decode(lockBytes);
+    const lock = claudeProjectHookLockSchema.parse(parseStrictJson(source));
+    return Buffer.from(lockBytes).equals(serializeCompactJson(lock)) ? lock : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const claudeProjectHookSettingsSchema = z
   .object({
     hooks: z

@@ -244,10 +244,17 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
       timeout: 10_000,
       windowsHide: true,
     });
-    await writeFile(join(initDirectory, ".gitignore"), ".claude/settings.local.json\n", {
-      encoding: "utf8",
-      flag: "wx",
-    });
+    await writeFile(
+      join(initDirectory, ".gitignore"),
+      [
+        ".claude/settings.local.json",
+        ".agenthawk/integrations/claude-v1.json",
+        ".agenthawk-claude-integration.lock",
+        ".agenthawk-claude-integration-*",
+        "",
+      ].join("\n"),
+      { encoding: "utf8", flag: "wx" },
+    );
     const claudeStatus = await execute(
       process.execPath,
       [cliEntrypoint, "integrations", "claude", "status", "--format", "json"],
@@ -265,6 +272,9 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
         claudeStatusReport.localSettings === "absent" &&
         claudeStatusReport.sharedSettings === "absent" &&
         claudeStatusReport.localSettingsIgnored === "ignored" &&
+        claudeStatusReport.integrationArtifactsIgnored === "ignored" &&
+        claudeStatusReport.ownership === "absent" &&
+        claudeStatusReport.readiness === "not_applicable" &&
         claudeStatusReport.activation === "unproven" &&
         claudeStatusReport.providersContacted === false,
       "Packed Claude project-hook status smoke failed",
@@ -382,6 +392,14 @@ async function verifyPackedInit(outputDirectory, manifest, pnpmCli) {
 }
 
 async function verifyPackedClaudeHook(consumerDirectory, projectDirectory) {
+  const cliEntrypoint = join(
+    consumerDirectory,
+    "node_modules",
+    "@agenthawk",
+    "cli",
+    "dist",
+    "index.js",
+  );
   const hookEntrypoint = join(
     consumerDirectory,
     "node_modules",
@@ -464,6 +482,26 @@ async function verifyPackedClaudeHook(consumerDirectory, projectDirectory) {
   await mkdir(dirname(receiptPath), { recursive: true });
   await writeFile(settingsPath, artifacts.settingsBytes, { flag: "wx" });
   await writeFile(receiptPath, artifacts.receiptBytes, { flag: "wx" });
+  const projectStatus = await execute(
+    process.execPath,
+    [cliEntrypoint, "integrations", "claude", "status", "--format", "json"],
+    {
+      cwd: canonicalRoot,
+      encoding: "utf8",
+      maxBuffer: 65_536,
+      timeout: 15_000,
+      windowsHide: true,
+    },
+  );
+  const projectStatusReport = JSON.parse(projectStatus.stdout);
+  assert(
+    projectStatusReport.ownership === "owned_exact" &&
+      projectStatusReport.readiness === "current" &&
+      projectStatusReport.activation === "unproven" &&
+      projectStatusReport.exitCodeMeaning === "integration_current" &&
+      projectStatusReport.blockers.length === 0,
+    "Packed Claude project-hook receipt-aware status failed",
+  );
   const projectArguments = artifacts.launchArguments.slice(1);
   const projectNeutral = await executeWithInput(
     process.execPath,

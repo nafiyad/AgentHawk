@@ -8,14 +8,14 @@ this decision.
 ## Context
 
 The release-pinned Claude Code `2.1.241` fixture edge, repository-only collision
-preflight, canonical ownership format, and invocation-time verifier are
-complete. They do not mutate settings, expose receipt-aware status, or prove
+preflight, canonical ownership format, invocation-time verifier, and
+receipt-aware status are complete. They do not mutate settings or prove
 that Claude Code loaded a hook. A mutating lifecycle needs a closed ownership
 record and an interruption model before it can safely create
 `.claude/settings.local.json`.
 
 This decision uses public primary sources, accessed 2026-08-27 and rechecked
-2026-08-30 for the implemented invocation boundary:
+2026-08-31 for the implemented status boundary:
 
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks) documents that
   project-local hooks live under the `hooks` key in settings, `PreToolUse` can
@@ -255,6 +255,18 @@ operator restores ignored-and-untracked state. Any foreign or unrecognized
 operation lock likewise blocks every mutation, including remove. Status remains
 minimum-disclosure and keeps effective activation `unproven` in every state.
 
+The implemented JSON report keeps the existing shared/local observations and
+adds only `ownership`, `readiness`, and the aggregate
+`integrationArtifactsIgnored` state. It never emits an installation or
+operation identifier, root binding, digest, path, settings bytes, ignore
+source, or parser diagnostics. An exact current pair with no blocker, or a
+completely absent installable state, returns exit `0`; every other observation
+requires diagnostic attention. The canonical lock record contains only
+`schemaVersion: "1.0"` and one 256-bit operation identifier. A malformed,
+noncanonical, oversized, or otherwise unrecognized lock still blocks mutation
+and makes the lock-derived staging ignore observation unavailable; it is never
+guessed or treated as stale.
+
 Receipt-aware status adds `integration_artifacts_not_ignored` and
 `integration_ignore_status_unavailable` blockers. They summarize the exact
 receipt, lock, and lock-derived staging targets without returning which path or
@@ -369,8 +381,9 @@ The design is accepted and implementation remains single-flight and ordered:
    complete;
 2. invocation-time project verification and fail-closed process tests —
    complete;
-3. receipt-aware read-only status states and minimum-disclosure schema — next;
-4. install/remove transaction with filesystem capability tests; and
+3. receipt-aware read-only status states and minimum-disclosure schema —
+   complete;
+4. install/remove transaction with filesystem capability tests — next; and
 5. exact-host activation matrices and a separate support decision.
 
 No slice may create install/remove commands before its prerequisites are merged.

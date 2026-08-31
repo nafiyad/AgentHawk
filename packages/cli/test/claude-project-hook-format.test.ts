@@ -4,12 +4,14 @@ import { describe, expect, it } from "vitest";
 import { CLAUDE_CONTRACT_RELEASE } from "../src/claude-pretooluse.js";
 import {
   buildClaudeProjectHookArtifacts,
+  buildClaudeProjectHookLockBytes,
   CLAUDE_PROJECT_HOOK_CONTRACT_RELEASE,
   claudeProjectHookReceiptSchema,
   computeClaudeLaunchArgumentsSha256,
   computeClaudeProjectRootBinding,
   createClaudeProjectHookIdentifier,
   parseClaudeProjectHookLaunchArguments,
+  parseClaudeProjectHookLockBytes,
   parseClaudeProjectHookReceiptBytes,
   parseClaudeProjectHookSettingsBytes,
   verifyClaudeProjectHookReceiptBinding,
@@ -20,6 +22,28 @@ const installationId = "00".repeat(32);
 const repositoryRoot = resolve("fixture", "repository");
 
 describe("Claude project-hook root binding", () => {
+  it("round-trips only the canonical bounded operation lock", () => {
+    const operationId = "ab".repeat(32);
+    const bytes = buildClaudeProjectHookLockBytes(operationId);
+    expect(bytes.toString("utf8")).toBe(`{"operationId":"${operationId}","schemaVersion":"1.0"}\n`);
+    expect(parseClaudeProjectHookLockBytes(bytes)).toEqual({
+      operationId,
+      schemaVersion: "1.0",
+    });
+    for (const invalid of [
+      Buffer.from(` {"operationId":"${operationId}","schemaVersion":"1.0"}\n`),
+      Buffer.from(`{"operationId":"${operationId.toUpperCase()}","schemaVersion":"1.0"}\n`),
+      Buffer.from(
+        `{"operationId":"${operationId}","operationId":"${operationId}","schemaVersion":"1.0"}\n`,
+      ),
+      Buffer.from(`{"operationId":"${operationId}","schemaVersion":"1.0","pid":1}\n`),
+      Buffer.from([0xff]),
+      Buffer.alloc(1_025, 0x20),
+    ]) {
+      expect(parseClaudeProjectHookLockBytes(invalid)).toBeUndefined();
+    }
+  });
+
   it("matches the fixed canonical framing vector", () => {
     expect(
       computeClaudeProjectRootBinding({

@@ -277,14 +277,36 @@ export type ClaudeSharedDisableAllHooks = z.infer<typeof claudeSharedDisableAllH
 export const claudeLocalSettingsIgnoredSchema = z.enum(["ignored", "not_ignored", "unknown"]);
 export type ClaudeLocalSettingsIgnored = z.infer<typeof claudeLocalSettingsIgnoredSchema>;
 
+export const claudeProjectHookOwnershipSchema = z.enum([
+  "absent",
+  "owned_inactive",
+  "owned_exact",
+  "unowned_settings",
+  "record_collision",
+  "owned_modified",
+  "unsafe",
+]);
+export type ClaudeProjectHookOwnership = z.infer<typeof claudeProjectHookOwnershipSchema>;
+
+export const claudeProjectHookReadinessSchema = z.enum([
+  "not_applicable",
+  "current",
+  "artifact_unavailable",
+  "artifact_drift",
+]);
+export type ClaudeProjectHookReadiness = z.infer<typeof claudeProjectHookReadinessSchema>;
+
 export const claudeProjectHookBlockerSchema = z.enum([
   "local_settings_unsafe",
   "shared_settings_unsafe",
   "local_settings_present",
   "local_settings_not_ignored",
   "ignore_status_unavailable",
+  "integration_artifacts_not_ignored",
+  "integration_ignore_status_unavailable",
   "project_hooks_present",
   "project_hooks_declared_disabled",
+  "operation_locked",
   "linked_worktree",
 ]);
 export type ClaudeProjectHookBlocker = z.infer<typeof claudeProjectHookBlockerSchema>;
@@ -299,10 +321,17 @@ export const claudeProjectHookStatusReportSchema = z
     sharedPreToolUse: claudeSharedPreToolUseSchema,
     sharedDisableAllHooks: claudeSharedDisableAllHooksSchema,
     localSettingsIgnored: claudeLocalSettingsIgnoredSchema,
-    blockers: z.array(claudeProjectHookBlockerSchema).max(8),
+    integrationArtifactsIgnored: claudeLocalSettingsIgnoredSchema,
+    ownership: claudeProjectHookOwnershipSchema,
+    readiness: claudeProjectHookReadinessSchema,
+    blockers: z.array(claudeProjectHookBlockerSchema).max(11),
     activation: z.literal("unproven"),
     providersContacted: z.literal(false),
-    exitCodeMeaning: z.enum(["future_installation_precondition_met", "attention_required"]),
+    exitCodeMeaning: z.enum([
+      "future_installation_precondition_met",
+      "integration_current",
+      "attention_required",
+    ]),
   })
   .strict()
   .superRefine((report, context) => {
@@ -321,14 +350,19 @@ export const claudeProjectHookStatusReportSchema = z
     const expectedBlockers: ClaudeProjectHookBlocker[] = [];
     if (report.localSettings === "unsafe") expectedBlockers.push("local_settings_unsafe");
     if (report.sharedSettings === "unsafe") expectedBlockers.push("shared_settings_unsafe");
-    if (report.localSettings === "present") expectedBlockers.push("local_settings_present");
+    if (report.ownership === "unowned_settings") expectedBlockers.push("local_settings_present");
     if (report.localSettingsIgnored === "not_ignored")
       expectedBlockers.push("local_settings_not_ignored");
     if (report.localSettingsIgnored === "unknown")
       expectedBlockers.push("ignore_status_unavailable");
+    if (report.integrationArtifactsIgnored === "not_ignored")
+      expectedBlockers.push("integration_artifacts_not_ignored");
+    if (report.integrationArtifactsIgnored === "unknown")
+      expectedBlockers.push("integration_ignore_status_unavailable");
     if (report.sharedPreToolUse === "present") expectedBlockers.push("project_hooks_present");
     if (report.sharedDisableAllHooks === true)
       expectedBlockers.push("project_hooks_declared_disabled");
+    if (report.blockers.includes("operation_locked")) expectedBlockers.push("operation_locked");
     if (report.blockers.includes("linked_worktree")) expectedBlockers.push("linked_worktree");
     if (JSON.stringify(report.blockers) !== JSON.stringify(expectedBlockers)) {
       context.addIssue({ code: "custom", message: "Claude status blockers do not match state." });
@@ -356,18 +390,48 @@ export const claudeProjectHookStatusReportSchema = z
       });
     }
 
-    const healthy =
-      report.localSettings === "absent" &&
+    const installable =
+      report.ownership === "absent" &&
       report.sharedSettings !== "unsafe" &&
       report.sharedPreToolUse === "absent" &&
       report.sharedDisableAllHooks === false &&
       report.localSettingsIgnored === "ignored" &&
       report.blockers.length === 0;
-    if (
-      report.exitCodeMeaning !==
-      (healthy ? "future_installation_precondition_met" : "attention_required")
-    ) {
+    const current =
+      report.ownership === "owned_exact" &&
+      report.readiness === "current" &&
+      report.blockers.length === 0;
+    const expectedExitMeaning = installable
+      ? "future_installation_precondition_met"
+      : current
+        ? "integration_current"
+        : "attention_required";
+    if (report.exitCodeMeaning !== expectedExitMeaning) {
       context.addIssue({ code: "custom", message: "Claude status exit meaning is inconsistent." });
+    }
+
+    const validReceipt = ["owned_inactive", "owned_exact", "owned_modified"].includes(
+      report.ownership,
+    );
+    const readinessSuppressed =
+      report.sharedSettings === "unsafe" ||
+      report.sharedPreToolUse === "present" ||
+      report.sharedDisableAllHooks === true ||
+      report.blockers.includes("linked_worktree");
+    if ((report.readiness !== "not_applicable") !== (validReceipt && !readinessSuppressed)) {
+      context.addIssue({ code: "custom", message: "Claude status readiness is inconsistent." });
+    }
+    if (
+      (report.ownership === "absent" || report.ownership === "owned_inactive") &&
+      report.localSettings !== "absent"
+    ) {
+      context.addIssue({ code: "custom", message: "Claude local settings state is inconsistent." });
+    }
+    if (
+      ["unowned_settings", "owned_exact", "owned_modified"].includes(report.ownership) &&
+      report.localSettings !== "present"
+    ) {
+      context.addIssue({ code: "custom", message: "Claude ownership state is inconsistent." });
     }
   });
 export type ClaudeProjectHookStatusReport = z.infer<typeof claudeProjectHookStatusReportSchema>;

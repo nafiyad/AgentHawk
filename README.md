@@ -92,15 +92,15 @@ pnpm agenthawk diff --base origin/main --strict --format json
 
 `integrations codex install` exclusively publishes one root-bound receipt and hook without replacing existing configuration; `remove` deletes only an exact or inactive owned pair. Invocation re-verifies the pair before declaring project deployment trust. These commands do not trust or enable the hook, and successful publication does not prove that Codex loaded or executed it. A foreign or abandoned lock and every unprovable crash state fail closed for operator review; no PID, age, locality, hostile-filesystem, or power-loss-durability claim is made.
 
-`integrations claude status` is read-only. It observes only the fixed project shared/local settings targets, a bounded Git topology snapshot, and the quiet ignore result for `.claude/settings.local.json`. It reports collisions and relevant shared `PreToolUse`/`disableAllHooks` declarations without returning settings, paths, ignore patterns, or parser diagnostics. Exit `0` means only that the future installation preconditions currently hold; activation is always `unproven`, and no install/remove command exists.
+`integrations claude status` is read-only. It observes the fixed project shared/local settings, root-bound receipt, operation lock, and lock-derived staging target through matching bounded snapshots. It separately reports ownership (`absent`, exact, inactive, modified, unowned, collision, or unsafe), current packaged-artifact readiness, shared `PreToolUse`/`disableAllHooks` blockers, and quiet ignored/untracked results without returning settings, paths, identifiers, digests, ignore patterns, or parser diagnostics. Exit `0` means either that future installation preconditions hold or that an exact owned pair matches the current artifacts; activation remains `unproven`, and no Claude install/remove command exists.
 
 Native enforcement remains unsupported. The exact Codex CLI `0.149.0` Windows
 x64 project-hook row has strong local compatibility evidence, but the pinned
 GitHub-hosted Windows environment rejects the exact restricted-token filesystem
 projection before the complete matrix can run. See the [support
 matrix](docs/support-matrix.md). Claude Code `2.1.241` has a packaged, closed
-fixture adapter and read-only collision preflight but no settings lifecycle,
-exact-host compatibility evidence, or supported native row. See [ADR 0015](docs/adr/0015-claude-code-hook-edge.md) and [ADR 0016](docs/adr/0016-claude-project-hook-ownership.md). The published `0.1.0-alpha.1` package also
+fixture adapter, root-bound invocation verification, and receipt-aware read-only status but no settings mutation lifecycle,
+exact-host compatibility evidence, or supported native row. See [ADR 0015](docs/adr/0015-claude-code-hook-edge.md), [ADR 0016](docs/adr/0016-claude-project-hook-ownership.md), and [ADR 0017](docs/adr/0017-claude-project-hook-transaction.md). The published `0.1.0-alpha.1` package also
 predates these source-revision commands; protected `scan`/`diff` CI remains the final
 repository gate.
 

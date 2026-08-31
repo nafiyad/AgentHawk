@@ -50,7 +50,7 @@ export const packageSpecifications = [
   {
     name: "@agenthawk/cli",
     directory: "packages/cli",
-    maximumBytes: 300_000,
+    maximumBytes: 312_000,
     paths: [
       "DISCLOSURE",
       "LICENSE",
