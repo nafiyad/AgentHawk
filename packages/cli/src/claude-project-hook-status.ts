@@ -3,9 +3,12 @@ import { createHash } from "node:crypto";
 import { type BigIntStats, constants } from "node:fs";
 import { type FileHandle, lstat, open, opendir, realpath } from "node:fs/promises";
 import { isAbsolute, join, posix, relative, resolve, sep, win32 } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type ClaudeLocalSettingsIgnored,
   type ClaudeProjectHookBlocker,
+  type ClaudeProjectHookOwnership,
+  type ClaudeProjectHookReadiness,
   type ClaudeSettingsState,
   type ClaudeSharedDisableAllHooks,
   type ClaudeSharedPreToolUse,
@@ -17,6 +20,14 @@ import {
   throwIfCancelled,
 } from "@agenthawk/core";
 import type { CheckResult, OutputFormat } from "./check.js";
+import {
+  buildClaudeProjectHookArtifacts,
+  type ClaudeProjectHookReceipt,
+  parseClaudeProjectHookLockBytes,
+  parseClaudeProjectHookReceiptBytes,
+  verifyClaudeProjectHookReceiptBinding,
+  verifyClaudeProjectHookSettingsBytes,
+} from "./claude-project-hook-format.js";
 import { runBoundedGit } from "./diff.js";
 import { parseStrictJson } from "./hook-json.js";
 import {
@@ -29,11 +40,17 @@ import { AGENTHAWK_CLI_VERSION } from "./version.js";
 
 const maximumDirectoryEntries = 4_096;
 const maximumSettingsBytes = 262_144;
+const maximumOwnedSettingsBytes = 65_536;
+const maximumReceiptBytes = 8_192;
+const maximumLockBytes = 1_024;
+const maximumAdapterBytes = 1_048_576;
 const maximumJsonDepth = 32;
 const maximumJsonNodes = 4_096;
 const maximumJsonMembers = 1_024;
 const gitTimeoutMilliseconds = 10_000;
 const localSettingsRelativePath = ".claude/settings.local.json";
+const receiptRelativePath = ".agenthawk/integrations/claude-v1.json";
+const lockRelativePath = ".agenthawk-claude-integration.lock";
 const topologyArguments = [
   "rev-parse",
   "--path-format=absolute",
@@ -47,6 +64,8 @@ export interface ClaudeProjectHookStatusOptions extends OperationContext {
 }
 
 export interface ClaudeProjectHookStatusDependencies {
+  readonly adapterEntry?: string;
+  readonly adapterVersion?: string;
   readonly cwd?: string;
   readonly inspectPath?: (path: string) => Promise<BigIntStats>;
   readonly loadRootAuthority?: typeof loadRepositoryRootAuthority;
@@ -54,6 +73,13 @@ export interface ClaudeProjectHookStatusDependencies {
     root: string,
     options: OperationContext,
   ) => Promise<ClaudeLocalSettingsIgnored>;
+  readonly observeIntegrationIgnore?: (
+    root: string,
+    relativePaths: readonly string[],
+    options: OperationContext,
+  ) => Promise<ClaudeLocalSettingsIgnored>;
+  readonly nodeExecutable?: string;
+  readonly nodeVersion?: string;
   readonly openDirectory?: (path: string) => Promise<DirectoryReader>;
   readonly openFile?: typeof open;
   readonly realPath?: typeof realpath;
@@ -67,19 +93,35 @@ interface DirectoryReader {
 }
 
 interface FixedFileObservation {
-  readonly state: ClaudeSettingsState;
+  readonly state: ClaudeSettingsState | "oversize";
   readonly bytes?: Buffer;
   readonly signature: string;
 }
 
+interface FixedDirectoryObservation {
+  readonly state: "absent" | "present" | "unsafe";
+  readonly signature: string;
+}
+
 interface Snapshot {
-  readonly localSettings: ClaudeSettingsState;
+  readonly local: FixedFileObservation;
+  readonly receipt: FixedFileObservation;
+  readonly lock: FixedFileObservation;
+  readonly staging: FixedDirectoryObservation;
   readonly sharedSettings: ClaudeSettingsState;
   readonly sharedPreToolUse: ClaudeSharedPreToolUse;
   readonly sharedDisableAllHooks: ClaudeSharedDisableAllHooks;
   readonly localSettingsIgnored: ClaudeLocalSettingsIgnored;
+  readonly integrationArtifactsIgnored: ClaudeLocalSettingsIgnored;
   readonly linkedWorktree: boolean;
   readonly signature: string;
+}
+
+interface ClassifiedSnapshot {
+  readonly blockers: ClaudeProjectHookBlocker[];
+  readonly localSettings: ClaudeSettingsState;
+  readonly ownership: ClaudeProjectHookOwnership;
+  readonly readiness: ClaudeProjectHookReadiness;
 }
 
 export async function statusClaudeProjectHook(
@@ -92,17 +134,35 @@ export async function statusClaudeProjectHook(
       { signal: options.signal },
     );
     let snapshot: Snapshot;
+    let classified: ClassifiedSnapshot;
     try {
       snapshot = await observeStableSnapshot(authority, options, dependencies);
+      classified = await classifySnapshot(authority, snapshot, options, dependencies);
     } catch (error) {
       if (isOperationCancelled(error)) throw error;
-      return statusResult(unsafeSnapshot(), options.format);
+      snapshot = unsafeSnapshot();
+      classified = {
+        blockers: blockersFor(snapshot, "unsafe"),
+        localSettings: "unsafe",
+        ownership: "unsafe",
+        readiness: "not_applicable",
+      };
     }
-    return statusResult(snapshot, options.format);
+    return statusResult(snapshot, classified, options.format);
   } catch (error) {
     if (isOperationCancelled(error)) throw error;
     if (error instanceof RepositoryAuthorityError) {
-      return statusResult(unsafeSnapshot(), options.format);
+      const snapshot = unsafeSnapshot();
+      return statusResult(
+        snapshot,
+        {
+          blockers: blockersFor(snapshot, "unsafe"),
+          localSettings: "unsafe",
+          ownership: "unsafe",
+          readiness: "not_applicable",
+        },
+        options.format,
+      );
     }
     const message = "Claude project-hook status could not be observed safely.";
     return {
@@ -121,31 +181,39 @@ export async function statusClaudeProjectHook(
   }
 }
 
-function statusResult(snapshot: Snapshot, format: OutputFormat): CheckResult {
-  const blockers = blockersFor(snapshot);
-  const healthy =
-    snapshot.localSettings === "absent" &&
-    snapshot.sharedSettings !== "unsafe" &&
-    snapshot.sharedPreToolUse === "absent" &&
-    snapshot.sharedDisableAllHooks === false &&
-    snapshot.localSettingsIgnored === "ignored" &&
-    blockers.length === 0;
+function statusResult(
+  snapshot: Snapshot,
+  classified: ClassifiedSnapshot,
+  format: OutputFormat,
+): CheckResult {
+  const installable = classified.ownership === "absent" && classified.blockers.length === 0;
+  const current =
+    classified.ownership === "owned_exact" &&
+    classified.readiness === "current" &&
+    classified.blockers.length === 0;
   const report = claudeProjectHookStatusReportSchema.parse({
     schemaVersion: "1.0",
     toolVersion: AGENTHAWK_CLI_VERSION,
     command: "integrations_claude_status",
-    localSettings: snapshot.localSettings,
+    localSettings: classified.localSettings,
     sharedSettings: snapshot.sharedSettings,
     sharedPreToolUse: snapshot.sharedPreToolUse,
     sharedDisableAllHooks: snapshot.sharedDisableAllHooks,
     localSettingsIgnored: snapshot.localSettingsIgnored,
-    blockers,
+    integrationArtifactsIgnored: snapshot.integrationArtifactsIgnored,
+    ownership: classified.ownership,
+    readiness: classified.readiness,
+    blockers: classified.blockers,
     activation: "unproven",
     providersContacted: false,
-    exitCodeMeaning: healthy ? "future_installation_precondition_met" : "attention_required",
+    exitCodeMeaning: installable
+      ? "future_installation_precondition_met"
+      : current
+        ? "integration_current"
+        : "attention_required",
   });
   return {
-    exitCode: healthy ? 0 : 1,
+    exitCode: installable || current ? 0 : 1,
     output: format === "json" ? `${JSON.stringify(report)}\n` : renderStatus(report),
   };
 }
@@ -175,7 +243,8 @@ async function observeSnapshot(
   const local = await observeSettingsFile(
     authority.repositoryRoot,
     [".claude", "settings.local.json"],
-    false,
+    maximumOwnedSettingsBytes,
+    true,
     directoryListings,
     options,
     dependencies,
@@ -183,12 +252,57 @@ async function observeSnapshot(
   const shared = await observeSettingsFile(
     authority.repositoryRoot,
     [".claude", "settings.json"],
+    maximumSettingsBytes,
     true,
     directoryListings,
     options,
     dependencies,
   ).catch((error: unknown) => unsafeObservation(error, options));
+  const receipt = await observeSettingsFile(
+    authority.repositoryRoot,
+    [".agenthawk", "integrations", "claude-v1.json"],
+    maximumReceiptBytes,
+    true,
+    directoryListings,
+    options,
+    dependencies,
+  ).catch((error: unknown) => unsafeObservation(error, options));
+  const lock = await observeSettingsFile(
+    authority.repositoryRoot,
+    [".agenthawk-claude-integration.lock"],
+    maximumLockBytes,
+    true,
+    directoryListings,
+    options,
+    dependencies,
+  ).catch((error: unknown) => unsafeObservation(error, options));
+  const parsedLock = parseLock(lock);
+  const stagingRelativePath = parsedLock
+    ? `.agenthawk-claude-integration-${parsedLock.operationId}`
+    : undefined;
+  const staging: FixedDirectoryObservation = stagingRelativePath
+    ? await observeFixedDirectory(
+        authority.repositoryRoot,
+        stagingRelativePath,
+        directoryListings,
+        options,
+        dependencies,
+      ).catch((error: unknown) => unsafeDirectoryObservation(error, options))
+    : { state: "absent", signature: "not-derived" };
   const ignored = await observeIgnoreStatus(authority.repositoryRoot, options, dependencies);
+  const integrationIgnored =
+    lock.state !== "absent" && !parsedLock
+      ? "unknown"
+      : await observeIntegrationIgnoreStatus(
+          authority.repositoryRoot,
+          [
+            receiptRelativePath,
+            lockRelativePath,
+            ...(stagingRelativePath ? [stagingRelativePath] : []),
+          ],
+          options,
+          dependencies,
+        );
   const finalRootSignature = await assertRootIdentity(authority, options, dependencies);
   if (rootSignature !== finalRootSignature) throw new Error("Repository root changed.");
 
@@ -196,17 +310,25 @@ async function observeSnapshot(
   const signature = JSON.stringify({
     local: local.signature,
     shared: shared.signature,
+    receipt: receipt.signature,
+    lock: lock.signature,
+    staging: staging.signature,
     ignored,
+    integrationIgnored,
     linkedWorktree: topology.linkedWorktree,
     rootSignature,
     topologySignature: topology.signature,
   });
   return {
-    localSettings: local.state,
+    local,
+    receipt,
+    lock,
+    staging,
     sharedSettings: sharedState.state,
     sharedPreToolUse: sharedState.preToolUse,
     sharedDisableAllHooks: sharedState.disableAllHooks,
     localSettingsIgnored: ignored,
+    integrationArtifactsIgnored: integrationIgnored,
     linkedWorktree: topology.linkedWorktree,
     signature,
   };
@@ -220,11 +342,15 @@ function unsafeObservation(error: unknown, options: OperationContext): FixedFile
 
 function unsafeSnapshot(): Snapshot {
   return {
-    localSettings: "unsafe",
+    local: { state: "unsafe", signature: "unsafe" },
+    receipt: { state: "unsafe", signature: "unsafe" },
+    lock: { state: "absent", signature: "unsafe" },
+    staging: { state: "unsafe", signature: "unsafe" },
     sharedSettings: "unsafe",
     sharedPreToolUse: "unknown",
     sharedDisableAllHooks: "unknown",
     localSettingsIgnored: "unknown",
+    integrationArtifactsIgnored: "unknown",
     linkedWorktree: false,
     signature: "unsafe",
   };
@@ -298,15 +424,136 @@ function assertBoundedJson(value: unknown): void {
   }
 }
 
-function blockersFor(snapshot: Snapshot): ClaudeProjectHookBlocker[] {
+async function classifySnapshot(
+  authority: RepositoryRootAuthority,
+  snapshot: Snapshot,
+  options: OperationContext,
+  dependencies: ClaudeProjectHookStatusDependencies,
+): Promise<ClassifiedSnapshot> {
+  const localSettings: ClaudeSettingsState =
+    snapshot.local.state === "absent"
+      ? "absent"
+      : snapshot.local.state === "unsafe"
+        ? "unsafe"
+        : "present";
+  let ownership: ClaudeProjectHookOwnership;
+  let receipt: ClaudeProjectHookReceipt | undefined;
+  if (
+    snapshot.local.state === "unsafe" ||
+    snapshot.receipt.state === "unsafe" ||
+    snapshot.lock.state === "unsafe" ||
+    snapshot.staging.state === "unsafe"
+  ) {
+    ownership = "unsafe";
+  } else if (snapshot.receipt.state === "absent") {
+    ownership = snapshot.local.state === "absent" ? "absent" : "unowned_settings";
+  } else {
+    receipt = parseReceipt(snapshot.receipt);
+    if (
+      !receipt ||
+      !verifyClaudeProjectHookReceiptBinding(
+        receipt,
+        authority.repositoryRoot,
+        authority.repositoryIdentity,
+      )
+    ) {
+      ownership = "record_collision";
+    } else if (snapshot.local.state === "absent") {
+      ownership = "owned_inactive";
+    } else if (
+      snapshot.local.state === "present" &&
+      snapshot.local.bytes &&
+      verifyClaudeProjectHookSettingsBytes(receipt, snapshot.local.bytes)
+    ) {
+      ownership = "owned_exact";
+    } else {
+      ownership = "owned_modified";
+    }
+  }
+
+  const readinessSuppressed =
+    snapshot.sharedSettings === "unsafe" ||
+    snapshot.sharedPreToolUse === "present" ||
+    snapshot.sharedDisableAllHooks === true ||
+    snapshot.linkedWorktree;
+  const readiness =
+    receipt &&
+    ["owned_inactive", "owned_exact", "owned_modified"].includes(ownership) &&
+    !readinessSuppressed
+      ? await currentReadiness(
+          receipt,
+          snapshot.receipt.bytes ?? Buffer.alloc(0),
+          authority,
+          options,
+          dependencies,
+        )
+      : "not_applicable";
+  return {
+    blockers: blockersFor(snapshot, ownership),
+    localSettings,
+    ownership,
+    readiness,
+  };
+}
+
+async function currentReadiness(
+  receipt: ClaudeProjectHookReceipt,
+  receiptBytes: Buffer,
+  authority: RepositoryRootAuthority,
+  options: OperationContext,
+  dependencies: ClaudeProjectHookStatusDependencies,
+): Promise<ClaudeProjectHookReadiness> {
+  try {
+    throwIfCancelled(options);
+    const resolveRealPath = dependencies.realPath ?? realpath;
+    const nodeExecutable = await resolveRealPath(dependencies.nodeExecutable ?? process.execPath);
+    throwIfCancelled(options);
+    const adapterEntry = await resolveRealPath(
+      dependencies.adapterEntry ??
+        fileURLToPath(new URL("./claude-pretooluse-entry.js", import.meta.url)),
+    );
+    const adapterBytes = await readAbsoluteRegularFile(
+      adapterEntry,
+      maximumAdapterBytes,
+      options,
+      dependencies,
+    );
+    const current = buildClaudeProjectHookArtifacts({
+      adapterBytes,
+      adapterEntry,
+      adapterVersion: dependencies.adapterVersion ?? AGENTHAWK_CLI_VERSION,
+      installationId: receipt.installationId,
+      nodeExecutable,
+      nodeVersion: dependencies.nodeVersion ?? process.version,
+      repositoryIdentity: authority.repositoryIdentity,
+      repositoryRoot: authority.repositoryRoot,
+    });
+    return current.receiptBytes.equals(receiptBytes) ? "current" : "artifact_drift";
+  } catch (error) {
+    if (isOperationCancelled(error)) throw error;
+    return "artifact_unavailable";
+  }
+}
+
+function blockersFor(
+  snapshot: Snapshot,
+  ownership: ClaudeProjectHookOwnership,
+): ClaudeProjectHookBlocker[] {
   const blockers: ClaudeProjectHookBlocker[] = [];
-  if (snapshot.localSettings === "unsafe") blockers.push("local_settings_unsafe");
+  if (snapshot.local.state === "unsafe") blockers.push("local_settings_unsafe");
   if (snapshot.sharedSettings === "unsafe") blockers.push("shared_settings_unsafe");
-  if (snapshot.localSettings === "present") blockers.push("local_settings_present");
+  if (ownership === "unowned_settings") blockers.push("local_settings_present");
   if (snapshot.localSettingsIgnored === "not_ignored") blockers.push("local_settings_not_ignored");
   if (snapshot.localSettingsIgnored === "unknown") blockers.push("ignore_status_unavailable");
+  if (snapshot.integrationArtifactsIgnored === "not_ignored") {
+    blockers.push("integration_artifacts_not_ignored");
+  }
+  if (snapshot.integrationArtifactsIgnored === "unknown") {
+    blockers.push("integration_ignore_status_unavailable");
+  }
   if (snapshot.sharedPreToolUse === "present") blockers.push("project_hooks_present");
   if (snapshot.sharedDisableAllHooks === true) blockers.push("project_hooks_declared_disabled");
+  if (snapshot.lock.state !== "absent") blockers.push("operation_locked");
   if (snapshot.linkedWorktree) blockers.push("linked_worktree");
   return blockers;
 }
@@ -314,6 +561,7 @@ function blockersFor(snapshot: Snapshot): ClaudeProjectHookBlocker[] {
 async function observeSettingsFile(
   root: string,
   segments: readonly string[],
+  maximumBytes: number,
   retainBytes: boolean,
   directoryListings: Map<string, Promise<readonly string[]>>,
   options: OperationContext,
@@ -341,13 +589,14 @@ async function observeSettingsFile(
   const openFile = dependencies.openFile ?? open;
   throwIfCancelled(options);
   const initial = await inspect(path);
-  if (
-    !initial.isFile() ||
-    initial.isSymbolicLink() ||
-    initial.nlink !== 1n ||
-    initial.size > BigInt(maximumSettingsBytes)
-  ) {
+  if (!initial.isFile() || initial.isSymbolicLink() || initial.nlink !== 1n || initial.size < 0n) {
     throw new Error("Claude settings path is unsafe.");
+  }
+  if (initial.size > BigInt(maximumBytes)) {
+    return {
+      state: "oversize",
+      signature: `${parentSignatures.join("|")}:${statSignature(initial, "oversize")}`,
+    };
   }
   const flags = constants.O_RDONLY | (process.platform === "win32" ? 0 : constants.O_NOFOLLOW);
   const handle = await openFile(path, flags);
@@ -357,7 +606,7 @@ async function observeSettingsFile(
     if (!opened.isFile() || opened.nlink !== 1n || !sameIdentity(initial, opened)) {
       throw new Error("Claude settings changed before read.");
     }
-    const bytes = await readBoundedHandle(handle, options);
+    const bytes = await readBoundedHandle(handle, maximumBytes, options);
     const openedFinal = await handle.stat({ bigint: true });
     const final = await inspect(path);
     throwIfCancelled(options);
@@ -383,6 +632,30 @@ async function observeSettingsFile(
   } finally {
     await handle.close();
   }
+}
+
+async function observeFixedDirectory(
+  root: string,
+  relativePath: string,
+  directoryListings: Map<string, Promise<readonly string[]>>,
+  options: OperationContext,
+  dependencies: ClaudeProjectHookStatusDependencies,
+): Promise<FixedDirectoryObservation> {
+  const name = relativePath;
+  if ((await exactEntry(root, name, directoryListings, options, dependencies)) === "absent") {
+    return { state: "absent", signature: "absent" };
+  }
+  const observed = await stableContainedDirectory(root, join(root, name), options, dependencies);
+  return { state: "present", signature: directorySignature(observed) };
+}
+
+function unsafeDirectoryObservation(
+  error: unknown,
+  options: OperationContext,
+): FixedDirectoryObservation {
+  if (options.signal?.aborted) throw cancellationError(options.signal);
+  if (isOperationCancelled(error)) throw error;
+  return { state: "unsafe", signature: "unsafe" };
 }
 
 async function exactEntry(
@@ -437,8 +710,12 @@ async function readBoundedDirectory(
   return entries;
 }
 
-async function readBoundedHandle(handle: FileHandle, options: OperationContext): Promise<Buffer> {
-  const buffer = Buffer.alloc(maximumSettingsBytes + 1);
+async function readBoundedHandle(
+  handle: FileHandle,
+  maximumBytes: number,
+  options: OperationContext,
+): Promise<Buffer> {
+  const buffer = Buffer.alloc(maximumBytes + 1);
   let offset = 0;
   while (offset < buffer.length) {
     throwIfCancelled(options);
@@ -447,8 +724,54 @@ async function readBoundedHandle(handle: FileHandle, options: OperationContext):
     if (result.bytesRead === 0) break;
     offset += result.bytesRead;
   }
-  if (offset > maximumSettingsBytes) throw new Error("Claude settings exceeds its size limit.");
+  if (offset > maximumBytes) throw new Error("Claude settings exceeds its size limit.");
   return buffer.subarray(0, offset);
+}
+
+async function readAbsoluteRegularFile(
+  path: string,
+  maximumBytes: number,
+  options: OperationContext,
+  dependencies: ClaudeProjectHookStatusDependencies,
+): Promise<Buffer> {
+  if (!isAbsolute(path) || resolve(path) !== path) {
+    throw new Error("Claude project-hook adapter path is invalid.");
+  }
+  const inspect = dependencies.inspectPath ?? inspectBigInt;
+  const openFile = dependencies.openFile ?? open;
+  throwIfCancelled(options);
+  const initial = await inspect(path);
+  if (
+    !initial.isFile() ||
+    initial.isSymbolicLink() ||
+    initial.size < 0n ||
+    initial.size > BigInt(maximumBytes)
+  ) {
+    throw new Error("Claude project-hook adapter is unavailable.");
+  }
+  const flags = constants.O_RDONLY | (process.platform === "win32" ? 0 : constants.O_NOFOLLOW);
+  const handle = await openFile(path, flags);
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || !sameIdentity(initial, opened)) {
+      throw new Error("Claude project-hook adapter changed before read.");
+    }
+    const bytes = await readBoundedHandle(handle, maximumBytes, options);
+    const final = await inspect(path);
+    throwIfCancelled(options);
+    if (
+      !sameIdentity(opened, final) ||
+      final.isSymbolicLink() ||
+      !final.isFile() ||
+      final.size !== opened.size ||
+      BigInt(bytes.length) !== opened.size
+    ) {
+      throw new Error("Claude project-hook adapter changed during read.");
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
 }
 
 async function observeIgnoreStatus(
@@ -460,7 +783,7 @@ async function observeIgnoreStatus(
     throwIfCancelled(options);
     const result = dependencies.observeIgnore
       ? await dependencies.observeIgnore(root, options)
-      : await observeQuietGitIgnore(root, options, dependencies);
+      : await observeQuietGitIgnore(root, localSettingsRelativePath, options, dependencies);
     throwIfCancelled(options);
     return result;
   } catch (error) {
@@ -469,8 +792,37 @@ async function observeIgnoreStatus(
   }
 }
 
+async function observeIntegrationIgnoreStatus(
+  root: string,
+  relativePaths: readonly string[],
+  options: OperationContext,
+  dependencies: ClaudeProjectHookStatusDependencies,
+): Promise<ClaudeLocalSettingsIgnored> {
+  try {
+    throwIfCancelled(options);
+    if (dependencies.observeIntegrationIgnore) {
+      const result = await dependencies.observeIntegrationIgnore(root, relativePaths, options);
+      throwIfCancelled(options);
+      return result;
+    }
+    const results: ClaudeLocalSettingsIgnored[] = [];
+    for (const relativePath of relativePaths) {
+      results.push(await observeQuietGitIgnore(root, relativePath, options, dependencies));
+    }
+    return results.includes("unknown")
+      ? "unknown"
+      : results.includes("not_ignored")
+        ? "not_ignored"
+        : "ignored";
+  } catch (error) {
+    if (isOperationCancelled(error) || options.signal?.aborted) throw error;
+    return "unknown";
+  }
+}
+
 async function observeQuietGitIgnore(
   root: string,
+  relativePath: string,
   options: OperationContext,
   dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<ClaudeLocalSettingsIgnored> {
@@ -493,7 +845,7 @@ async function observeQuietGitIgnore(
         "check-ignore",
         "-q",
         "--",
-        localSettingsRelativePath,
+        relativePath,
       ],
       {
         cwd: root,
@@ -678,6 +1030,16 @@ function entryKey(value: string): string {
   return value.normalize("NFKC").toLowerCase();
 }
 
+function parseReceipt(observation: FixedFileObservation): ClaudeProjectHookReceipt | undefined {
+  if (observation.state !== "present" || !observation.bytes) return undefined;
+  return parseClaudeProjectHookReceiptBytes(observation.bytes);
+}
+
+function parseLock(observation: FixedFileObservation) {
+  if (observation.state !== "present" || !observation.bytes) return undefined;
+  return parseClaudeProjectHookLockBytes(observation.bytes);
+}
+
 function inspectBigInt(path: string): Promise<BigIntStats> {
   return lstat(path, { bigint: true });
 }
@@ -698,14 +1060,17 @@ function renderStatus(
     "",
     "Claude project hook: PREFLIGHT",
     `Local settings: ${report.localSettings}`,
+    `Ownership: ${report.ownership}`,
+    `Readiness: ${report.readiness}`,
     `Shared settings: ${report.sharedSettings}`,
     `Shared PreToolUse: ${report.sharedPreToolUse}`,
     `Shared disableAllHooks: ${String(report.sharedDisableAllHooks)}`,
     `Local settings ignored: ${report.localSettingsIgnored}`,
+    `Integration artifacts ignored: ${report.integrationArtifactsIgnored}`,
     `Blockers: ${report.blockers.length === 0 ? "none" : report.blockers.join(", ")}`,
     `Activation: ${report.activation}`,
     "",
-    "This is only a future installation preflight; it does not prove Claude loaded or enforces a hook.",
+    "This bounded snapshot does not prove Claude loaded, trusted, enabled, or executed the hook.",
     "No provider was contacted and no file was changed.",
     "",
   ]

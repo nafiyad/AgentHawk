@@ -24,6 +24,9 @@ describe("CLI JSON contract", () => {
       sharedPreToolUse: "absent",
       sharedDisableAllHooks: false,
       localSettingsIgnored: "ignored",
+      integrationArtifactsIgnored: "ignored",
+      ownership: "absent",
+      readiness: "not_applicable",
       blockers: [],
       activation: "unproven",
       providersContacted: false,
@@ -36,6 +39,14 @@ describe("CLI JSON contract", () => {
         sharedSettings: "present",
       }),
     ).toEqual({ ...healthy, sharedSettings: "present" });
+    const current = {
+      ...healthy,
+      localSettings: "present",
+      ownership: "owned_exact",
+      readiness: "current",
+      exitCodeMeaning: "integration_current",
+    } as const;
+    expect(claudeProjectHookStatusReportSchema.parse(current)).toEqual(current);
 
     const blocked = {
       ...healthy,
@@ -44,6 +55,7 @@ describe("CLI JSON contract", () => {
       sharedPreToolUse: "unknown",
       sharedDisableAllHooks: "unknown",
       localSettingsIgnored: "unknown",
+      ownership: "unsafe",
       blockers: [
         "local_settings_unsafe",
         "shared_settings_unsafe",
@@ -58,6 +70,9 @@ describe("CLI JSON contract", () => {
       { ...healthy, activation: "active" },
       { ...healthy, blockers: ["local_settings_not_ignored"] },
       { ...healthy, exitCodeMeaning: "attention_required" },
+      { ...healthy, readiness: "current" },
+      { ...current, ownership: "absent" },
+      { ...current, blockers: ["project_hooks_present"], sharedPreToolUse: "present" },
       { ...blocked, blockers: [...blocked.blockers].reverse() },
       { ...blocked, blockers: [...blocked.blockers, "linked_worktree"] },
       { ...blocked, sharedPreToolUse: "absent" },
