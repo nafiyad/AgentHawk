@@ -61,6 +61,8 @@ const topologyArguments = [
 
 export interface ClaudeProjectHookStatusOptions extends OperationContext {
   readonly format: OutputFormat;
+  readonly ownedOperationId?: string | undefined;
+  readonly candidateOperationId?: string | undefined;
 }
 
 export interface ClaudeProjectHookStatusDependencies {
@@ -142,7 +144,7 @@ export async function statusClaudeProjectHook(
       if (isOperationCancelled(error)) throw error;
       snapshot = unsafeSnapshot();
       classified = {
-        blockers: blockersFor(snapshot, "unsafe"),
+        blockers: blockersFor(snapshot, "unsafe", options.ownedOperationId),
         localSettings: "unsafe",
         ownership: "unsafe",
         readiness: "not_applicable",
@@ -156,7 +158,7 @@ export async function statusClaudeProjectHook(
       return statusResult(
         snapshot,
         {
-          blockers: blockersFor(snapshot, "unsafe"),
+          blockers: blockersFor(snapshot, "unsafe", options.ownedOperationId),
           localSettings: "unsafe",
           ownership: "unsafe",
           readiness: "not_applicable",
@@ -220,7 +222,7 @@ function statusResult(
 
 async function observeStableSnapshot(
   authority: RepositoryRootAuthority,
-  options: OperationContext,
+  options: ClaudeProjectHookStatusOptions,
   dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<Snapshot> {
   const first = await observeSnapshot(authority, options, dependencies);
@@ -234,7 +236,7 @@ async function observeStableSnapshot(
 
 async function observeSnapshot(
   authority: RepositoryRootAuthority,
-  options: OperationContext,
+  options: ClaudeProjectHookStatusOptions,
   dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<Snapshot> {
   const directoryListings = new Map<string, Promise<readonly string[]>>();
@@ -277,9 +279,12 @@ async function observeSnapshot(
     dependencies,
   ).catch((error: unknown) => unsafeObservation(error, options));
   const parsedLock = parseLock(lock);
-  const stagingRelativePath = parsedLock
-    ? `.agenthawk-claude-integration-${parsedLock.operationId}`
-    : undefined;
+  const candidateId = options.candidateOperationId;
+  if (candidateId !== undefined && !/^[0-9a-f]{64}$/u.test(candidateId)) {
+    throw new Error("Invalid candidate operation identifier.");
+  }
+  const stagingId = parsedLock?.operationId ?? (lock.state === "absent" ? candidateId : undefined);
+  const stagingRelativePath = stagingId ? `.agenthawk-claude-integration-${stagingId}` : undefined;
   const staging: FixedDirectoryObservation = stagingRelativePath
     ? await observeFixedDirectory(
         authority.repositoryRoot,
@@ -427,7 +432,7 @@ function assertBoundedJson(value: unknown): void {
 async function classifySnapshot(
   authority: RepositoryRootAuthority,
   snapshot: Snapshot,
-  options: OperationContext,
+  options: ClaudeProjectHookStatusOptions,
   dependencies: ClaudeProjectHookStatusDependencies,
 ): Promise<ClassifiedSnapshot> {
   const localSettings: ClaudeSettingsState =
@@ -489,7 +494,7 @@ async function classifySnapshot(
         )
       : "not_applicable";
   return {
-    blockers: blockersFor(snapshot, ownership),
+    blockers: blockersFor(snapshot, ownership, options.ownedOperationId),
     localSettings,
     ownership,
     readiness,
@@ -538,6 +543,7 @@ async function currentReadiness(
 function blockersFor(
   snapshot: Snapshot,
   ownership: ClaudeProjectHookOwnership,
+  ownedOperationId?: string,
 ): ClaudeProjectHookBlocker[] {
   const blockers: ClaudeProjectHookBlocker[] = [];
   if (snapshot.local.state === "unsafe") blockers.push("local_settings_unsafe");
@@ -553,7 +559,12 @@ function blockersFor(
   }
   if (snapshot.sharedPreToolUse === "present") blockers.push("project_hooks_present");
   if (snapshot.sharedDisableAllHooks === true) blockers.push("project_hooks_declared_disabled");
-  if (snapshot.lock.state !== "absent") blockers.push("operation_locked");
+  if (
+    snapshot.lock.state !== "absent" &&
+    (!ownedOperationId || parseLock(snapshot.lock)?.operationId !== ownedOperationId)
+  ) {
+    blockers.push("operation_locked");
+  }
   if (snapshot.linkedWorktree) blockers.push("linked_worktree");
   return blockers;
 }

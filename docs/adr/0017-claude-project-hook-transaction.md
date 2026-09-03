@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted as a design boundary. No install or remove command is implemented by
-this decision.
+Accepted. The install/remove transaction candidate is implemented under this
+boundary; exact-host activation and a support decision remain separate gates.
 
 ## Context
 
@@ -15,7 +15,8 @@ record and an interruption model before it can safely create
 `.claude/settings.local.json`.
 
 This decision uses public primary sources, accessed 2026-08-27 and rechecked
-2026-08-31 for the implemented status boundary:
+2026-08-31 for the status boundary, with Node/Git/hooks references rechecked
+2026-09-03 for the transaction:
 
 - [Claude Code hooks](https://code.claude.com/docs/en/hooks) documents that
   project-local hooks live under the `hooks` key in settings, `PreToolUse` can
@@ -383,7 +384,8 @@ The design is accepted and implementation remains single-flight and ordered:
    complete;
 3. receipt-aware read-only status states and minimum-disclosure schema —
    complete;
-4. install/remove transaction with filesystem capability tests — next; and
+4. install/remove transaction with filesystem capability tests — implemented
+   and locally validated; delivery requires exact-head review and green CI; and
 5. exact-host activation matrices and a separate support decision.
 
 No slice may create install/remove commands before its prerequisites are merged.
@@ -421,6 +423,12 @@ tests and repeated identity fences narrow supported behavior and fail closed;
 they do not create an atomic hostile-filesystem guarantee.
 
 ## Consequences
+
+The explicit lifecycle implements this ordering and never changes trust or
+ignore rules. Graceful cancellation applies to API callers supplying a signal;
+the CLI treats Ctrl-C as abrupt interruption, with retained-state recovery.
+Cleanup rechecks exact bytes and identities; incomplete staging cleanup retains
+the lock for single-candidate discovery. See [setup and recovery](../claude-project-hook-lifecycle.md).
 
 The pure-format implementation and invocation verifier add no lifecycle command
 or mutation. Project invocation performs bounded, identity-fenced reads of only

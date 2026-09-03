@@ -78,6 +78,15 @@ pins the research candidate, validates the closed process boundary, and keeps ev
 
 ## Native-hook threats and implementation gates
 
+The Claude lifecycle candidate implements ADR 0017 receipt-first install and
+settings-first remove. Four exact paths must be ignored/untracked before any
+artifact and under its owned lock. Real-filesystem no-replace probes, repeated
+ownership checks, exact-byte deletion fences, and non-recursive cleanup protect
+against observed collisions. Partial publication or unprovable cleanup reports
+recovery rather than success; retained staging keeps its lock. This does not
+eliminate same-user TOCTOU races or prove host activation. CLI process termination
+can retain crash state; internal API cancellation is tested separately.
+
 The Codex rows describe an implemented but unsupported compatibility candidate plus exact exclusion evidence. Other vendor rows remain design requirements. Installation, recovery, manual activation, and a reproducible named real-host gate must all pass for every separately claimed surface.
 
 | Threat | Required implementation gate | Residual risk |
