@@ -398,4 +398,10 @@ The following are not promised phases: hosted dashboards, user accounts, organiz
 
 ## Immediate next action
 
+Prerequisite repair: PR #57 post-merge Windows Node 24 CI exposed an initialization
+rollback replacement-file regression. Require exact-content cleanup fences and
+adversarial regression coverage before proceeding to the host matrix below.
+The scoped repair is tracked in the implementation plan; it does not expand
+native support or the public release.
+
 Milestone 16 is complete. Milestone 17's vendor-neutral contracts, conservative qualifier, typed cancellation, co-root authority, bounded aggregate evaluator, unsupported Codex compatibility candidate, closed Claude `2.1.241` fixture edge, project-settings preflight, root-bound lifecycle format, invocation verification, and receipt-aware status are complete. The Claude install/remove transaction was delivered in PR #56, merged as `1f6fd02`, with independent approval and passing CI before and after merge. It verifies ignored/untracked targets before mutation, uses an exclusive lock and actual-filesystem no-replace probes, publishes the receipt before settings, removes settings before the receipt, and preserves unverified state for recovery. Activation remains `unproven`, every Claude support row remains unsupported, and lifecycle operations contact no providers. The next implementation slice is ADR 0017's isolated real-host activation matrix and separate support decision; no native support follows merely from installation.

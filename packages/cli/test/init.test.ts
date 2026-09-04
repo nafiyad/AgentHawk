@@ -1,3 +1,4 @@
+import * as filesystem from "node:fs/promises";
 import {
   link,
   mkdir,
@@ -17,6 +18,11 @@ import { initReportSchema } from "@agenthawk/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initializeRepository } from "../src/init.js";
 import { INIT_POLICY, initAssets } from "../src/init-content.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, open: vi.fn(actual.open) };
+});
 
 const roots: string[] = [];
 
@@ -454,7 +460,7 @@ describe("init", () => {
     });
   });
 
-  it("detects post-publication byte mutation and removes only its own file", async () => {
+  it("preserves same-size post-publication mutation and reports unconfirmed cleanup", async () => {
     const cwd = await repository();
     const result = await initializeRepository(
       { format: "json", integration: "none" },
@@ -466,27 +472,103 @@ describe("init", () => {
       },
     );
     expect(result.exitCode).toBe(4);
-    await expect(readFile(join(cwd, ".agenthawk.yml"), "utf8")).rejects.toMatchObject({
-      code: "ENOENT",
-    });
+    expect(JSON.parse(result.output).error.message).toContain("cleanup could not be confirmed");
+    await expect(readFile(join(cwd, ".agenthawk.yml"))).resolves.toEqual(
+      Buffer.alloc(Buffer.byteLength(INIT_POLICY), 0x78),
+    );
   });
 
-  it("reports unconfirmed cleanup without deleting a replacement file", async () => {
+  it.each(["lock", "stage"] as const)(
+    "preserves changed %s bytes during failed initialization cleanup",
+    async (failureKind) => {
+      const cwd = await repository();
+      let changedPath = "";
+      const result = await initializeRepository(
+        { format: "json", integration: "none" },
+        {
+          afterTrackedCreation: async (kind, path) => {
+            if (kind !== failureKind) return;
+            changedPath = path;
+            await writeFile(path, "owner content\n", "utf8");
+            throw new Error("injected failure");
+          },
+          cwd,
+        },
+      );
+      expect(result.exitCode).toBe(4);
+      expect(JSON.parse(result.output).error.message).toContain("cleanup could not be confirmed");
+      await expect(readFile(changedPath, "utf8")).resolves.toBe("owner content\n");
+    },
+  );
+
+  it.each(["lock", "stage"] as const)(
+    "preserves a partial %s write when writing fails",
+    async (failureKind) => {
+      const cwd = await repository();
+      const { open: originalOpen } =
+        await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+      let partialPath = "";
+      const openSpy = vi.spyOn(filesystem, "open").mockImplementation(async (...args) => {
+        const handle = await originalOpen(...args);
+        const path = String(args[0]);
+        const matches =
+          failureKind === "lock" ? path.endsWith(".agenthawk-init.lock") : path.endsWith("0.tmp");
+        if (args[1] === "wx" && matches) {
+          partialPath = path;
+          vi.spyOn(handle, "writeFile").mockImplementation(async () => {
+            await handle.write(Buffer.from("partial"));
+            throw new Error("injected write failure");
+          });
+        }
+        return handle;
+      });
+      try {
+        const result = await initializeRepository({ format: "json", integration: "none" }, { cwd });
+        expect(result.exitCode).toBe(4);
+        expect(JSON.parse(result.output).error.message).toContain("cleanup could not be confirmed");
+        await expect(readFile(partialPath, "utf8")).resolves.toBe("partial");
+      } finally {
+        openSpy.mockRestore();
+      }
+    },
+  );
+
+  it("preserves changed lock bytes at successful-publication cleanup", async () => {
     const cwd = await repository();
+    const replacement = "x".repeat(Buffer.byteLength("agenthawk-init\n"));
     const result = await initializeRepository(
       { format: "json", integration: "none" },
       {
-        afterPublish: async (_target, path) => {
-          await unlink(path);
-          await writeFile(path, "replacement\n", "utf8");
+        afterPublish: async () => {
+          await writeFile(join(cwd, ".agenthawk-init.lock"), replacement, "utf8");
         },
         cwd,
       },
     );
     expect(result.exitCode).toBe(4);
     expect(JSON.parse(result.output).error.message).toContain("cleanup could not be confirmed");
-    await expect(readFile(join(cwd, ".agenthawk.yml"), "utf8")).resolves.toBe("replacement\n");
+    await expect(readFile(join(cwd, ".agenthawk-init.lock"), "utf8")).resolves.toBe(replacement);
   });
+
+  it.each(["replacement\n", "x".repeat(1024 * 1024)])(
+    "reports unconfirmed cleanup without deleting replacement bytes (case %#)",
+    async (replacement) => {
+      const cwd = await repository();
+      const result = await initializeRepository(
+        { format: "json", integration: "none" },
+        {
+          afterPublish: async (_target, path) => {
+            await unlink(path);
+            await writeFile(path, replacement, "utf8");
+          },
+          cwd,
+        },
+      );
+      expect(result.exitCode).toBe(4);
+      expect(JSON.parse(result.output).error.message).toContain("cleanup could not be confirmed");
+      await expect(readFile(join(cwd, ".agenthawk.yml"), "utf8")).resolves.toBe(replacement);
+    },
+  );
 
   it("rolls back invocation-owned files when publication fails", async () => {
     const cwd = await repository();

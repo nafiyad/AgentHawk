@@ -65,6 +65,14 @@ interface TrackedPath {
   stats: Stats;
 }
 
+interface TrackedFile extends TrackedPath {
+  bytes: Buffer | undefined;
+}
+
+interface TrackedLock extends TrackedFile {
+  handle: FileHandle;
+}
+
 class InitInputError extends Error {}
 class InitCleanupUnconfirmedError extends Error {}
 
@@ -72,11 +80,11 @@ export async function initializeRepository(
   options: InitOptions,
   dependencies: InitDependencies = {},
 ): Promise<CheckResult> {
-  const createdFiles: TrackedPath[] = [];
+  const createdFiles: TrackedFile[] = [];
   const createdDirectories: TrackedPath[] = [];
-  const stagedFiles: TrackedPath[] = [];
+  const stagedFiles: TrackedFile[] = [];
   let stagingDirectory: TrackedPath | undefined;
-  let lock: { handle: FileHandle; path: string; stats: Stats } | undefined;
+  let lock: TrackedLock | undefined;
   try {
     const root = await initializationRoot(dependencies.cwd ?? process.cwd());
     const bundledAssets = (dependencies.assets ?? initAssets)(options.integration);
@@ -100,9 +108,11 @@ export async function initializeRepository(
       } catch {}
       throw new InitCleanupUnconfirmedError("Initialization lock identity is unavailable.");
     }
-    lock = { handle: lockHandle, path: lockPath, stats: lockStats };
+    lock = { handle: lockHandle, path: lockPath, stats: lockStats, bytes: Buffer.alloc(0) };
     await dependencies.afterTrackedCreation?.("lock", lockPath);
+    lock.bytes = undefined;
     await lockHandle.writeFile("agenthawk-init\n", "utf8");
+    lock.bytes = Buffer.from("agenthawk-init\n", "utf8");
     await lockHandle.sync();
 
     assets = await prepareAssets(root, bundledAssets, dependencies);
@@ -149,12 +159,18 @@ export async function initializeRepository(
         } catch {}
         throw new InitCleanupUnconfirmedError("Staged file identity is unavailable.");
       }
-      const trackedStage = { path: stagePath, stats: initialStageStats };
+      const trackedStage: TrackedFile = {
+        path: stagePath,
+        stats: initialStageStats,
+        bytes: Buffer.alloc(0),
+      };
       stagedFiles.push(trackedStage);
       let stageStats = trackedStage.stats;
       try {
         await dependencies.afterTrackedCreation?.("stage", stagePath);
+        trackedStage.bytes = undefined;
         await handle.writeFile(asset.bytes);
+        trackedStage.bytes = asset.bytes;
         await handle.sync();
         stageStats = await handle.stat();
         trackedStage.stats = stageStats;
@@ -172,9 +188,11 @@ export async function initializeRepository(
       } catch {
         throw new InitInputError("Initialization target appeared during publication.");
       }
-      createdFiles.push({ path: asset.path, stats: stageStats });
+      createdFiles.push({ path: asset.path, stats: stageStats, bytes: asset.bytes });
       await dependencies.afterPublish?.(asset.target, asset.path);
-      await unlink(stagePath);
+      if (!(await removeTrackedFile(trackedStage))) {
+        throw new InitCleanupUnconfirmedError("Staged file cleanup could not be confirmed.");
+      }
       stagedFiles.splice(stagedFiles.indexOf(trackedStage), 1);
       await verifyExpectedFile(root, asset, stageStats);
     }
@@ -546,9 +564,9 @@ function validateSegment(segment: string): void {
 
 async function rollback(state: {
   createdDirectories: TrackedPath[];
-  createdFiles: TrackedPath[];
-  lock: { handle: FileHandle; path: string; stats: Stats } | undefined;
-  stagedFiles: TrackedPath[];
+  createdFiles: TrackedFile[];
+  lock: TrackedLock | undefined;
+  stagedFiles: TrackedFile[];
   stagingDirectory: TrackedPath | undefined;
 }): Promise<boolean> {
   let confirmed = true;
@@ -568,12 +586,19 @@ async function rollback(state: {
   return confirmed;
 }
 
-async function removeTrackedFile(tracked: TrackedPath): Promise<boolean> {
+async function removeTrackedFile(tracked: TrackedFile): Promise<boolean> {
   try {
     const current = await lstat(tracked.path);
-    if (current.isSymbolicLink() || !current.isFile() || !sameIdentity(current, tracked.stats)) {
+    if (
+      current.isSymbolicLink() ||
+      !current.isFile() ||
+      !sameIdentity(current, tracked.stats) ||
+      tracked.bytes === undefined ||
+      current.size !== tracked.bytes.length
+    ) {
       return false;
     }
+    if (!(await readVerifiedBytes(tracked.path, current)).equals(tracked.bytes)) return false;
     await unlink(tracked.path);
     return true;
   } catch (error) {
@@ -598,18 +623,14 @@ async function removeTrackedDirectory(tracked: TrackedPath): Promise<boolean> {
   }
 }
 
-async function releaseLock(lock: {
-  handle: FileHandle;
-  path: string;
-  stats: Stats;
-}): Promise<boolean> {
+async function releaseLock(lock: TrackedLock): Promise<boolean> {
   let confirmed = true;
   try {
     await lock.handle.close();
   } catch {
     confirmed = false;
   }
-  return (await removeTrackedFile({ path: lock.path, stats: lock.stats })) && confirmed;
+  return (await removeTrackedFile(lock)) && confirmed;
 }
 
 function sameIdentity(left: Stats, right: Stats): boolean {
