@@ -4,6 +4,23 @@ Date: 2026-08-20
 
 ## Current state
 
+### Active repair: initialization rollback content fence
+
+Post-merge Windows Node 24 CI for PR #57 reported a replacement-file cleanup
+failure. Identity-only removal also demonstrably removes in-place changed bytes.
+Scope: require bounded exact-content verification as well as identity before
+removing tracked initialization files, including staging and lock files. Preserve
+unknown partial writes and report unconfirmed cleanup. Acceptance: same-size
+mutation and replacement regressions preserve owner bytes, ordinary rollback
+still succeeds, and the full gate and independent review pass. No host-support
+or release change. Rollback is a new revert commit; never delete retained files
+automatically. Isolated Claude host evidence follows this repair.
+
+Local coverage validation on 2026-09-04 passed 1,146 tests (5 skipped), with
+93.11% statements, 90.09% branches, 97.08% functions, and 95.50% lines. The
+focused initialization suite passes 55 tests, including partial-write preservation.
+Independent final-commit review and exact-head CI remain delivery gates.
+
 ### Documentation reconciliation after PR #56
 
 Scope: reconcile the support matrix, lifecycle ADR, roadmap, and this plan with
