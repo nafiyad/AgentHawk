@@ -10,6 +10,7 @@ export default defineConfig({
         "packages/cli/src/claude-project-hook-format.ts",
         "packages/cli/src/claude-project-hook-invocation.ts",
         "packages/cli/src/claude-project-hook-status.ts",
+        "packages/cli/src/claude-project-hook-transaction.ts",
         "packages/cli/src/codex-project-hook-format.ts",
         "packages/cli/src/codex-project-hook-status.ts",
         "packages/cli/src/codex-project-hook-transaction.ts",

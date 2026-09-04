@@ -42,7 +42,7 @@ AgentHawk will not use an LLM as the authority for security decisions, execute p
 - Read-only GitHub pull-request evaluation with an isolated opt-in write commenter
 - Fail-closed advisory templates for Codex, Claude Code, Cursor, and generic agents
 - A packaged, release-pinned Codex `PreToolUse` compatibility candidate with exact local Windows CLI and app-server host evidence, root-bound hook/receipt lifecycle commands, and invocation-time pair verification; activation and support remain gated
-- A packaged, release-pinned Claude Code `PreToolUse` fixture edge plus read-only project-settings collision preflight; configuration mutation and native support remain gated
+- A packaged, release-pinned Claude Code `PreToolUse` fixture edge plus read-only project-settings collision preflight; explicit collision-safe install/remove lifecycle; native support remains gated
 - Exact release-package manifests, dual-use disclosure, checksummed CI artifacts, and protected stage-only trusted publishing for future versions
 - Offline fixtures and security regression tests
 
@@ -92,15 +92,15 @@ pnpm agenthawk diff --base origin/main --strict --format json
 
 `integrations codex install` exclusively publishes one root-bound receipt and hook without replacing existing configuration; `remove` deletes only an exact or inactive owned pair. Invocation re-verifies the pair before declaring project deployment trust. These commands do not trust or enable the hook, and successful publication does not prove that Codex loaded or executed it. A foreign or abandoned lock and every unprovable crash state fail closed for operator review; no PID, age, locality, hostile-filesystem, or power-loss-durability claim is made.
 
-`integrations claude status` is read-only. It observes the fixed project shared/local settings, root-bound receipt, operation lock, and lock-derived staging target through matching bounded snapshots. It separately reports ownership (`absent`, exact, inactive, modified, unowned, collision, or unsafe), current packaged-artifact readiness, shared `PreToolUse`/`disableAllHooks` blockers, and quiet ignored/untracked results without returning settings, paths, identifiers, digests, ignore patterns, or parser diagnostics. Exit `0` means either that future installation preconditions hold or that an exact owned pair matches the current artifacts; activation remains `unproven`, and no Claude install/remove command exists.
+`integrations claude status` is read-only. It observes the fixed project shared/local settings, root-bound receipt, operation lock, and lock-derived staging target through matching bounded snapshots. It separately reports ownership (`absent`, exact, inactive, modified, unowned, collision, or unsafe), current packaged-artifact readiness, shared `PreToolUse`/`disableAllHooks` blockers, and quiet ignored/untracked results without returning settings, paths, identifiers, digests, ignore patterns, or parser diagnostics. Exit `0` means either that future installation preconditions hold or that an exact owned pair matches the current artifacts; activation remains `unproven`. Explicit `integrations claude install|remove` commands implement the receipt-first/settings-first transaction; see [lifecycle setup and recovery](docs/claude-project-hook-lifecycle.md).
 
 Native enforcement remains unsupported. The exact Codex CLI `0.149.0` Windows
 x64 project-hook row has strong local compatibility evidence, but the pinned
 GitHub-hosted Windows environment rejects the exact restricted-token filesystem
 projection before the complete matrix can run. See the [support
 matrix](docs/support-matrix.md). Claude Code `2.1.241` has a packaged, closed
-fixture adapter, root-bound invocation verification, and receipt-aware read-only status but no settings mutation lifecycle,
-exact-host compatibility evidence, or supported native row. See [ADR 0015](docs/adr/0015-claude-code-hook-edge.md), [ADR 0016](docs/adr/0016-claude-project-hook-ownership.md), and [ADR 0017](docs/adr/0017-claude-project-hook-transaction.md). The published `0.1.0-alpha.1` package also
+fixture adapter, root-bound invocation verification, receipt-aware status, and an explicit settings lifecycle, but no
+exact-host compatibility evidence or supported native row. See [ADR 0015](docs/adr/0015-claude-code-hook-edge.md), [ADR 0016](docs/adr/0016-claude-project-hook-ownership.md), and [ADR 0017](docs/adr/0017-claude-project-hook-transaction.md). The published `0.1.0-alpha.1` package also
 predates these source-revision commands; protected `scan`/`diff` CI remains the final
 repository gate.
 

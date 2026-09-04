@@ -481,6 +481,54 @@ export const codexProjectHookLifecycleReportSchema = z
   });
 export type CodexProjectHookLifecycleReport = z.infer<typeof codexProjectHookLifecycleReportSchema>;
 
+export const claudeProjectHookLifecycleReportSchema = z
+  .object({
+    schemaVersion: z.literal("1.0"),
+    toolVersion: z.string().min(1).max(128),
+    command: z.enum(["integrations_claude_install", "integrations_claude_remove"]),
+    outcome: z.enum(["installed", "removed", "recovery_required"]),
+    ownership: claudeProjectHookOwnershipSchema,
+    readiness: claudeProjectHookReadinessSchema,
+    blockers: z.array(claudeProjectHookBlockerSchema).max(11),
+    providersContacted: z.literal(false),
+    activation: z.literal("unproven"),
+  })
+  .strict()
+  .superRefine((report, context) => {
+    const blockerOrder = claudeProjectHookBlockerSchema.options;
+    if (
+      new Set(report.blockers).size !== report.blockers.length ||
+      report.blockers.some(
+        (blocker, index) =>
+          blockerOrder.indexOf(blocker) <
+          blockerOrder.indexOf(report.blockers[index - 1] ?? blocker),
+      )
+    ) {
+      context.addIssue({ code: "custom", message: "Claude lifecycle blockers are inconsistent." });
+    }
+    if (
+      report.outcome === "installed" &&
+      (report.command !== "integrations_claude_install" ||
+        report.ownership !== "owned_exact" ||
+        report.readiness !== "current" ||
+        report.blockers.length !== 0)
+    ) {
+      context.addIssue({ code: "custom", message: "Installed Claude lifecycle state is invalid." });
+    }
+    if (
+      report.outcome === "removed" &&
+      (report.command !== "integrations_claude_remove" ||
+        report.ownership !== "absent" ||
+        report.readiness !== "not_applicable" ||
+        report.blockers.includes("operation_locked"))
+    ) {
+      context.addIssue({ code: "custom", message: "Removed Claude lifecycle state is invalid." });
+    }
+  });
+export type ClaudeProjectHookLifecycleReport = z.infer<
+  typeof claudeProjectHookLifecycleReportSchema
+>;
+
 export const directDependencySchema = z
   .object({
     name: z.string().min(1).max(214),

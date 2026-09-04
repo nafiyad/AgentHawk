@@ -7,6 +7,11 @@ import {
   statusClaudeProjectHook,
 } from "./claude-project-hook-status.js";
 import {
+  type ClaudeProjectHookTransactionDependencies,
+  installClaudeProjectHook,
+  removeClaudeProjectHook,
+} from "./claude-project-hook-transaction.js";
+import {
   type CodexProjectHookStatusDependencies,
   statusCodexProjectHook,
 } from "./codex-project-hook-status.js";
@@ -24,6 +29,7 @@ import { AGENTHAWK_CLI_VERSION } from "./version.js";
 
 export type ProgramDependencies = CheckDependencies &
   ClaudeProjectHookStatusDependencies &
+  ClaudeProjectHookTransactionDependencies &
   DoctorDependencies &
   InitDependencies &
   CodexProjectHookStatusDependencies & {
@@ -242,6 +248,26 @@ export function createProgram(dependencies: ProgramDependencies = {}): Command {
     const format = parseOutputFormat(options.format, dependencies);
     if (!format) return;
     writeResult(await statusClaudeProjectHook({ format }, dependencies), dependencies);
+  });
+  const claudeInstall = claudeIntegration
+    .command("install")
+    .description("Install the exact AgentHawk-owned Claude project hook without replacement.")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  claudeInstall.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    writeResult(await installClaudeProjectHook({ format }, dependencies), dependencies);
+  });
+  const claudeRemove = claudeIntegration
+    .command("remove")
+    .description("Remove only an exact AgentHawk-owned Claude project hook pair.")
+    .option("--format <format>", "output format: terminal or json", "terminal")
+    .configureOutput(safeOutput);
+  claudeRemove.action(async (options: Record<string, unknown>) => {
+    const format = parseOutputFormat(options.format, dependencies);
+    if (!format) return;
+    writeResult(await removeClaudeProjectHook({ format }, dependencies), dependencies);
   });
 
   const diff = program

@@ -3,7 +3,6 @@ import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:f
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
   packageSpecifications,
@@ -461,27 +460,18 @@ async function verifyPackedClaudeHook(consumerDirectory, projectDirectory) {
   );
 
   const canonicalRoot = await realpath(projectDirectory);
-  const rootStats = await lstat(canonicalRoot, { bigint: true });
-  const canonicalHookEntrypoint = await realpath(hookEntrypoint);
-  const formatModule = await import(
-    pathToFileURL(join(dirname(hookEntrypoint), "claude-project-hook-format.js")).href
-  );
-  const artifacts = formatModule.buildClaudeProjectHookArtifacts({
-    adapterBytes: await readFile(canonicalHookEntrypoint),
-    adapterEntry: canonicalHookEntrypoint,
-    adapterVersion: releaseVersion,
-    installationId: "ab".repeat(32),
-    nodeExecutable: await realpath(process.execPath),
-    nodeVersion: process.version,
-    repositoryIdentity: { dev: rootStats.dev, ino: rootStats.ino },
-    repositoryRoot: canonicalRoot,
-  });
   const settingsPath = join(canonicalRoot, ".claude", "settings.local.json");
   const receiptPath = join(canonicalRoot, ".agenthawk", "integrations", "claude-v1.json");
-  await mkdir(dirname(settingsPath), { recursive: true });
-  await mkdir(dirname(receiptPath), { recursive: true });
-  await writeFile(settingsPath, artifacts.settingsBytes, { flag: "wx" });
-  await writeFile(receiptPath, artifacts.receiptBytes, { flag: "wx" });
+  const installed = await execute(
+    process.execPath,
+    [cliEntrypoint, "integrations", "claude", "install", "--format", "json"],
+    { cwd: canonicalRoot, encoding: "utf8", maxBuffer: 65_536, timeout: 30_000, windowsHide: true },
+  );
+  const installedReport = JSON.parse(installed.stdout);
+  assert(
+    installedReport.outcome === "installed" && installedReport.activation === "unproven",
+    "Packed Claude install failed",
+  );
   const projectStatus = await execute(
     process.execPath,
     [cliEntrypoint, "integrations", "claude", "status", "--format", "json"],
@@ -502,7 +492,9 @@ async function verifyPackedClaudeHook(consumerDirectory, projectDirectory) {
       projectStatusReport.blockers.length === 0,
     "Packed Claude project-hook receipt-aware status failed",
   );
-  const projectArguments = artifacts.launchArguments.slice(1);
+  const projectArguments = JSON.parse(
+    await readFile(settingsPath, "utf8"),
+  ).hooks.PreToolUse[0].hooks[0].args.slice(1);
   const projectNeutral = await executeWithInput(
     process.execPath,
     [hookEntrypoint, ...projectArguments],
@@ -550,8 +542,25 @@ async function verifyPackedClaudeHook(consumerDirectory, projectDirectory) {
         "AgentHawk denied the tool call because security evaluation failed.\n",
     "Packed Claude project invocation mismatch did not fail closed",
   );
-  await rm(settingsPath);
-  await rm(receiptPath);
+  const removed = await execute(
+    process.execPath,
+    [cliEntrypoint, "integrations", "claude", "remove", "--format", "json"],
+    { cwd: canonicalRoot, encoding: "utf8", maxBuffer: 65_536, timeout: 30_000, windowsHide: true },
+  );
+  const removedReport = JSON.parse(removed.stdout);
+  assert(
+    removedReport.outcome === "removed" &&
+      removedReport.ownership === "absent" &&
+      removedReport.activation === "unproven",
+    "Packed Claude removal failed",
+  );
+  for (const path of [settingsPath, receiptPath]) {
+    const absent = await lstat(path).then(
+      () => false,
+      (error) => error.code === "ENOENT",
+    );
+    assert(absent, "Packed Claude removal left an owned file");
+  }
 }
 
 async function verifyPackedCodexHook(consumerDirectory) {

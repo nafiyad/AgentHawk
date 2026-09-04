@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   approvalValidationReportSchema,
+  claudeProjectHookLifecycleReportSchema,
   claudeProjectHookStatusReportSchema,
   cliErrorReportSchema,
   codexProjectHookLifecycleReportSchema,
@@ -14,6 +15,52 @@ import {
 } from "../src/index.js";
 
 describe("CLI JSON contract", () => {
+  it("validates minimal Claude lifecycle outcomes without activation claims", () => {
+    const installed = {
+      schemaVersion: "1.0",
+      toolVersion: "0.1.0-alpha.1",
+      command: "integrations_claude_install",
+      outcome: "installed",
+      ownership: "owned_exact",
+      readiness: "current",
+      blockers: [],
+      providersContacted: false,
+      activation: "unproven",
+    };
+    expect(claudeProjectHookLifecycleReportSchema.parse(installed)).toEqual(installed);
+    const removed = {
+      ...installed,
+      command: "integrations_claude_remove",
+      outcome: "removed",
+      ownership: "absent",
+      readiness: "not_applicable",
+      blockers: ["project_hooks_declared_disabled"],
+    };
+    expect(claudeProjectHookLifecycleReportSchema.parse(removed)).toEqual(removed);
+    const recovery = {
+      ...installed,
+      outcome: "recovery_required",
+      ownership: "unsafe",
+      readiness: "not_applicable",
+      blockers: ["integration_ignore_status_unavailable", "operation_locked"],
+    };
+    expect(claudeProjectHookLifecycleReportSchema.parse(recovery)).toEqual(recovery);
+    for (const candidate of [
+      { ...installed, outcome: "removed" },
+      { ...installed, command: "integrations_claude_remove" },
+      { ...installed, ownership: "owned_inactive" },
+      { ...installed, readiness: "artifact_drift" },
+      { ...installed, activation: "active" },
+      { ...installed, rootBinding: "private" },
+      { ...installed, blockers: ["operation_locked"] },
+      { ...removed, ownership: "owned_inactive" },
+      { ...removed, readiness: "current" },
+      { ...removed, blockers: ["operation_locked"] },
+      { ...recovery, blockers: ["operation_locked", "operation_locked"] },
+      { ...recovery, blockers: [...recovery.blockers].reverse() },
+    ])
+      expect(claudeProjectHookLifecycleReportSchema.safeParse(candidate).success).toBe(false);
+  });
   it("enforces closed and internally consistent Claude project-hook preflight reports", () => {
     const healthy = {
       schemaVersion: "1.0",
