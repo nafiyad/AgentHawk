@@ -63,7 +63,7 @@ choices, not Claude Code guarantees.
 ### Scope and fixed targets
 
 The first lifecycle candidate is explicitly requested and machine-local to one
-canonical ordinary Git worktree. It is not part of `agenthawk init`. The future
+canonical ordinary Git worktree. It is not part of `agenthawk init`. The implemented
 surface is:
 
 ```text
@@ -277,7 +277,7 @@ lock identity and bytes; another command never may.
 
 ### Invocation-time verification
 
-The future entrypoint accepts either zero launch arguments for the existing
+The entrypoint accepts either zero launch arguments for the existing
 fixture boundary or the exact six project arguments above. Any other argument
 shape produces the existing constant exit-2 emergency denial.
 
@@ -385,7 +385,7 @@ The design is accepted and implementation remains single-flight and ordered:
 3. receipt-aware read-only status states and minimum-disclosure schema —
    complete;
 4. install/remove transaction with filesystem capability tests — implemented
-   and locally validated; delivery requires exact-head review and green CI; and
+   and delivered in [PR #56](https://github.com/nafiyad/AgentHawk/pull/56), with independent review and green CI; and
 5. exact-host activation matrices and a separate support decision.
 
 No slice may create install/remove commands before its prerequisites are merged.
@@ -434,7 +434,7 @@ The pure-format implementation and invocation verifier add no lifecycle command
 or mutation. Project invocation performs bounded, identity-fenced reads of only
 the fixed receipt, local settings, lock, current adapter, and repository
 authority. It reaches providers only after the exact pair and current artifacts
-verify. The later lifecycle will reject repositories with foreign
+verify. The lifecycle rejects repositories with foreign
 local settings, relevant shared hooks, an effective shared disable declaration,
 uncertain ignore state, linked worktrees, unsafe paths, collisions, or locks.
 That conservative cost is
