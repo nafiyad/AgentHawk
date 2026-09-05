@@ -78,6 +78,14 @@ pins the research candidate, validates the closed process boundary, and keeps ev
 
 ## Native-hook threats and implementation gates
 
+The development-only [Claude Messages fixture](adr/0018-claude-host-fixture.md)
+models a bounded two-turn API exchange on numeric loopback. It emits only one
+fixed harmless command, forwards nothing, and launches no process. Its phase and
+client-result enums are not evidence of hook activation or command execution.
+Real-host testing still requires separately verified artifact, environment,
+network, settings, and independent execution/non-execution marker boundaries.
+Raw fixture requests and synthetic capability bytes are not logged or reported.
+
 The Claude lifecycle candidate implements ADR 0017 receipt-first install and
 settings-first remove. Four exact paths must be ignored/untracked before any
 artifact and under its owned lock. Real-filesystem no-replace probes, repeated
