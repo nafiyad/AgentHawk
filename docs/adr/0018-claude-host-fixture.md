@@ -37,7 +37,10 @@ Add a development-only module under `scripts/`, outside published package paths.
 It binds only `127.0.0.1` on an ephemeral port, generates an in-memory fixture
 capability, and accepts only bounded authenticated Messages/token-count requests
 and a bounded connection probe. No caller-supplied executable or command is
-accepted. The sole emitted command is a fixed harmless `echo` through `Bash`.
+accepted. The default emitted command is a fixed harmless `echo` through `Bash`.
+[ADR 0019](0019-claude-host-isolation.md) adds the closed `marker` scenario,
+whose only command is `/opt/agenthawk/fixture-marker`. The later isolated driver
+must supply that immutable helper; this fixture neither installs nor executes it.
 
 Exactly two inference requests are allowed: one initial user message produces a
 fixed tool call; the next must repeat that initial message and contain the exact

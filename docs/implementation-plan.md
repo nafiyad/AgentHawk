@@ -4,6 +4,57 @@ Date: 2026-08-20
 
 ## Current state
 
+### Implemented slice: Claude host isolation contract (ADR 0019)
+
+Scope: a pure development-only Linux container launch/inspection contract,
+explicit minimal Claude environment, closed marker stimulus, and a conservative
+host-evidence reducer. No real process launch or activation claim in this slice.
+Expected files: `scripts/claude-host-contract.mjs`, `scripts/claude-host-evidence.mjs`,
+their adversarial tests, the existing Messages fixture/tests, coverage inventory,
+ADR 0019, and these public
+state/threat-model notes. No new dependency. Test changed/missing isolation fields,
+inherited credential/path injection, fixed command boundaries, false evidence and
+cleanup failure; run the full gate and exact-head independent review. Rollback is
+a new revert commit. Container preparation and bounded real-host execution follow
+this prerequisite; all native support rows remain unsupported.
+
+Local validation on 2026-09-05 UTC passed lint, typecheck, 1,910 tests (5 skipped),
+coverage, build, offline package verification, CLI smoke, and dependency audit.
+Aggregate coverage is 93.63% statements, 91.23% branches, 96.76% functions, and
+95.84% lines. The three development modules pass 749 focused tests; both new
+contract/reducer modules have 100% statement/branch/function/line coverage.
+Independent review identified implicit image-pull and unstable property-read
+hazards. The create vector now prohibits pulling, and bounded descriptor-only
+snapshots bind validation to consumption; regression tests cover both fixes.
+Working-tree re-review found no remaining blocker. Exact-head PR review and CI
+remain delivery gates. No actual Claude/container execution has occurred.
+
+CI gate correction: Windows Node 22 coverage exceeded the existing 20-second
+budget in one test containing two independent full lifecycle fixtures. Split the
+hook-replacement and inactive-receipt-replacement scenarios into separate tests,
+preserving their assertions and the existing per-test timeout. This follows
+[Vitest's test boundary](https://vitest.dev/api/test#timeout), checked 2026-09-05;
+it changes neither production behavior nor security deadlines. Require both
+focused scenarios, the full local gate, renewed exact-head review, and all CI
+jobs before delivery. No retries, skips, or threshold relaxation are added.
+
+A subsequent Windows Node 24 coverage run timed out in the old-pair removal
+case, then reported a busy temporary root during cleanup. Three isolated
+diagnostic runs passed; the original stalled operation remains unidentified.
+Keep this repair test-only: construct the removal fixture with the production
+artifact builder, prove `owned_exact/current` with real status, and retain actual
+removal with the combined artifact-drift/shared-hook conditions and preservation
+assertions. Full installer integration tests remain unchanged. Bound fixture Git
+execution and refuse cleanup after test cancellation rather than deleting state
+an unfinished body might still use; a poisoned fixture module must fail visibly.
+[Vitest cancellation](https://vitest.dev/guide/test-context#signal) is cooperative,
+not proof of process quiescence. Preserve existing test deadlines and all quality
+thresholds; require focused regressions, renewed full gates, and exact-head review.
+The sequential cleanup fence has 14 adversarial tests with 100% targeted coverage.
+All 1,910 tests pass in the complete test and coverage runs; existing aggregate
+coverage thresholds remain unchanged. The original CI stall is not classified as
+a product defect or a proven infrastructure failure.
+
 ### Implemented slice: Claude host-evidence fixture foundation (ADR 0018)
 
 Implement only the bounded, loopback-only Messages fixture needed by the next

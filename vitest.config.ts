@@ -5,6 +5,8 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: [
+        "scripts/claude-host-contract.mjs",
+        "scripts/claude-host-evidence.mjs",
         "scripts/claude-messages-fixture.mjs",
         "packages/core/src/**/*.ts",
         "packages/cli/src/action-evaluation.ts",

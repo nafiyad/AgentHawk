@@ -401,9 +401,12 @@ The following are not promised phases: hosted dashboards, user accounts, organiz
 The prerequisite initialization cleanup repair was delivered in PR #58, merged
 as `cdd7683`, with independent approval and green CI before and after merge.
 [ADR 0018](adr/0018-claude-host-fixture.md)'s bounded development-only Messages
-fixture foundation is implemented with 125 adversarial tests. The next slice is
-the isolated real-host driver; actual host execution and the support decision
-remain separate gates. This foundation does not expand native support or the
-public release.
+fixture foundation was delivered in PR #59, merged as `b11395f`, with independent
+approval and green CI before and after merge. [ADR 0019](adr/0019-claude-host-isolation.md)
+adds the driver's pure containment/inspection, minimal-environment and conditional
+evidence contracts, plus a closed marker stimulus. The next execution slice must
+prepare the isolated image and implement the bounded real-host driver. Actual
+host execution and the support decision remain separate gates; no new native
+support or public release follows from these prerequisites.
 
 Milestone 16 is complete. Milestone 17's vendor-neutral contracts, conservative qualifier, typed cancellation, co-root authority, bounded aggregate evaluator, unsupported Codex compatibility candidate, closed Claude `2.1.241` fixture edge, project-settings preflight, root-bound lifecycle format, invocation verification, and receipt-aware status are complete. The Claude install/remove transaction was delivered in PR #56, merged as `1f6fd02`, with independent approval and passing CI before and after merge. It verifies ignored/untracked targets before mutation, uses an exclusive lock and actual-filesystem no-replace probes, publishes the receipt before settings, removes settings before the receipt, and preserves unverified state for recovery. Activation remains `unproven`, every Claude support row remains unsupported, and lifecycle operations contact no providers. The next implementation slice is ADR 0017's isolated real-host activation matrix and separate support decision; no native support follows merely from installation.

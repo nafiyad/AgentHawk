@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 
 export const FIXTURE_MODEL = "claude-sonnet-4-6";
 export const FIXTURE_COMMAND = "echo agenthawk-fixture-neutral";
+export const FIXTURE_MARKER_COMMAND = "/opt/agenthawk/fixture-marker";
 export const FIXTURE_TOOL_ID = "toolu_agenthawk_fixture_1";
 
 const LIMITS = Object.freeze({
@@ -60,7 +61,7 @@ function digest(value) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-function validateEnvelope(body, inference) {
+function validateEnvelope(body, inference, command) {
   requireFixture(record(body) && body.model === FIXTURE_MODEL);
   requireFixture(
     Array.isArray(body.messages) && body.messages.length >= 1 && body.messages.length <= 3,
@@ -75,7 +76,9 @@ function validateEnvelope(body, inference) {
   );
   if (!inference) {
     requireFixture(userMessage(body.messages[0]), "initial_message_invalid");
-    if (body.messages.length !== 1) validateResult(body.messages, digest(body.messages[0]));
+    if (body.messages.length !== 1) {
+      validateResult(body.messages, digest(body.messages[0]), command);
+    }
     return;
   }
   requireFixture(
@@ -98,7 +101,7 @@ function validateEnvelope(body, inference) {
   );
 }
 
-function validateResult(messages, initialDigest) {
+function validateResult(messages, initialDigest, command) {
   requireFixture(
     messages.length === 3 && digest(messages[0]) === initialDigest,
     "tool_result_invalid",
@@ -117,7 +120,7 @@ function validateResult(messages, initialDigest) {
       call.id === FIXTURE_TOOL_ID &&
       call.name === "Bash" &&
       exactKeys(call.input, ["command"]) &&
-      call.input.command === FIXTURE_COMMAND,
+      call.input.command === command,
     "tool_result_invalid",
   );
   const user = messages[2];
@@ -140,12 +143,12 @@ function validateResult(messages, initialDigest) {
   return result.is_error === true ? "reported_error" : "reported_result";
 }
 
-function streamResponse(toolCall) {
+function streamResponse(toolCall, command) {
   const block = toolCall
     ? { type: "tool_use", id: FIXTURE_TOOL_ID, name: "Bash", input: {} }
     : { type: "text", text: "" };
   const delta = toolCall
-    ? { type: "input_json_delta", partial_json: JSON.stringify({ command: FIXTURE_COMMAND }) }
+    ? { type: "input_json_delta", partial_json: JSON.stringify({ command }) }
     : { type: "text_delta", text: "AgentHawk fixture exchange complete." };
   const events = [
     {
@@ -201,10 +204,15 @@ async function readBody(request, maximumBytes) {
 /** Development fixture only: a completed exchange is not host or execution evidence. */
 export async function startClaudeMessagesFixture(options = {}) {
   requireFixture(
-    record(options) && Object.keys(options).every((key) => Object.hasOwn(LIMITS, key)),
+    record(options) &&
+      Object.keys(options).every((key) => key === "scenario" || Object.hasOwn(LIMITS, key)),
     "options_invalid",
   );
-  const limits = { ...LIMITS, ...options };
+  const { scenario: suppliedScenario, ...limitOptions } = options;
+  const scenario = Object.hasOwn(options, "scenario") ? suppliedScenario : "echo";
+  requireFixture(scenario === "echo" || scenario === "marker", "options_invalid");
+  const command = scenario === "marker" ? FIXTURE_MARKER_COMMAND : FIXTURE_COMMAND;
+  const limits = { ...LIMITS, ...limitOptions };
   requireFixture(
     Object.entries(limits).every(
       ([key, value]) => Number.isSafeInteger(value) && value >= 1 && value <= LIMITS[key],
@@ -304,7 +312,7 @@ export async function startClaudeMessagesFixture(options = {}) {
         }
         const body = await readBody(request, limits.maxBodyBytes);
         requireFixture(state !== "failed" && !closed, "phase_invalid");
-        validateEnvelope(body, inference);
+        validateEnvelope(body, inference, command);
         if (counting) {
           response.writeHead(200, { "content-type": "application/json" });
           response.end('{"input_tokens":1}');
@@ -319,11 +327,11 @@ export async function startClaudeMessagesFixture(options = {}) {
             state = "awaiting_result";
           } else {
             requireFixture(state === "awaiting_result", "phase_invalid");
-            result = validateResult(body.messages, initialDigest);
+            result = validateResult(body.messages, initialDigest, command);
             state = "complete";
           }
           response.writeHead(200, { "content-type": "text/event-stream" });
-          response.end(streamResponse(first));
+          response.end(streamResponse(first, command));
         }
       };
       void handle()

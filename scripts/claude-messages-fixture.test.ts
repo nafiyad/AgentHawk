@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   FIXTURE_COMMAND,
+  FIXTURE_MARKER_COMMAND,
   FIXTURE_MODEL,
   FIXTURE_TOOL_ID,
   startClaudeMessagesFixture,
@@ -956,5 +957,192 @@ describe("Claude Messages fixture Node failure containment", () => {
     expect(httpFault.server?.listening).toBe(false);
     await expect(instance.close()).rejects.toThrow(new RegExp(`^${error}$`, "u"));
     expect(JSON.stringify(instance.snapshot())).not.toContain(PRIVATE_TEXT);
+  });
+});
+
+describe("Claude Messages fixture closed marker scenario", () => {
+  function markerResult(isError?: boolean) {
+    const body = secondRequest(isError);
+    body.messages[1].content[0].input.command = FIXTURE_MARKER_COMMAND;
+    return body;
+  }
+
+  it.each([
+    { scenario: undefined },
+    { scenario: null },
+    { scenario: true },
+    { scenario: 0 },
+    { scenario: "" },
+    { scenario: "Marker" },
+    { scenario: "MARKER" },
+    { scenario: "echo " },
+    { scenario: " marker" },
+    { scenario: "marker\n" },
+    { scenario: "/opt/agenthawk/fixture-marker" },
+    { scenario: ["marker"] },
+    { scenario: { command: FIXTURE_MARKER_COMMAND } },
+    { scenario: "marker", command: FIXTURE_COMMAND },
+    { scenario: "marker", path: "/other/fixture-marker" },
+    { scenario: "marker", executable: "/other/fixture-marker" },
+  ])(
+    "rejects non-enum scenarios and caller command/path options %j before listening",
+    async (options) => {
+      await expect(startClaudeMessagesFixture(options)).rejects.toThrow(/^options_invalid$/u);
+      expect(httpFault.server).toBeUndefined();
+    },
+  );
+
+  it("keeps the explicit echo scenario byte-identical to the omitted default", async () => {
+    const omitted = await fixture();
+    const explicit = await fixture({ scenario: "echo" });
+    const omittedFirst = successful(await send(omitted));
+    const explicitFirst = successful(await send(explicit));
+    expect(explicitFirst).toEqual(omittedFirst);
+    expect(successful(await send(explicit, secondRequest()))).toEqual(
+      successful(await send(omitted, secondRequest())),
+    );
+    expect(explicit.snapshot()).toEqual(omitted.snapshot());
+  });
+
+  it("does not accept inherited scenario selection", async () => {
+    const instance = await fixture(Object.create({ scenario: "marker" }));
+    const initialEvents = events(await send(instance));
+    expect(JSON.parse(initialEvents[2].data.delta.partial_json)).toEqual({
+      command: FIXTURE_COMMAND,
+    });
+    successful(await send(instance, secondRequest()));
+    expect(instance.snapshot().state).toBe("complete");
+  });
+
+  it.each([undefined, false, true])(
+    "emits only the fixed marker helper and records is_error=%s as a client assertion",
+    async (isError) => {
+      const instance = await fixture({ scenario: "marker" });
+      expect(FIXTURE_MARKER_COMMAND).toBe("/opt/agenthawk/fixture-marker");
+      const initialEvents = events(await send(instance));
+      expect(initialEvents.map(({ event }) => event)).toEqual([
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+      ]);
+      expect(initialEvents[1].data).toMatchObject({
+        index: 0,
+        content_block: { type: "tool_use", id: FIXTURE_TOOL_ID, name: "Bash", input: {} },
+      });
+      expect(initialEvents[2].data).toMatchObject({
+        index: 0,
+        delta: { type: "input_json_delta" },
+      });
+      expect(JSON.parse(initialEvents[2].data.delta.partial_json)).toEqual({
+        command: FIXTURE_MARKER_COMMAND,
+      });
+      expect(JSON.stringify(initialEvents)).not.toContain(FIXTURE_COMMAND);
+      const finalEvents = events(await send(instance, markerResult(isError)));
+      expect(finalEvents[4].data.delta).toMatchObject({ stop_reason: "end_turn" });
+      expect(JSON.stringify(finalEvents)).not.toMatch(
+        /executed|activated|approved|denied|protected/iu,
+      );
+      expect(instance.snapshot()).toMatchObject({
+        state: "complete",
+        error: null,
+        result: isError ? "reported_error" : "reported_result",
+        counts: { requests: 2, inference: 2, countTokens: 0, probes: 0 },
+      });
+      expect(JSON.stringify(instance.snapshot())).not.toContain(FIXTURE_MARKER_COMMAND);
+      await instance.close();
+      expect(instance.snapshot()).toMatchObject({ state: "complete", closed: true });
+    },
+  );
+
+  it("does not let request fields override the selected fixed scenario", async () => {
+    const instance = await fixture({ scenario: "marker" });
+    const initialEvents = events(
+      await send(instance, {
+        ...firstRequest(),
+        scenario: "echo",
+        command: "echo different",
+        path: "/other/fixture-marker",
+      }),
+    );
+    expect(JSON.parse(initialEvents[2].data.delta.partial_json)).toEqual({
+      command: FIXTURE_MARKER_COMMAND,
+    });
+    successful(await send(instance, markerResult()));
+    expect(instance.snapshot().state).toBe("complete");
+  });
+
+  it("validates matching marker token transcripts before and after issuing the fixed call without advancing", async () => {
+    const instance = await fixture({ scenario: "marker" });
+    const path = "/v1/messages/count_tokens?beta=true";
+    successful(await send(instance, firstRequest(), { path }));
+    const before = successful(await send(instance, markerResult(), { path }));
+    expect(instance.snapshot()).toMatchObject({
+      state: "awaiting_request",
+      counts: { inference: 0, countTokens: 2 },
+    });
+    successful(await send(instance));
+    const after = successful(await send(instance, markerResult(true), { path }));
+    expect(after).toEqual(before);
+    expect(instance.snapshot()).toMatchObject({
+      state: "awaiting_result",
+      result: "unobserved",
+      counts: { inference: 1, countTokens: 3 },
+    });
+    successful(await send(instance, markerResult()));
+    expect(instance.snapshot()).toMatchObject({ state: "complete", result: "reported_result" });
+  });
+
+  it.each([
+    ["echo", "/v1/messages", true],
+    ["marker", "/v1/messages", true],
+    ["echo", "/v1/messages/count_tokens", false],
+    ["marker", "/v1/messages/count_tokens", false],
+    ["echo", "/v1/messages/count_tokens?beta=true", true],
+    ["marker", "/v1/messages/count_tokens?beta=true", true],
+  ] as const)(
+    "rejects cross-scenario transcript for %s at %s with issuedCall=%s",
+    async (scenario, path, issuedCall) => {
+      const instance = await fixture({ scenario });
+      if (issuedCall) successful(await send(instance));
+      const mismatch = scenario === "marker" ? secondRequest() : markerResult();
+      rejected(instance, await send(instance, mismatch, { path }));
+      expect(instance.snapshot().result).toBe("unobserved");
+      const correct = scenario === "marker" ? markerResult() : secondRequest();
+      rejected(instance, await send(instance, correct));
+    },
+  );
+
+  it.each([
+    "/opt/agenthawk/fixture-marker ",
+    "/opt/agenthawk/fixture-marker extra",
+    "/opt/agenthawk/fixture-marker\n",
+    "/opt/agenthawk/./fixture-marker",
+    "fixture-marker",
+  ])(
+    "rejects marker command mutation %j instead of normalizing or executing it",
+    async (command) => {
+      const instance = await fixture({ scenario: "marker" });
+      successful(await send(instance));
+      const body = markerResult();
+      body.messages[1].content[0].input.command = command;
+      rejected(instance, await send(instance, body));
+    },
+  );
+
+  it("retains the existing strict body budget for marker scenarios", async () => {
+    const instance = await fixture({ scenario: "marker", maxBodyBytes: 64 });
+    rejected(instance, await send(instance));
+    expect(instance.snapshot().error).toBe("body_limit");
+  });
+
+  it("retains strict two-inference completion and replay limits for marker scenarios", async () => {
+    const instance = await fixture({ scenario: "marker" });
+    successful(await send(instance));
+    successful(await send(instance, markerResult()));
+    rejected(instance, await send(instance, markerResult()));
+    expect(instance.snapshot().result).toBe("unobserved");
   });
 });

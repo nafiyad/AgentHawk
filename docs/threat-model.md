@@ -79,12 +79,23 @@ pins the research candidate, validates the closed process boundary, and keeps ev
 ## Native-hook threats and implementation gates
 
 The development-only [Claude Messages fixture](adr/0018-claude-host-fixture.md)
-models a bounded two-turn API exchange on numeric loopback. It emits only one
-fixed harmless command, forwards nothing, and launches no process. Its phase and
+models a bounded two-turn API exchange on numeric loopback. It emits one closed
+echo or marker-helper command, forwards nothing, and launches no process. Its phase and
 client-result enums are not evidence of hook activation or command execution.
 Real-host testing still requires separately verified artifact, environment,
 network, settings, and independent execution/non-execution marker boundaries.
 Raw fixture requests and synthetic capability bytes are not logged or reported.
+
+[ADR 0019](adr/0019-claude-host-isolation.md) adds a pure Linux container launch
+and inspection contract and conditional evidence reducer. Exact environment
+checks precede the `env -i` entrypoint to reject loader-variable execution;
+healthchecks, restart and daemon logging are disabled. The closed profile rejects
+host mounts/namespaces, added capabilities, published ports, devices and resource
+limit drift. A later trusted launcher must independently inspect the never-started
+container and exact image, then collect separate filesystem marker, emergency
+denial, lifecycle and confirmed cleanup evidence. Supplied JSON or a valid argument
+vector is not isolation proof. The daemon, kernel and prepared image remain
+trusted; no actual-host execution or native support is established by this slice.
 
 The Claude lifecycle candidate implements ADR 0017 receipt-first install and
 settings-first remove. Four exact paths must be ignored/untracked before any
