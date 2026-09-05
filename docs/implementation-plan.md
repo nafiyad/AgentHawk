@@ -4,7 +4,37 @@ Date: 2026-08-20
 
 ## Current state
 
-### Active repair: initialization rollback content fence
+### Implemented slice: Claude host-evidence fixture foundation (ADR 0018)
+
+Implement only the bounded, loopback-only Messages fixture needed by the next
+real-host driver. The fixture produces one fixed harmless Bash tool call and
+accepts one structurally matched client result, with separate bounded token-count
+and connection-probe endpoints. It neither launches Claude nor changes settings,
+trust, credentials, policy, package contents, or support. Expected files are one
+development script, its adversarial test suite, the coverage inventory, ADR 0018,
+and the roadmap/threat-model notes.
+Acceptance: bounded bodies/headers/requests/connections/time; fatal UTF-8;
+fixed output with no raw data retention; rejection of reordered, concurrent,
+replayed, malformed and extra inference; clean cancellation; full quality gate
+and independent exact-head review. No new dependency. Rollback is a normal revert.
+Actual host artifact, isolation, marker and activation evidence remain separate.
+
+Gate correction discovered during this slice: two existing approval tests omitted
+their OSV stub and attempted a live query. Supply the existing deterministic empty
+OSV fixture to both; retain strict provider-failure behavior in product code and
+assert successful terminal approval explicitly. This is a test-only prerequisite
+to a network-independent full gate, not an approval-policy change.
+
+Local validation on 2026-09-05 UTC passed lint, typecheck, 1,271 tests (5 skipped),
+coverage, build, offline package verification, CLI smoke, and dependency audit.
+Aggregate coverage is 93.40% statements, 90.55% branches, 96.64% functions, and
+95.69% lines. The fixture's 125 adversarial tests cover its bounded protocol and
+failure paths; fixture coverage is 98.65% statements and 100% branches. Independent
+working-tree review found and verified fixes for HTTP expectation and transfer
+framing defects, then reported no remaining blocker. Actual Claude activation and
+support remain unproven; the next implementation slice is the isolated driver.
+
+### Delivered repair: initialization rollback content fence
 
 Post-merge Windows Node 24 CI for PR #57 reported a replacement-file cleanup
 failure. Identity-only removal also demonstrably removes in-place changed bytes.
@@ -19,7 +49,9 @@ automatically. Isolated Claude host evidence follows this repair.
 Local coverage validation on 2026-09-04 passed 1,146 tests (5 skipped), with
 93.11% statements, 90.09% branches, 97.08% functions, and 95.50% lines. The
 focused initialization suite passes 55 tests, including partial-write preservation.
-Independent final-commit review and exact-head CI remain delivery gates.
+Independent review approved `456aa7f`; all nine PR checks passed. PR #58 merged
+as `cdd7683`, and all post-merge workflows passed. The checkout and remote main
+were verified against that merge before beginning the next slice.
 
 ### Documentation reconciliation after PR #56
 

@@ -187,6 +187,7 @@ describe("checkNpmPackage", () => {
       {
         getPackage: async () => success({ lifecycleScripts: ["postinstall"] }),
         now: () => now,
+        queryOsv: async () => emptyOsv(),
         readApprovals: async () => activeApproval,
       },
     );
@@ -209,9 +210,11 @@ describe("checkNpmPackage", () => {
       {
         getPackage: async () => success({ lifecycleScripts: ["postinstall"] }),
         now: () => now,
+        queryOsv: async () => emptyOsv(),
         readApprovals: async () => hostile,
       },
     );
+    expect(result.exitCode).toBe(0);
     expect(result.output).toContain("REVIEW PG007");
     expect(result.output).toContain("github:maintainer");
     expect(result.output).not.toContain("\u001b");
