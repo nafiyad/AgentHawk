@@ -18,7 +18,7 @@ cleanup failure; run the full gate and exact-head independent review. Rollback i
 a new revert commit. Container preparation and bounded real-host execution follow
 this prerequisite; all native support rows remain unsupported.
 
-Local validation on 2026-09-05 UTC passed lint, typecheck, 1,895 tests (5 skipped),
+Local validation on 2026-09-05 UTC passed lint, typecheck, 1,896 tests (5 skipped),
 coverage, build, offline package verification, CLI smoke, and dependency audit.
 Aggregate coverage is 93.63% statements, 91.23% branches, 96.76% functions, and
 95.84% lines. The three development modules pass 749 focused tests; both new
@@ -28,6 +28,15 @@ hazards. The create vector now prohibits pulling, and bounded descriptor-only
 snapshots bind validation to consumption; regression tests cover both fixes.
 Working-tree re-review found no remaining blocker. Exact-head PR review and CI
 remain delivery gates. No actual Claude/container execution has occurred.
+
+CI gate correction: Windows Node 22 coverage exceeded the existing 20-second
+budget in one test containing two independent full lifecycle fixtures. Split the
+hook-replacement and inactive-receipt-replacement scenarios into separate tests,
+preserving their assertions and the existing per-test timeout. This follows
+[Vitest's test boundary](https://vitest.dev/api/test#timeout), checked 2026-09-05;
+it changes neither production behavior nor security deadlines. Require both
+focused scenarios, the full local gate, renewed exact-head review, and all CI
+jobs before delivery. No retries, skips, or threshold relaxation are added.
 
 ### Implemented slice: Claude host-evidence fixture foundation (ADR 0018)
 

@@ -961,7 +961,7 @@ describe("Claude project-hook lifecycle", { timeout: 20_000 }, () => {
     });
   });
 
-  it("never deletes byte-identical hook or receipt replacements", async () => {
+  it("never deletes byte-identical hook replacements", async () => {
     const hookFixture = await lifecycleFixture();
     expect(
       (await installClaudeProjectHook({ format: "json" }, hookFixture.dependencies)).exitCode,
@@ -982,7 +982,9 @@ describe("Claude project-hook lifecycle", { timeout: 20_000 }, () => {
     );
     expect(hookResult.exitCode).toBe(1);
     await expect(readFile(hookPath)).resolves.toEqual(settingsBytes);
+  });
 
+  it("never deletes byte-identical receipt replacements", async () => {
     const receiptFixture = await lifecycleFixture();
     expect(
       (await installClaudeProjectHook({ format: "json" }, receiptFixture.dependencies)).exitCode,

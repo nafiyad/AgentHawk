@@ -17,9 +17,18 @@ checked on 2026-09-05 UTC:
   [2.1.241 manifest](https://downloads.claude.ai/claude-code-releases/2.1.241/manifest.json)
   names the Linux x64 executable `claude`, size 342636848 bytes, SHA-256
   `0771bd866cff82b76581fc0499f6529e1a36845078f144f8c81dccb3bc7037b8`.
-  This is not the release archive hash. The manifest signature has not yet been
-  cryptographically verified by this project; HTTPS metadata is the present
-  source for this pin, not a signature-verification claim.
+  This is not the release archive hash. On 2026-09-05, isolated GnuPG verification
+  of the official [detached manifest signature](https://downloads.claude.ai/claude-code-releases/2.1.241/manifest.json.sig)
+  with the [published signing key](https://downloads.claude.ai/keys/claude-code.asc)
+  returned `GOODSIG` and `VALIDSIG`
+  for the pinned fingerprint `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`;
+  independent re-verification passed. The signed manifest SHA-256 is
+  `8e2c930ddd0034b799f83212f5b1ccf6314a43e4a3eb9cd476c4751ffc1a8a66`.
+  A one-byte manifest mutation failed verification. The fetched public key's
+  self-certification verified, with no expiry/revocation record in that key;
+  no keyserver lookup or claim about separately distributed revocations follows.
+  This authenticates the manifest pin, not executable bytes: the binary has not
+  been downloaded or executed, and preparation must verify it independently.
 - The [CLI reference](https://code.claude.com/docs/en/cli-reference) separates
   `--tools`, scoped `--allowedTools`, `--strict-mcp-config`, and setting sources.
   [Programmatic mode](https://code.claude.com/docs/en/headless) discovers hooks
