@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import {
   link,
+  lstat,
   mkdir,
   mkdtemp,
   open,
@@ -17,8 +18,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { OperationCancelledError } from "@agenthawk/core";
-import { afterEach, describe, expect, it } from "vitest";
-import { buildClaudeProjectHookLockBytes } from "../src/claude-project-hook-format.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  buildClaudeProjectHookArtifacts,
+  buildClaudeProjectHookLockBytes,
+} from "../src/claude-project-hook-format.js";
 import { statusClaudeProjectHook } from "../src/claude-project-hook-status.js";
 import {
   installClaudeProjectHook,
@@ -27,15 +31,23 @@ import {
 } from "../src/claude-project-hook-transaction.js";
 import { createProgram } from "../src/program.js";
 import { loadRepositoryRootAuthority } from "../src/repository-authority.js";
+import { createFixtureCleanupFence } from "./fixture-cleanup-fence.js";
 
 const run = promisify(execFile);
 const roots: string[] = [];
+const cleanupFence = createFixtureCleanupFence();
 
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
+beforeEach(({ signal }) => {
+  cleanupFence.begin(signal);
 });
 
-describe("Claude project-hook lifecycle", { timeout: 20_000 }, () => {
+afterEach(async () => {
+  await cleanupFence.cleanup(roots, async (root) => {
+    await rm(root, { force: true, recursive: true });
+  });
+});
+
+describe("Claude project-hook lifecycle", { concurrent: false, timeout: 20_000 }, () => {
   it.each(["install", "remove"] as const)(
     "propagates %s authority cancellation without mutation",
     async (command) => {
@@ -1009,7 +1021,10 @@ describe("Claude project-hook lifecycle", { timeout: 20_000 }, () => {
   });
 });
 
-describe("Claude transaction-specific trust boundaries", { timeout: 30_000 }, () => {
+describe("Claude transaction-specific trust boundaries", {
+  concurrent: false,
+  timeout: 30_000,
+}, () => {
   it.each(["install", "remove"] as const)(
     "redacts initial %s observation failures",
     async (command) => {
@@ -1246,9 +1261,32 @@ describe("Claude transaction-specific trust boundaries", { timeout: 30_000 }, ()
 
   it("removes an exact old pair despite artifact drift and shared hook blockers", async () => {
     const fixture = await lifecycleFixture();
-    expect(
-      (await installClaudeProjectHook({ format: "json" }, fixture.dependencies)).exitCode,
-    ).toBe(0);
+    const rootStats = await lstat(fixture.root, { bigint: true });
+    const artifacts = buildClaudeProjectHookArtifacts({
+      adapterBytes: await readFile(fixture.dependencies.adapterEntry),
+      adapterEntry: fixture.dependencies.adapterEntry,
+      adapterVersion: fixture.dependencies.adapterVersion,
+      installationId: "12".repeat(32),
+      nodeExecutable: fixture.dependencies.nodeExecutable,
+      nodeVersion: fixture.dependencies.nodeVersion,
+      repositoryIdentity: { dev: rootStats.dev, ino: rootStats.ino },
+      repositoryRoot: fixture.root,
+    });
+    await mkdir(join(fixture.root, ".claude"));
+    await mkdir(join(fixture.root, ".agenthawk", "integrations"), { recursive: true });
+    await writeFile(
+      join(fixture.root, ".agenthawk", "integrations", "claude-v1.json"),
+      artifacts.receiptBytes,
+      { flag: "wx" },
+    );
+    await writeFile(join(fixture.root, ".claude", "settings.local.json"), artifacts.settingsBytes, {
+      flag: "wx",
+    });
+    expect(await status(fixture)).toMatchObject({
+      ownership: "owned_exact",
+      readiness: "current",
+      blockers: [],
+    });
     await writeFile(fixture.dependencies.adapterEntry, "changed adapter\n");
     await writeFile(join(fixture.root, ".claude", "settings.json"), '{"disableAllHooks":true}\n');
     const result = await removeClaudeProjectHook({ format: "json" }, fixture.dependencies);
@@ -1313,5 +1351,5 @@ function identifierSequence(prefix: string): () => string {
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
-  await run("git", args, { cwd, windowsHide: true });
+  await run("git", args, { cwd, maxBuffer: 64 * 1_024, timeout: 10_000, windowsHide: true });
 }

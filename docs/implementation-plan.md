@@ -18,7 +18,7 @@ cleanup failure; run the full gate and exact-head independent review. Rollback i
 a new revert commit. Container preparation and bounded real-host execution follow
 this prerequisite; all native support rows remain unsupported.
 
-Local validation on 2026-09-05 UTC passed lint, typecheck, 1,896 tests (5 skipped),
+Local validation on 2026-09-05 UTC passed lint, typecheck, 1,910 tests (5 skipped),
 coverage, build, offline package verification, CLI smoke, and dependency audit.
 Aggregate coverage is 93.63% statements, 91.23% branches, 96.76% functions, and
 95.84% lines. The three development modules pass 749 focused tests; both new
@@ -37,6 +37,23 @@ preserving their assertions and the existing per-test timeout. This follows
 it changes neither production behavior nor security deadlines. Require both
 focused scenarios, the full local gate, renewed exact-head review, and all CI
 jobs before delivery. No retries, skips, or threshold relaxation are added.
+
+A subsequent Windows Node 24 coverage run timed out in the old-pair removal
+case, then reported a busy temporary root during cleanup. Three isolated
+diagnostic runs passed; the original stalled operation remains unidentified.
+Keep this repair test-only: construct the removal fixture with the production
+artifact builder, prove `owned_exact/current` with real status, and retain actual
+removal with the combined artifact-drift/shared-hook conditions and preservation
+assertions. Full installer integration tests remain unchanged. Bound fixture Git
+execution and refuse cleanup after test cancellation rather than deleting state
+an unfinished body might still use; a poisoned fixture module must fail visibly.
+[Vitest cancellation](https://vitest.dev/guide/test-context#signal) is cooperative,
+not proof of process quiescence. Preserve existing test deadlines and all quality
+thresholds; require focused regressions, renewed full gates, and exact-head review.
+The sequential cleanup fence has 14 adversarial tests with 100% targeted coverage.
+All 1,910 tests pass in the complete test and coverage runs; existing aggregate
+coverage thresholds remain unchanged. The original CI stall is not classified as
+a product defect or a proven infrastructure failure.
 
 ### Implemented slice: Claude host-evidence fixture foundation (ADR 0018)
 
