@@ -1,0 +1,63 @@
+name: Claude artifact preparation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/claude-artifact-preparation.yml"
+      - "scripts/claude-artifact-*.mjs"
+      - "scripts/claude-artifact-*.test.ts"
+      - "scripts/prepare-claude-host-artifact.mjs"
+      - "scripts/prepare-claude-host-artifact.test.ts"
+      - "scripts/fixtures/claude-2.1.241-manifest.txt"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/claude-artifact-preparation.yml"
+      - "scripts/claude-artifact-*.mjs"
+      - "scripts/claude-artifact-*.test.ts"
+      - "scripts/prepare-claude-host-artifact.mjs"
+      - "scripts/prepare-claude-host-artifact.test.ts"
+      - "scripts/fixtures/claude-2.1.241-manifest.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  authenticated-artifact:
+    name: authenticated Claude artifact (Ubuntu 24.04, Node 24)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js without package caching
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          architecture: x64
+          package-manager-cache: false
+
+      - name: Authenticate and prepare bytes without executing Claude
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT:-}" != "github-hosted" || "${RUNNER_OS:-}" != "Linux" || "${RUNNER_ARCH:-}" != "X64" ]]; then
+            printf '%s\n' 'Refusing an unsupported runner.' >&2
+            exit 1
+          fi
+          if [[ ! "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]{0,19}$ || ! "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]{0,19}$ || "${RUNNER_TEMP:-}" != /* ]]; then
+            printf '%s\n' 'Refusing an invalid temporary destination.' >&2
+            exit 1
+          fi
+          umask 077
+          # The CLI verifies canonical owner/root-owned ancestors and rejects any
+          # group/other-writable component before creation. Never chmod/fallback.
+          # RUNNER_TEMP cleanup belongs to the disposable runner; do not upload
+          # or execute retained artifacts, including when preparation fails.
+          exec env -i PATH="$PATH" LANG=C LC_ALL=C \
+            node scripts/prepare-claude-host-artifact.mjs \
+            "$RUNNER_TEMP/agenthawk-claude-2.1.241-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"

@@ -1,10 +1,12 @@
+import { CLAUDE_ARTIFACT_POLICY } from "./claude-artifact-policy.mjs";
+
 // Development-only, conditional observation summary. This module neither collects
 // evidence nor authenticates assertions. A later trusted, isolated driver must
 // measure every field; passing a fabricated record proves no host behavior.
-const VERSION = "2.1.241";
-const BINARY_SIZE = 342636848;
-const BINARY_SHA256 = "0771bd866cff82b76581fc0499f6529e1a36845078f144f8c81dccb3bc7037b8";
-const TARGET = "claude-2.1.241-linux-x64-container";
+const VERSION = CLAUDE_ARTIFACT_POLICY.version;
+const BINARY_SIZE = CLAUDE_ARTIFACT_POLICY.binary.size;
+const BINARY_SHA256 = CLAUDE_ARTIFACT_POLICY.binary.sha256;
+const TARGET = `claude-${VERSION}-${CLAUDE_ARTIFACT_POLICY.platform}-container`;
 const RUN_FIELDS = ["exitCode", "exchange", "clientResult", "marker", "denial"];
 
 function result(status, reason) {

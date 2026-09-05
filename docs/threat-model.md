@@ -97,6 +97,25 @@ denial, lifecycle and confirmed cleanup evidence. Supplied JSON or a valid argum
 vector is not isolation proof. The daemon, kernel and prepared image remain
 trusted; no actual-host execution or native support is established by this slice.
 
+[ADR 0020](adr/0020-claude-artifact-preparation.md)'s development-only artifact
+preparation pins the Linux executable, public key, detached signature, and entire
+manifest before acquisition. Fixed official TLS requests disclose no repository,
+prompt, credential, or environment input. A fresh GPG home, explicit keyring,
+closed machine-status grammar, bounded child output, and confirmed closure prevent
+ambient key/configuration trust or diagnostic leakage. The binary request follows
+successful metadata authentication; streamed and independently reread hashes must
+match before a non-execution receipt is returned. Files remain non-executable.
+
+Exclusive creation, private POSIX modes, regular single-link files, canonical
+owned parents, and identity fences reject observed collisions and drift. Per-I/O
+deadlines stop admission but do not cancel kernel calls. Late writes can alter
+retained state; handles close only after their own I/O settles, and unconfirmed
+closure is a failure under an externally bounded hosted job. Nothing is deleted
+automatically. A retained or partial receipt is not launch authority. Same-account
+and privileged races, system TLS roots/GPG, signing-key compromise, and separately
+distributed revocations remain assumptions or residual risks. Artifact authenticity
+is not benignness, runtime isolation, hook activation, or a native support claim.
+
 The Claude lifecycle candidate implements ADR 0017 receipt-first install and
 settings-first remove. Four exact paths must be ignored/untracked before any
 artifact and under its owned lock. Real-filesystem no-replace probes, repeated
