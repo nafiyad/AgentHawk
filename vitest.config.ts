@@ -5,6 +5,10 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: [
+        "scripts/claude-artifact-download.mjs",
+        "scripts/claude-artifact-policy.mjs",
+        "scripts/claude-artifact-storage.mjs",
+        "scripts/prepare-claude-host-artifact.mjs",
         "scripts/claude-host-contract.mjs",
         "scripts/claude-host-evidence.mjs",
         "scripts/claude-messages-fixture.mjs",
