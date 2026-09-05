@@ -4,6 +4,31 @@ Date: 2026-08-20
 
 ## Current state
 
+### Implemented slice: Claude host isolation contract (ADR 0019)
+
+Scope: a pure development-only Linux container launch/inspection contract,
+explicit minimal Claude environment, closed marker stimulus, and a conservative
+host-evidence reducer. No real process launch or activation claim in this slice.
+Expected files: `scripts/claude-host-contract.mjs`, `scripts/claude-host-evidence.mjs`,
+their adversarial tests, the existing Messages fixture/tests, coverage inventory,
+ADR 0019, and these public
+state/threat-model notes. No new dependency. Test changed/missing isolation fields,
+inherited credential/path injection, fixed command boundaries, false evidence and
+cleanup failure; run the full gate and exact-head independent review. Rollback is
+a new revert commit. Container preparation and bounded real-host execution follow
+this prerequisite; all native support rows remain unsupported.
+
+Local validation on 2026-09-05 UTC passed lint, typecheck, 1,895 tests (5 skipped),
+coverage, build, offline package verification, CLI smoke, and dependency audit.
+Aggregate coverage is 93.63% statements, 91.23% branches, 96.76% functions, and
+95.84% lines. The three development modules pass 749 focused tests; both new
+contract/reducer modules have 100% statement/branch/function/line coverage.
+Independent review identified implicit image-pull and unstable property-read
+hazards. The create vector now prohibits pulling, and bounded descriptor-only
+snapshots bind validation to consumption; regression tests cover both fixes.
+Working-tree re-review found no remaining blocker. Exact-head PR review and CI
+remain delivery gates. No actual Claude/container execution has occurred.
+
 ### Implemented slice: Claude host-evidence fixture foundation (ADR 0018)
 
 Implement only the bounded, loopback-only Messages fixture needed by the next
