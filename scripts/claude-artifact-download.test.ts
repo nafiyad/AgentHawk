@@ -378,6 +378,81 @@ describe("fixed Claude artifact HTTPS streaming", () => {
     expect(sink).not.toHaveBeenCalled();
   });
 
+  it.each(
+    [
+      ["x-goog-hash", "crc32c=fixture", "x-goog-hash", "md5=fixture"],
+      ["X-Goog-Hash", "crc32c=fixture", "X-GOOG-HASH", "md5=fixture"],
+      ["x-goog-hash", "crc32c=fixture,md5=fixture"],
+      ["x-goog-hash", "", "x-goog-hash", "untrusted arbitrary checksum claim"],
+      ["x-goog-hash", "md5=one", "x-goog-hash", "md5=contradictory"],
+    ].map((headers) => ({ headers })),
+  )(
+    "discards bounded checksum metadata without using its claims: $headers",
+    async ({ headers }) => {
+      const fixture = harness();
+      fixture.response.rawHeaders = ["Content-Length", "3", ...headers];
+      const sink = vi.fn();
+      await fixture.download(input(), sink, signal());
+      expect(sink).toHaveBeenCalledExactlyOnceWith(Buffer.from("abc"));
+      expect(fixture.response.closed).toBe(true);
+      expect(fixture.socket.destroy).toHaveBeenCalled();
+    },
+  );
+
+  it.each(
+    [
+      ["x-goog-hash", "\0"],
+      ["x-goog-hash", "\x7f"],
+      ["x-goog-hash", "md5=fixture\r\nContent-Length: 3"],
+      ["x-goog-hash", "x".repeat(8192)],
+      Array.from({ length: 33 }, () => ["x-goog-hash", "md5=fixture"]).flat(),
+      ["Content-Length", "3", "content-length", "3"],
+      ["Transfer-Encoding", "chunked", "transfer-encoding", "chunked"],
+      ["Content-Encoding", "identity", "content-encoding", "identity"],
+      ["X-Other", "one", "x-other", "two"],
+      ["Transfer-Encoding", "chunked", "Content-Length", "3"],
+      ["Content-Encoding", "gzip"],
+      ["Content-Range", "bytes 0-2/3"],
+      ["Location", "https://evil.test/private"],
+      ["Trailer", "Digest"],
+    ].map((headers) => ({ headers })),
+  )("does not let discarded metadata bypass header admission: $headers", async ({ headers }) => {
+    const fixture = harness();
+    fixture.response.rawHeaders = ["x-goog-hash", "crc32c=fixture", ...headers];
+    const sink = vi.fn();
+    await expectFailure(fixture.download(input(), sink, signal()));
+    expect(sink).not.toHaveBeenCalled();
+  });
+
+  it("counts discarded metadata toward the exact header count and byte boundaries", async () => {
+    const counted = harness();
+    counted.response.rawHeaders = Array.from({ length: 32 }, () => [
+      "x-goog-hash",
+      "md5=fixture",
+    ]).flat();
+    await counted.download(input(), vi.fn(), signal());
+
+    const sized = harness();
+    const atLimit = "x".repeat(8192 - "x-goog-hash".length - 4);
+    sized.response.rawHeaders = ["x-goog-hash", atLimit];
+    await sized.download(input(), vi.fn(), signal());
+
+    const oversized = harness();
+    oversized.response.rawHeaders = ["x-goog-hash", `${atLimit}x`];
+    const sink = vi.fn();
+    await expectFailure(oversized.download(input(), sink, signal()));
+    expect(sink).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "ab", "abcd"])(
+    "still measures actual bytes when checksum metadata claims integrity: %j",
+    async (body) => {
+      const fixture = harness((current) => current.deliver(Buffer.from(body)));
+      fixture.response.rawHeaders = ["x-goog-hash", "md5=fixture", "x-goog-hash", "crc32c=fixture"];
+      await expectFailure(fixture.download(input(), vi.fn(), signal()));
+    },
+  );
+
   it("accepts the exact 32-header count boundary", async () => {
     const fixture = harness();
     fixture.response.rawHeaders = Array.from({ length: 32 }, (_, index) => [

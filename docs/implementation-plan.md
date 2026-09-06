@@ -6,6 +6,29 @@ Date: 2026-08-20
 
 ### Active slice: authenticated Claude fixture artifact preparation (ADR 0020)
 
+PR #61 remains the single active slice. Its initial `794671d` head passed the
+local gate but failed Windows/macOS fixture tests and hosted acquisition. Repair
+scope, primary-source findings, and acceptance criteria are recorded in
+[ADR 0020's CI repair](adr/0020-claude-artifact-preparation.md#ci-interoperability-repair-2026-09-06).
+Expected repair files: the bounded downloader and its adversarial tests, the
+preparation fixture tests, this plan, and ADR 0020. Discard only non-authoritative
+`x-goog-hash` metadata after header bounds/syntax checks, and canonicalize only
+fresh test roots while preserving cleanup registration and production rejection
+of aliases. Do not relax any authentication, filesystem, framing, or timeout
+gate. Repeat the full gate, review, and exact-head hosted checks on this branch;
+do not start runtime assembly until the repaired acquisition slice is delivered.
+
+Repair validation on 2026-09-06 UTC passed lint, both typecheck gates, 2,354 tests
+(5 existing skips), full coverage, build, package verification, CLI/help smoke,
+and dependency audit. Coverage: 94.20% statements, 91.88% branches, 97.00%
+functions, and 96.20% lines. All 444 focused artifact tests pass. Published package
+inventories remain unchanged. Independent working-tree review found no blocker
+and passed nine separate in-memory adversarial transport probes. The repaired
+production downloader fetched only the three small public metadata artifacts in
+memory; all matched their pinned sizes and hashes. No binary was fetched or
+executed locally. Exact-head independent review and all hosted delivery checks
+remain required before merge; this local result does not establish native support.
+
 Prerequisite PR #60 is delivered as `522bd4d`: independent approval, all nine PR
 checks, all three post-merge workflows, and exact remote/main verification passed.
 Implement only the Linux-host fixed-artifact acquisition command described in

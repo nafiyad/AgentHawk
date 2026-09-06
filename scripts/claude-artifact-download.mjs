@@ -46,6 +46,9 @@ function validHeaders(response, size) {
     bytes += Buffer.byteLength(name) + Buffer.byteLength(value) + 4;
     if (bytes > HEADER_BYTES) return false;
     const key = name.toLowerCase();
+    // Cloud Storage may repeat checksum metadata. It has no authority here:
+    // bound/validate every field above, then discard it instead of trusting it.
+    if (key === "x-goog-hash") continue;
     if (headers.has(key)) return false;
     headers.set(key, value);
   }

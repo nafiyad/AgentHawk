@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureCleanupFence } from "../packages/cli/test/fixture-cleanup-fence.js";
@@ -30,9 +30,21 @@ function hash(bytes: Buffer) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-async function fixture() {
-  const root = await fs.mkdtemp(join(tmpdir(), "agenthawk-artifact-preparation-"));
-  roots.push(root);
+async function fixtureRoot(
+  parent = tmpdir(),
+  resolveRoot: (path: string) => Promise<string> = fs.realpath,
+) {
+  const createdRoot = await fs.mkdtemp(join(parent, "agenthawk-artifact-preparation-"));
+  // mkdtemp preserves its prefix, including temporary-directory aliases. Register
+  // the created path before realpath can fail, then use the canonical owned root.
+  const cleanupIndex = roots.push(createdRoot) - 1;
+  const root = await resolveRoot(createdRoot);
+  roots[cleanupIndex] = root;
+  return root;
+}
+
+async function fixture(parent = tmpdir()) {
+  const root = await fixtureRoot(parent);
   const output = join(root, "prepared");
   const data: Record<string, Buffer> = {
     "claude-code.asc": Buffer.from("synthetic public key fixture"),
@@ -177,6 +189,51 @@ describe("fixed artifact preparation orchestration with synthetic evidence", {
   concurrent: false,
   timeout: 10_000,
 }, () => {
+  it("canonicalizes an aliased fixture parent without accepting that alias in production", async () => {
+    const owner = await fixtureRoot();
+    const target = join(owner, "target");
+    const alias = join(owner, "alias");
+    await fs.mkdir(target);
+    await fs.symlink(target, alias, process.platform === "win32" ? "junction" : "dir");
+    const f = await fixture(alias);
+    expect(dirname(f.root)).toBe(target);
+    expect(await fs.realpath(f.root)).toBe(f.root);
+    expect(roots).toContain(f.root);
+
+    const aliasOutput = join(alias, basename(f.root), "unprepared");
+    expect(await createArtifactPreparer(f.dependencies)(aliasOutput)).toMatchObject({
+      status: "failed",
+      reason: "invalid_destination",
+      retainedState: "not_created",
+    });
+    expect(f.download).not.toHaveBeenCalled();
+    expect(f.runGpg).not.toHaveBeenCalled();
+    expect(await fs.readdir(f.root)).toEqual([]);
+
+    expect(await f.prepare()).toMatchObject({
+      status: "prepared",
+      executed: false,
+      nativeSupport: false,
+    });
+    expect(f.opened.every(({ closed }) => closed)).toBe(true);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("retains fixture cleanup registration if canonicalization fails", async () => {
+    let createdRoot = "";
+    await expect(
+      fixtureRoot(tmpdir(), async (path) => {
+        createdRoot = path;
+        expect(roots).toContain(path);
+        throw new Error("fixture canonicalization failure");
+      }),
+    ).rejects.toThrow("fixture canonicalization failure");
+    expect(roots).toContain(createdRoot);
+    expect((await fs.lstat(createdRoot)).isDirectory()).toBe(true);
+    expect(await fs.readdir(createdRoot)).toEqual([]);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it("authenticates metadata before binary acquisition, verifies stored bytes and returns only a closed receipt", async () => {
     const f = await fixture();
     f.download.mockImplementation(async (artifact, sink) => {

@@ -100,6 +100,40 @@ Unexpected key or manifest updates require review, not automatic trust rotation.
 
 ## Acceptance and validation
 
+### CI interoperability repair (2026-09-06)
+
+Initial PR #61 checks rejected fixture destinations on Windows/macOS and reported
+`download_failed` in hosted acquisition. A bounded, in-memory request for the
+fixed public signing key reproduced rejection of an HTTP 200 response containing
+two `x-goog-hash` fields. This explains the local transport failure; the redacted
+hosted result alone does not identify its response headers.
+
+Primary references checked on 2026-09-06:
+
+- Google Cloud's [header reference](https://docs.cloud.google.com/storage/docs/xml-api/reference-headers#xgooghash)
+  permits MD5 and CRC32C checksums in separate or comma-separated `x-goog-hash`
+  fields. These are server-supplied metadata, not AgentHawk's trust authority.
+- Node's [temporary-directory](https://nodejs.org/docs/latest-v24.x/api/fs.html#fspromisesmkdtempprefix-options)
+  and [realpath](https://nodejs.org/docs/latest-v24.x/api/fs.html#fspromisesrealpathpath-options)
+  contracts distinguish the supplied creation prefix from its canonical location.
+  Temporary-directory aliases must be resolved by test setup, not admitted by
+  production destination validation.
+
+Repair only these demonstrated incompatibilities. Discard `x-goog-hash` after
+validating every field's syntax and accounting for aggregate header count/bytes.
+Keep all other duplicate-header rejection, framing/encoding checks, actual-byte
+limits, pinned SHA-256/signature verification, deadlines, and closure fences.
+Do not parse or trust the discarded values. Canonicalize only newly created test
+roots, registering cleanup before canonicalization can fail. Production must
+continue to reject aliases before creating a destination or acquiring data.
+
+Acceptance includes repeated/case-varied checksum metadata, retained header
+bounds and control-character rejection, unchanged rejection of ambiguous framing
+and other duplicates, actual-body measurement, alias rejection, and cleanup
+registration on canonicalization failure. Require renewed full local gates,
+independent exact-head review, and all six OS/Node checks plus hosted acquisition.
+This is not evidence of vendor execution or native support.
+
 Offline tests must cover transport failures/limits/cancellation; hostile GPG
 environment/status/output/exit behavior; bad/multiple/expired/revoked/future
 signatures; changed pins; premature binary requests; partial writes and readback
