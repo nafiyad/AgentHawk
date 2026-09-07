@@ -405,10 +405,12 @@ fixture foundation was delivered in PR #59, merged as `b11395f`, with independen
 approval and green CI before and after merge. [ADR 0019](adr/0019-claude-host-isolation.md)
 adds the driver's pure containment/inspection, minimal-environment and conditional
 evidence contracts, plus a closed marker stimulus; PR #60 delivered it as `522bd4d`
-with independent approval and green CI before and after merge. The current slice,
-[ADR 0020](adr/0020-claude-artifact-preparation.md), adds only authenticated fixed
-artifact preparation: no vendor execution or support claim. Its hosted acquisition
-and delivery gates must pass before it is recorded as complete. The next slices
+with independent approval and green CI before and after merge. PR #61 delivered
+[ADR 0020](adr/0020-claude-artifact-preparation.md) as `ab208c3`: exact-head review,
+all seven PR checks and both post-merge workflows passed, including authenticated
+hosted acquisition without vendor execution. The current slice is
+[ADR 0021](adr/0021-runtime-archive-preflight.md)'s fixed runtime-dependency archive
+preflight. It does not yet assemble or prove a portable runtime. Following slices
 prepare a portable package/image and implement the bounded real-host driver. Actual
 host execution and the support decision remain separate gates; no new native
 support or public release follows from these prerequisites.

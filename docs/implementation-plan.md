@@ -4,9 +4,44 @@ Date: 2026-08-20
 
 ## Current state
 
-### Active slice: authenticated Claude fixture artifact preparation (ADR 0020)
+### Active slice: fixed runtime dependency archive preflight (ADR 0021)
 
-PR #61 remains the single active slice. Its initial `794671d` head passed the
+PR #61 is delivered as `ab208c3`: head `69b7b26` received independent approval,
+all seven PR checks passed, and both post-merge workflows passed on the exact
+merge. Hosted acquisition measured the pinned Claude bytes without executing them.
+Local and remote main were reverified clean on 2026-09-07 with no open PR/issues.
+
+Implement [ADR 0021](adr/0021-runtime-archive-preflight.md)'s four-package pure
+archive preflight only. Research and independent design review are complete;
+all four original archives matched their existing lockfile SHA-512 pins in a
+bounded in-memory measurement. Expected files are the development verifier and
+tests, coverage inventory, ADR, roadmap and threat model. Require pre-decode pin
+checks, strict bounded ustar inspection, manifest/closure/license checks,
+deterministic minimum-disclosure results, hostile fixtures and real-byte probes.
+Run the full gate and independent exact-head review before feature-only delivery.
+No extraction, installs, vendor execution, portable runtime, native support or
+release follows. Rollback is a normal revert. Fresh six-package runtime assembly
+and relocation proof follow this prerequisite; later roadmap decision gates remain.
+
+Local validation on 2026-09-07 UTC passed lint, package and standalone strict
+typechecks, 2,494 tests (5 existing skips) across 53 suites, coverage, build,
+package verification, CLI help, dependency audit and whitespace/diff checks.
+Coverage: 94.33% statements, 92.06% branches, 97.09% functions, 96.28% lines.
+The new module's 140 offline tests achieve 97.90% statements, 95.63% branches,
+100% functions and 98.69% lines. All four original public archives pass the frozen
+verifier and one-byte mutations reject; acquisition stayed in memory and no
+package code ran. Independent working-tree security review approved after the
+owner-field, USTAR high-bit and root-selector/order corrections, with ten separate
+adversarial probes passing. Package inventories are unchanged (core 38 files /
+198,888 bytes; CLI 58 files / 350,819 bytes). Exact-head review, CI, feature-only
+delivery and post-merge verification remain mandatory gates, not implied results.
+
+### Delivered slice: authenticated Claude fixture artifact preparation (ADR 0020)
+
+The following records the original implementation and repair gates historically;
+delivery is now verified above, not pending.
+
+PR #61's initial `794671d` head passed the
 local gate but failed Windows/macOS fixture tests and hosted acquisition. Repair
 scope, primary-source findings, and acceptance criteria are recorded in
 [ADR 0020's CI repair](adr/0020-claude-artifact-preparation.md#ci-interoperability-repair-2026-09-06).
@@ -15,8 +50,8 @@ preparation fixture tests, this plan, and ADR 0020. Discard only non-authoritati
 `x-goog-hash` metadata after header bounds/syntax checks, and canonicalize only
 fresh test roots while preserving cleanup registration and production rejection
 of aliases. Do not relax any authentication, filesystem, framing, or timeout
-gate. Repeat the full gate, review, and exact-head hosted checks on this branch;
-do not start runtime assembly until the repaired acquisition slice is delivered.
+gate. The full gate, review, and exact-head hosted checks were repeated before
+delivery; runtime assembly was not started during that repair.
 
 Repair validation on 2026-09-06 UTC passed lint, both typecheck gates, 2,354 tests
 (5 existing skips), full coverage, build, package verification, CLI/help smoke,
@@ -26,8 +61,8 @@ inventories remain unchanged. Independent working-tree review found no blocker
 and passed nine separate in-memory adversarial transport probes. The repaired
 production downloader fetched only the three small public metadata artifacts in
 memory; all matched their pinned sizes and hashes. No binary was fetched or
-executed locally. Exact-head independent review and all hosted delivery checks
-remain required before merge; this local result does not establish native support.
+executed locally. Subsequent exact-head independent review and all hosted delivery
+checks passed before merge; this local result does not establish native support.
 
 Prerequisite PR #60 is delivered as `522bd4d`: independent approval, all nine PR
 checks, all three post-merge workflows, and exact remote/main verification passed.
