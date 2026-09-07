@@ -5,6 +5,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: [
+        "scripts/runtime-archive-policy.mjs",
         "scripts/claude-artifact-download.mjs",
         "scripts/claude-artifact-policy.mjs",
         "scripts/claude-artifact-storage.mjs",

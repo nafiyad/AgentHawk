@@ -2,8 +2,11 @@
 
 ## Status
 
-Accepted for implementation of a development-only acquisition command. No vendor
-execution, image construction, hook activation, or native support follows.
+Delivered in PR #61 as `ab208c3` on 2026-09-06. Repaired head `69b7b26` received
+independent approval and all seven PR checks passed. Both post-merge workflows
+passed on the exact merge, including authenticated hosted acquisition and stored
+byte verification. No vendor execution, image construction, hook activation, or
+native support follows. Research observations below retain their original dates.
 
 ## Context and primary evidence
 

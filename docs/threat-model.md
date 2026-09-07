@@ -116,6 +116,15 @@ and privileged races, system TLS roots/GPG, signing-key compromise, and separate
 distributed revocations remain assumptions or residual risks. Artifact authenticity
 is not benignness, runtime isolation, hook activation, or a native support claim.
 
+Before portable runtime assembly, [ADR 0021](adr/0021-runtime-archive-preflight.md)
+adds a development-only fixed dependency archive preflight: policy-owned SHA-512
+pins precede bounded decompression and closed regular-file tar inspection. Links,
+traversal, case/prefix collisions, expansion and dependency-closure drift are
+rejected. License files remain package data, not a compliance conclusion. Neither
+an inventory nor matching archive bytes establishes portability, provenance,
+benignness, activation or launch authority; later assembly must verify bytes anew.
+The preflight creates no files and executes no package code.
+
 The Claude lifecycle candidate implements ADR 0017 receipt-first install and
 settings-first remove. Four exact paths must be ignored/untracked before any
 artifact and under its owned lock. Real-filesystem no-replace probes, repeated
