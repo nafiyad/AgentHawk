@@ -1,5 +1,6 @@
 import { Agent, request } from "node:https";
 import { CLAUDE_ARTIFACT_POLICY } from "./claude-artifact-policy.mjs";
+import { RUNTIME_ARCHIVE_POLICY } from "./runtime-archive-policy.mjs";
 
 const HEADER_BYTES = 8192;
 const HEADER_COUNT = 32;
@@ -28,7 +29,18 @@ function snapshotArtifact(artifact) {
   return { url, size, timeoutMs: policy === CLAUDE_ARTIFACT_POLICY.binary ? 120000 : 20000 };
 }
 
-function validHeaders(response, size) {
+function snapshotRuntimeArchive(name) {
+  if (typeof name !== "string" || !Object.hasOwn(RUNTIME_ARCHIVE_POLICY, name)) return undefined;
+  const policy = RUNTIME_ARCHIVE_POLICY[name];
+  return {
+    url: `https://registry.npmjs.org/${name}/-/${name}-${policy.version}.tgz`,
+    size: policy.compressedBytes,
+    timeoutMs: 30000,
+    discardCookies: true,
+  };
+}
+
+function validHeaders(response, size, discardCookies) {
   const raw = response.rawHeaders;
   if (!Array.isArray(raw) || raw.length % 2 !== 0 || raw.length > HEADER_COUNT * 2) return false;
   const headers = new Map();
@@ -49,6 +61,10 @@ function validHeaders(response, size) {
     // Cloud Storage may repeat checksum metadata. It has no authority here:
     // bound/validate every field above, then discard it instead of trusting it.
     if (key === "x-goog-hash") continue;
+    // npm's CDN may repeat Set-Cookie. This transport has no cookie jar and
+    // never forwards these fields. Bound and validate, then discard them only
+    // for the closed npm policy; preserve the Claude header contract.
+    if (discardCookies && key === "set-cookie") continue;
     if (headers.has(key)) return false;
     headers.set(key, value);
   }
@@ -72,11 +88,20 @@ function validHeaders(response, size) {
  * cancellation never abandons an already-started sink operation.
  */
 export function createArtifactDownloader(requestFunction) {
+  return createDownloader(requestFunction, snapshotArtifact);
+}
+
+/** Closed name-only npm policy; no URL, size, TLS or pin override is accepted. */
+export function createRuntimeArchiveDownloader(requestFunction) {
+  return createDownloader(requestFunction, snapshotRuntimeArchive);
+}
+
+function createDownloader(requestFunction, selectInput) {
   if (typeof requestFunction !== "function") throw fixedError("download_invalid_input");
   return async function download(artifact, onChunk, signal) {
     let input;
     try {
-      input = snapshotArtifact(artifact);
+      input = selectInput(artifact);
       if (!input || typeof onChunk !== "function" || !(signal instanceof AbortSignal)) {
         throw fixedError("download_invalid_input");
       }
@@ -158,7 +183,7 @@ export function createArtifactDownloader(requestFunction) {
         const url = new URL(input.url);
         req = requestFunction({
           protocol: "https:",
-          hostname: "downloads.claude.ai",
+          hostname: url.hostname,
           port: 443,
           path: url.pathname,
           method: "GET",
@@ -208,7 +233,11 @@ export function createArtifactDownloader(requestFunction) {
             if (!ended && !failure) fail();
             finish();
           });
-          if (failure || response.statusCode !== 200 || !validHeaders(response, input.size)) {
+          if (
+            failure ||
+            response.statusCode !== 200 ||
+            !validHeaders(response, input.size, input.discardCookies === true)
+          ) {
             fail();
             return;
           }
@@ -257,3 +286,4 @@ export function createArtifactDownloader(requestFunction) {
 }
 
 export const downloadPinnedArtifact = createArtifactDownloader(request);
+export const downloadRuntimeArchive = createRuntimeArchiveDownloader(request);

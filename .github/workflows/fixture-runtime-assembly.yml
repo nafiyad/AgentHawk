@@ -1,0 +1,98 @@
+name: Fixture runtime assembly
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fixture-runtime-assembly.yml"
+      - "scripts/runtime-*.mjs"
+      - "scripts/runtime-*.test.ts"
+      - "scripts/prepare-fixture-runtime*"
+      - "scripts/claude-artifact-download*"
+      - "scripts/claude-artifact-storage*"
+      - "scripts/package-policy*"
+      - "scripts/prepare-release-artifacts.mjs"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "tsconfig.json"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fixture-runtime-assembly.yml"
+      - "scripts/runtime-*.mjs"
+      - "scripts/runtime-*.test.ts"
+      - "scripts/prepare-fixture-runtime*"
+      - "scripts/claude-artifact-download*"
+      - "scripts/claude-artifact-storage*"
+      - "scripts/package-policy*"
+      - "scripts/prepare-release-artifacts.mjs"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "tsconfig.json"
+
+permissions:
+  contents: read
+
+jobs:
+  assemble:
+    name: fresh runtime assembly (Ubuntu 24.04, Node 24)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact head without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install the pinned development package manager
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Set up Node without a package cache
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          architecture: x64
+          package-manager-cache: false
+
+      - name: Install fixed trusted build dependencies without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Strictly typecheck development boundary tests without build output
+        run: >-
+          pnpm exec tsc --ignoreConfig --noEmit --strict --allowJs
+          --module NodeNext --moduleResolution NodeNext --target ES2023
+          --skipLibCheck --types node --typeRoots packages/cli/node_modules/@types
+          scripts/runtime-build-process.test.ts scripts/runtime-build-source.test.ts
+          scripts/prepare-fixture-runtime.test.ts scripts/runtime-archive-policy.test.ts
+          scripts/runtime-assembly-inputs.test.ts scripts/package-policy.test.ts
+          scripts/claude-artifact-download.test.ts scripts/claude-artifact-storage.test.ts
+          scripts/runtime-tree.test.ts
+
+      - name: Build, acquire and independently remeasure without executing the runtime
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT:-}" != "github-hosted" || "${RUNNER_OS:-}" != "Linux" || "${RUNNER_ARCH:-}" != "X64" ]]; then
+            printf '%s\n' 'Refusing an unsupported runner.' >&2
+            exit 1
+          fi
+          if [[ ! "${EXPECTED_HEAD:-}" =~ ^[0-9a-f]{40}$ || "$(git rev-parse HEAD)" != "$EXPECTED_HEAD" ]]; then
+            printf '%s\n' 'Refusing source other than the exact workflow head.' >&2
+            exit 1
+          fi
+          if [[ ! "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]{0,19}$ || ! "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]{0,19}$ || "${RUNNER_TEMP:-}" != /* ]]; then
+            printf '%s\n' 'Refusing an invalid temporary destination.' >&2
+            exit 1
+          fi
+          umask 077
+          # Fresh dist is mandatory. Never delete old output or upload/run retained
+          # trees, even on failure. Cleanup belongs to this disposable runner.
+          exec env -i PATH="$PATH" LANG=C LC_ALL=C \
+            node scripts/prepare-fixture-runtime.mjs \
+            "$RUNNER_TEMP/agenthawk-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"

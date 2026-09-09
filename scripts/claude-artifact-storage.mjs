@@ -2,6 +2,7 @@ const OPERATION_MS = 30000;
 const SETTLEMENT_MS = 5000;
 const IO_METHODS = ["realpath", "lstat", "mkdir", "open"];
 const HANDLE_METHODS = ["stat", "read", "write", "sync", "close"];
+const DIRECTORY_METHODS = ["read", "close"];
 
 function fixedError(code) {
   return new Error(code);
@@ -14,11 +15,21 @@ function fixedError(code) {
  * removed; late handles are only closed, after their own pending I/O settles.
  */
 export function createBoundedArtifactStorage(filesystem, signal) {
+  return createStorage(filesystem, signal, false);
+}
+
+/** Directory enumeration is opt-in; legacy artifact callers keep their exact API. */
+export function createBoundedRuntimeStorage(filesystem, signal) {
+  return createStorage(filesystem, signal, true);
+}
+
+function createStorage(filesystem, signal, directories) {
+  const ioNames = directories ? [...IO_METHODS, "opendir"] : IO_METHODS;
   let methods;
   try {
     if (!(signal instanceof AbortSignal)) throw fixedError("storage_invalid_input");
-    methods = Object.fromEntries(IO_METHODS.map((name) => [name, filesystem[name]]));
-    if (IO_METHODS.some((name) => typeof methods[name] !== "function")) {
+    methods = Object.fromEntries(ioNames.map((name) => [name, filesystem[name]]));
+    if (ioNames.some((name) => typeof methods[name] !== "function")) {
       throw fixedError("storage_invalid_input");
     }
   } catch {
@@ -140,11 +151,11 @@ export function createBoundedArtifactStorage(filesystem, signal) {
     return handle.closeResponse;
   }
 
-  function register(raw) {
+  function register(raw, names = HANDLE_METHODS) {
     let handleMethods;
     try {
-      handleMethods = Object.fromEntries(HANDLE_METHODS.map((name) => [name, raw[name]]));
-      if (HANDLE_METHODS.some((name) => typeof handleMethods[name] !== "function")) {
+      handleMethods = Object.fromEntries(names.map((name) => [name, raw[name]]));
+      if (names.some((name) => typeof handleMethods[name] !== "function")) {
         throw fixedError("storage_failed");
       }
     } catch {
@@ -167,7 +178,7 @@ export function createBoundedArtifactStorage(filesystem, signal) {
     handles.add(state);
     const wrapped = Object.freeze(
       Object.fromEntries(
-        HANDLE_METHODS.map((name) => [
+        names.map((name) => [
           name,
           name === "close"
             ? () => requestClose(state)
@@ -179,20 +190,34 @@ export function createBoundedArtifactStorage(filesystem, signal) {
     return wrapped;
   }
 
-  const wrapped = Object.freeze(
-    Object.fromEntries(
-      IO_METHODS.map((name) => [
-        name,
-        (...args) =>
-          begin(
-            () => Reflect.apply(methods[name], filesystem, args),
-            undefined,
-            false,
-            name === "open" ? register : undefined,
-          ),
-      ]),
-    ),
+  const wrappers = Object.fromEntries(
+    ioNames.map((name) => [
+      name,
+      (...args) =>
+        begin(
+          () => Reflect.apply(methods[name], filesystem, args),
+          undefined,
+          false,
+          name === "open"
+            ? (raw) => register(raw)
+            : name === "opendir"
+              ? (raw) => register(raw, DIRECTORY_METHODS)
+              : undefined,
+        ),
+    ]),
   );
+  if (directories) {
+    wrappers.lstatIfPresent = (...args) =>
+      begin(async () => {
+        try {
+          return await Reflect.apply(methods.lstat, filesystem, args);
+        } catch (error) {
+          if (error?.code === "ENOENT") return undefined;
+          throw error;
+        }
+      });
+  }
+  const wrapped = Object.freeze(wrappers);
   const aborted = () => stop("storage_cancelled");
   signal.addEventListener("abort", aborted, { once: true });
   if (signal.aborted) aborted();

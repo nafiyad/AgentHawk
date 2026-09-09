@@ -125,6 +125,36 @@ an inventory nor matching archive bytes establishes portability, provenance,
 benignness, activation or launch authority; later assembly must verify bytes anew.
 The preflight creates no files and executes no package code.
 
+[ADR 0022](adr/0022-fixture-runtime-assembly.md) builds only reviewed AgentHawk
+source in a trusted development checkout, then assembles six verified package
+snapshots as regular files without execute permission. An interpreter could still
+load those bytes; file mode is not an execution sandbox. Clean Git output alone is insufficient:
+the command hashes bounded regular tracked files against their index blobs,
+rejects ignored/untracked own source inputs and pre-existing `dist`, and fences
+source/index identity before and after fixed compiler and lifecycle-disabled pack
+commands. Linux process-group quiescence is required, not merely parent closure.
+The compiler, package manager, installed build dependencies and builder remain
+trusted. This is observed fresh-build binding, not reproducibility or provenance.
+
+All six archives are verified before the runtime destination is created. Opaque
+in-process capabilities carry copied verified bytes, not authority from a caller's
+inventory or release receipt. Fixed npm transport discards bounded response cookies
+without persisting or sending them. Compressed pins, framing and full archive policy
+still apply. The contained writer tracks every intermediate directory, uses
+exclusive private regular single-link files, reopens/hashes stored bytes, and
+enumerates expected children with bounded directory handles. File and directory
+handles share late-completion and closure accounting. Unknown network/process/file
+closure remains `closure_unconfirmed`, including during cancellation.
+
+Build scratch, `dist` and partial runtime state are retained, never automatically
+deleted or adopted. Same-account/privileged races and hostile kernel or network
+filesystems remain outside the guarantee. Stored source identifiers remain a
+caller observation; only the completed production orchestration reports observed
+fresh-build binding after its final source fence. Neither the record nor the brand
+authorizes later execution. `executed: false` refers to the assembled runtime and
+vendor software; trusted Git/compiler/pack tools do run during development preparation.
+Portability, image isolation, host activation and native support remain unproven.
+
 The Claude lifecycle candidate implements ADR 0017 receipt-first install and
 settings-first remove. Four exact paths must be ignored/untracked before any
 artifact and under its owned lock. Real-filesystem no-replace probes, repeated

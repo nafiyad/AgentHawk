@@ -4,14 +4,42 @@ Date: 2026-08-20
 
 ## Current state
 
-### Active slice: fixed runtime dependency archive preflight (ADR 0021)
+### Active slice: fresh fixture-runtime assembly (ADR 0022)
+
+PR #62 delivered ADR 0021 as `04dbfbb`; independent approval and all six exact-head
+and post-merge Quality jobs passed. Clean local/remote main and no open PR/issues
+were reverified on 2026-09-09 UTC. Implement only [ADR 0022](adr/0022-fixture-runtime-assembly.md)'s
+Linux development preparation: observed fresh own build/pack, six verified inputs,
+contained physical runtime, bounded independent stored-byte and directory checks.
+Research and independent design review precede implementation. Expected modules,
+adversarial acceptance criteria, trust assumptions and rollback are in that ADR.
+Run all local gates, strict development checks, independent exact-head review and
+the secretless hosted preparation gate. No vendor execution or native support;
+relocation proof, image preparation and real-host activation follow separately.
+
+Implementation now includes the six-input capability, fixed npm acquisition,
+physical writer, bounded directory-handle guard, observed-source reader and
+owned Linux build-process lifecycle, plus a dedicated exact-head hosted job.
+Independent working-tree review found and repaired transport closure-status
+mapping; unconfirmed network cleanup cannot become a generic error or cancellation.
+All four original external archives pass the actual closed downloader and complete
+pin/inventory validation in memory. The full local gate passed on 2026-09-09 UTC:
+2,721 tests (five existing skips), coverage 94.66% statements / 92.44% branches /
+97% functions / 96.57% lines, lint, both typecheck gates, build, package verification,
+CLI help, dependency audit with no known vulnerabilities, and diff checks. All new
+logic modules exceed 90% statement and branch coverage. Published inventories remain
+core 38 files / 198,888 bytes and CLI 58 files / 350,819 bytes. Exact-head hosted
+preparation, frozen-head approval and merge remain pending. Preparation has not launched the assembled
+runtime or vendor software; ordinary tests exercise AgentHawk's own code.
+
+### Delivered slice: fixed runtime dependency archive preflight (ADR 0021)
 
 PR #61 is delivered as `ab208c3`: head `69b7b26` received independent approval,
 all seven PR checks passed, and both post-merge workflows passed on the exact
 merge. Hosted acquisition measured the pinned Claude bytes without executing them.
 Local and remote main were reverified clean on 2026-09-07 with no open PR/issues.
 
-Implement [ADR 0021](adr/0021-runtime-archive-preflight.md)'s four-package pure
+Historical acceptance criteria: implement [ADR 0021](adr/0021-runtime-archive-preflight.md)'s four-package pure
 archive preflight only. Research and independent design review are complete;
 all four original archives matched their existing lockfile SHA-512 pins in a
 bounded in-memory measurement. Expected files are the development verifier and
@@ -34,7 +62,7 @@ package code ran. Independent working-tree security review approved after the
 owner-field, USTAR high-bit and root-selector/order corrections, with ten separate
 adversarial probes passing. Package inventories are unchanged (core 38 files /
 198,888 bytes; CLI 58 files / 350,819 bytes). Exact-head review, CI, feature-only
-delivery and post-merge verification remain mandatory gates, not implied results.
+delivery and post-merge verification subsequently passed in PR #62 as noted above.
 
 ### Delivered slice: authenticated Claude fixture artifact preparation (ADR 0020)
 

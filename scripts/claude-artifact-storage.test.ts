@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createBoundedArtifactStorage } from "./claude-artifact-storage.mjs";
+import {
+  createBoundedArtifactStorage,
+  createBoundedRuntimeStorage,
+} from "./claude-artifact-storage.mjs";
 
 const PRIVATE = "fixture-private-storage-path-error";
 const IO_NAMES = ["realpath", "lstat", "mkdir", "open"] as const;
@@ -442,5 +445,128 @@ describe("bounded retained-artifact storage", () => {
     expect(original).toHaveBeenCalledTimes(1);
     expect(source.mkdir).not.toHaveBeenCalled();
     await expect(guard.settle()).resolves.toBe(true);
+  });
+});
+
+describe("bounded runtime directory storage", () => {
+  function directory() {
+    return {
+      path: "/fixture/private",
+      read: vi.fn(async () => null),
+      close: vi.fn(async () => undefined),
+    };
+  }
+  function source(dir = directory()) {
+    return { ...rawFilesystem(), opendir: vi.fn(async (..._args: unknown[]) => dir) };
+  }
+
+  it("adds only opt-in guarded enumeration and absence checks, without a native directory path", async () => {
+    const raw = directory();
+    const fs = source(raw);
+    const guard = createBoundedRuntimeStorage(fs, signal());
+    expect(Object.keys(guard.filesystem).sort()).toEqual(
+      [...IO_NAMES, "lstatIfPresent", "opendir"].sort(),
+    );
+    const handle = await guard.filesystem.opendir("/fixture", { bufferSize: 1 });
+    expect(Object.keys(handle).sort()).toEqual(["close", "read"]);
+    expect(Object.isFrozen(handle)).toBe(true);
+    expect(handle).not.toHaveProperty("path");
+    await expect(handle.read()).resolves.toBeNull();
+    await handle.close();
+    expect(fs.opendir).toHaveBeenCalledExactlyOnceWith("/fixture", { bufferSize: 1 });
+    expect(raw.read.mock.contexts[0]).toBe(raw);
+    await expect(guard.settle()).resolves.toBe(true);
+    expect(raw.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats only ENOENT as absence, keeps admission open and redacts other errno failures", async () => {
+    const fs = source();
+    fs.lstat.mockRejectedValueOnce(Object.assign(new Error(PRIVATE), { code: "ENOENT" }));
+    const guard = createBoundedRuntimeStorage(fs, signal());
+    await expect(guard.filesystem.lstatIfPresent("/fixture/absent")).resolves.toBeUndefined();
+    await guard.filesystem.mkdir("/fixture/new");
+    await expect(guard.filesystem.lstatIfPresent("/fixture/present")).resolves.toEqual({
+      size: 3n,
+    });
+    fs.lstat.mockRejectedValueOnce(Object.assign(new Error(PRIVATE), { code: "EACCES" }));
+    await expectFailure(guard.filesystem.lstatIfPresent("/fixture/private"), "storage_failed");
+    await expectFailure(guard.filesystem.mkdir("/fixture/later"), "storage_failed");
+    await expect(guard.settle()).resolves.toBe(true);
+  });
+
+  it("requires directory methods only for runtime guards", () => {
+    const fs = rawFilesystem();
+    expect(() => createBoundedRuntimeStorage(fs, signal())).toThrow("storage_invalid_input");
+    expect(() => createBoundedArtifactStorage(fs, signal())).not.toThrow();
+  });
+
+  it("registers and closes a late directory after cancellation without admitting reads", async () => {
+    vi.useFakeTimers();
+    const pending = deferred();
+    const raw = directory();
+    const fs = source(raw);
+    fs.opendir.mockImplementation(() => pending.promise as never);
+    const controller = new AbortController();
+    const guard = createBoundedRuntimeStorage(fs, controller.signal);
+    const opened = expectFailure(
+      guard.filesystem.opendir("/fixture", { bufferSize: 1 }),
+      "storage_cancelled",
+    );
+    controller.abort();
+    await opened;
+    const settled = guard.settle();
+    pending.resolve(raw);
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(settled).resolves.toBe(true);
+    expect(raw.close).toHaveBeenCalledTimes(1);
+    expect(raw.read).not.toHaveBeenCalled();
+  });
+
+  it.each(["read", "close"] as const)(
+    "bounds stalled directory %s and never upgrades unconfirmed closure",
+    async (method) => {
+      vi.useFakeTimers();
+      const pending = deferred();
+      const raw = directory();
+      raw[method].mockImplementation(() => pending.promise as never);
+      const guard = createBoundedRuntimeStorage(source(raw), signal());
+      const handle = await guard.filesystem.opendir("/fixture", { bufferSize: 1 });
+      const operation = expectFailure(handle[method](), "storage_timeout");
+      await vi.advanceTimersByTimeAsync(30_000);
+      await operation;
+      const settled = guard.settle();
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(settled).resolves.toBe(false);
+      if (method === "read") expect(raw.close).not.toHaveBeenCalled();
+      pending.resolve(null);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(raw.close).toHaveBeenCalledTimes(1);
+      await expect(guard.settle()).resolves.toBe(false);
+    },
+  );
+
+  it("accounts for a malformed directory handle as unconfirmed closure", async () => {
+    const fs = source();
+    fs.opendir.mockResolvedValue({ read: vi.fn() } as never);
+    const guard = createBoundedRuntimeStorage(fs, signal());
+    await expectFailure(guard.filesystem.opendir("/fixture"), "storage_failed");
+    await expect(guard.settle()).resolves.toBe(false);
+  });
+
+  it("queues directory close behind cancelled read until its outcome settles", async () => {
+    const pending = deferred();
+    const raw = directory();
+    raw.read.mockImplementation(() => pending.promise as never);
+    const controller = new AbortController();
+    const guard = createBoundedRuntimeStorage(source(raw), controller.signal);
+    const handle = await guard.filesystem.opendir("/fixture");
+    const reading = expectFailure(handle.read(), "storage_cancelled");
+    controller.abort();
+    await reading;
+    const settled = guard.settle();
+    expect(raw.close).not.toHaveBeenCalled();
+    pending.resolve(null);
+    await expect(settled).resolves.toBe(true);
+    expect(raw.close).toHaveBeenCalledTimes(1);
   });
 });
