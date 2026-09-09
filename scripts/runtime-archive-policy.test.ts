@@ -117,6 +117,7 @@ describe("fixed runtime archive policy", () => {
     expect(Object.keys(runtime).sort()).toEqual([
       "RUNTIME_ARCHIVE_POLICY",
       "inspectRuntimeTar",
+      "runtimeArchiveFiles",
       "verifyRuntimeArchive",
     ]);
     expect(Object.keys(policies)).toEqual(["commander", "semver", "yaml", "zod"]);
@@ -197,6 +198,71 @@ describe("fixed runtime archive policy", () => {
       "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
     );
     expect(verifyRuntimeArchive("commander", Buffer.from("abc"))).toEqual(rejected);
+  });
+
+  it("never exposes entries for structural, forged or rejected inventories", () => {
+    const inventory = structural();
+    for (const value of [
+      inventory,
+      { ...inventory, integrity: "sha512_pin_matched" },
+      rejected,
+      null,
+      1,
+    ])
+      expect(runtime.runtimeArchiveFiles(value)).toBeUndefined();
+  });
+
+  it("copies entries only after complete checks (TEST-ONLY mocked pin and decoder)", async () => {
+    const policy = policies.commander;
+    const base = fixture();
+    const baseSize = base.reduce((total, entry) => total + entry.data.length, 0);
+    let complete: Buffer | undefined;
+    for (let small = 0; small <= 5; small++) {
+      const entries = [
+        ...base,
+        { path: "package/large-a", data: Buffer.alloc(policy.largestFile, 65) },
+        { path: "package/large-b", data: Buffer.alloc(policy.largestFile, 66) },
+        {
+          path: "package/remainder",
+          data: Buffer.alloc(policy.fileBytes - baseSize - 2 * policy.largestFile - small),
+        },
+        ...Array.from({ length: 5 }, (_, index) => ({
+          path: `package/extra-${index}`,
+          data: Buffer.alloc(index < small ? 1 : 0),
+        })),
+      ];
+      const bytes = tar(entries);
+      if (bytes.length === policy.tarBytes) complete = bytes;
+    }
+    if (!complete) throw new Error("fixture totals must match the independent policy");
+    const originalHash = createHash;
+    vi.doMock("node:crypto", () => ({
+      createHash: (algorithm: string) =>
+        algorithm === "sha512"
+          ? {
+              update() {
+                return this;
+              },
+              digest() {
+                return policy.integrity.slice(7);
+              },
+            }
+          : originalHash(algorithm),
+    }));
+    vi.doMock("node:zlib", () => ({ gunzipSync: () => Buffer.from(complete as Buffer) }));
+    const module = await import("./runtime-archive-policy.mjs");
+    const result = module.verifyRuntimeArchive("commander", Buffer.alloc(policy.compressedBytes));
+    expect(result.status).toBe("inventory");
+    const files = module.runtimeArchiveFiles(result);
+    expect(files).toHaveLength(policy.files);
+    expect(module.runtimeArchiveFiles({ ...result })).toBeUndefined();
+    if (!files) throw new Error("missing fixture entries");
+    files[0].data.fill(1);
+    files[0].path = "forged";
+    const again = module.runtimeArchiveFiles(result);
+    expect(again?.[0].path).toBe("package.json");
+    expect(again?.[0].data).toEqual(base[0].data);
+    expect(Object.keys(result)).not.toContain("data");
   });
 
   it.each([

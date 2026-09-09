@@ -5,6 +5,12 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: [
+        "scripts/package-policy.mjs",
+        "scripts/runtime-assembly-inputs.mjs",
+        "scripts/runtime-tree.mjs",
+        "scripts/runtime-build-process.mjs",
+        "scripts/runtime-build-source.mjs",
+        "scripts/prepare-fixture-runtime.mjs",
         "scripts/runtime-archive-policy.mjs",
         "scripts/claude-artifact-download.mjs",
         "scripts/claude-artifact-policy.mjs",

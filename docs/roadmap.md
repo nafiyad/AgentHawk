@@ -408,11 +408,18 @@ evidence contracts, plus a closed marker stimulus; PR #60 delivered it as `522bd
 with independent approval and green CI before and after merge. PR #61 delivered
 [ADR 0020](adr/0020-claude-artifact-preparation.md) as `ab208c3`: exact-head review,
 all seven PR checks and both post-merge workflows passed, including authenticated
-hosted acquisition without vendor execution. The current slice is
+hosted acquisition without vendor execution. PR #62 delivered
 [ADR 0021](adr/0021-runtime-archive-preflight.md)'s fixed runtime-dependency archive
-preflight. It does not yet assemble or prove a portable runtime. Following slices
-prepare a portable package/image and implement the bounded real-host driver. Actual
+preflight as `04dbfbb`, with independent approval and all six Quality jobs green
+before and after merge. The current slice is
+[ADR 0022](adr/0022-fixture-runtime-assembly.md)'s fresh six-package runtime assembly:
+derive source identity, build/pack only the reviewed own packages, verify four fixed
+external archives, create private physical files and independently remeasure them.
+Its full local gate passed with 2,721 tests and 94.66% statement / 92.44% branch
+coverage. Exact-head hosted preparation and delivery review remain pending.
+Assembly alone does not prove portability. Following slices prove independent
+relocation, prepare a contained image and implement the bounded real-host driver. Actual
 host execution and the support decision remain separate gates; no new native
 support or public release follows from these prerequisites.
 
-Milestone 16 is complete. Milestone 17's vendor-neutral contracts, conservative qualifier, typed cancellation, co-root authority, bounded aggregate evaluator, unsupported Codex compatibility candidate, closed Claude `2.1.241` fixture edge, project-settings preflight, root-bound lifecycle format, invocation verification, and receipt-aware status are complete. The Claude install/remove transaction was delivered in PR #56, merged as `1f6fd02`, with independent approval and passing CI before and after merge. It verifies ignored/untracked targets before mutation, uses an exclusive lock and actual-filesystem no-replace probes, publishes the receipt before settings, removes settings before the receipt, and preserves unverified state for recovery. Activation remains `unproven`, every Claude support row remains unsupported, and lifecycle operations contact no providers. The next implementation slice is ADR 0017's isolated real-host activation matrix and separate support decision; no native support follows merely from installation.
+Milestone 16 is complete. Milestone 17's vendor-neutral contracts, conservative qualifier, typed cancellation, co-root authority, bounded aggregate evaluator, unsupported Codex compatibility candidate, closed Claude `2.1.241` fixture edge, project-settings preflight, root-bound lifecycle format, invocation verification, and receipt-aware status are complete. The Claude install/remove transaction was delivered in PR #56, merged as `1f6fd02`, with independent approval and passing CI before and after merge. It verifies ignored/untracked targets before mutation, uses an exclusive lock and actual-filesystem no-replace probes, publishes the receipt before settings, removes settings before the receipt, and preserves unverified state for recovery. Activation remains `unproven`, every Claude support row remains unsupported, and lifecycle operations contact no providers. Assembly, independent relocation, contained image preparation and the bounded driver precede ADR 0017's full isolated real-host activation matrix and separate support decision; no native support follows merely from installation.

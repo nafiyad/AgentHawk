@@ -124,8 +124,13 @@ const publishConfig = {
   tag: "alpha",
 };
 const publicationLifecycleScripts = [
+  "preinstall",
+  "install",
+  "postinstall",
   "prepublish",
+  "preprepare",
   "prepare",
+  "postprepare",
   "prepublishOnly",
   "prepack",
   "postpack",
@@ -139,6 +144,7 @@ export function validateReleaseManifest({ manifest, specification, packed = fals
   assert(manifest.version === releaseVersion, `${specification.name} version is inconsistent`);
   assert(manifest.private === undefined, `${specification.name} must not carry private metadata`);
   assert(manifest.license === "Apache-2.0", `${specification.name} license is inconsistent`);
+  assert(manifest.type === "module", `${specification.name} module type is inconsistent`);
   assert(
     manifest.engines?.node === "^22.0.0 || ^24.0.0",
     `${specification.name} Node engine is inconsistent`,
@@ -169,24 +175,45 @@ export function validateReleaseManifest({ manifest, specification, packed = fals
     JSON.stringify(manifest.publishConfig) === JSON.stringify(publishConfig),
     `${specification.name} publish configuration is inconsistent`,
   );
+  if (Object.hasOwn(manifest, "scripts")) {
+    assert(
+      isRecord(manifest.scripts) &&
+        Object.values(manifest.scripts).every((value) => typeof value === "string"),
+      `${specification.name} scripts metadata is inconsistent`,
+    );
+  }
   for (const script of publicationLifecycleScripts) {
     assert(
-      manifest.scripts?.[script] === undefined,
+      !Object.hasOwn(manifest.scripts ?? {}, script),
       `${specification.name} must not define the ${script} lifecycle script`,
     );
   }
   assert(
-    manifest.bundleDependencies === undefined && manifest.bundledDependencies === undefined,
-    `${specification.name} must not bundle dependencies`,
+    ["bundleDependencies", "bundledDependencies", "optionalDependencies", "peerDependencies"].every(
+      (key) => !Object.hasOwn(manifest, key),
+    ),
+    `${specification.name} must not add bundled, optional or peer dependencies`,
+  );
+  assert(
+    ["main", "module", "browser", "imports"].every((key) => !Object.hasOwn(manifest, key)),
+    `${specification.name} must not add alternate module selectors`,
   );
 
   if (specification.name === "@agenthawk/core") {
     assert(
-      manifest.exports?.["."]?.types === "./dist/index.d.ts" &&
-        manifest.exports?.["."]?.import === "./dist/index.js",
+      manifest.dependencies?.semver === "7.8.5" &&
+        manifest.dependencies?.zod === "4.4.3" &&
+        Object.keys(manifest.dependencies).length === 2,
+      "Core runtime dependencies are inconsistent",
+    );
+    assert(
+      JSON.stringify(manifest.exports) ===
+        JSON.stringify({ ".": { types: "./dist/index.d.ts", import: "./dist/index.js" } }) &&
+        !Object.hasOwn(manifest, "bin"),
       "Core export metadata is inconsistent",
     );
   } else {
+    assert(!Object.hasOwn(manifest, "exports"), "CLI must not add export selectors");
     assert(
       manifest.bin?.agenthawk === "./dist/index.js" &&
         manifest.bin?.["agenthawk-claude-pretooluse"] === "./dist/claude-pretooluse-entry.js" &&

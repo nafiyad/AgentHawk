@@ -2,7 +2,13 @@ import { EventEmitter } from "node:events";
 import type { RequestOptions } from "node:https";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createArtifactDownloader, downloadPinnedArtifact } from "./claude-artifact-download.mjs";
+import {
+  createArtifactDownloader,
+  createRuntimeArchiveDownloader,
+  downloadPinnedArtifact,
+  downloadRuntimeArchive,
+} from "./claude-artifact-download.mjs";
+import { RUNTIME_ARCHIVE_POLICY } from "./runtime-archive-policy.mjs";
 
 const MANIFEST = "https://downloads.claude.ai/claude-code-releases/2.1.241/manifest.json";
 const BINARY = "https://downloads.claude.ai/claude-code-releases/2.1.241/linux-x64/claude";
@@ -95,6 +101,110 @@ async function expectFailure(run: Promise<unknown>, code = "download_failed") {
 }
 
 afterEach(() => vi.useRealTimers());
+
+describe("closed runtime archive HTTPS policy", () => {
+  it("exports the default without starting network work", () => {
+    expect(typeof downloadRuntimeArchive).toBe("function");
+  });
+
+  it("discards bounded repeated npm cookies without sending them or changing Claude policy", async () => {
+    const fixture = harness((value) => {
+      value.response.rawHeaders = [
+        "Content-Length",
+        String(RUNTIME_ARCHIVE_POLICY.commander.compressedBytes),
+        "Set-Cookie",
+        "fixture-a=ignored",
+        "set-cookie",
+        "fixture-b=ignored",
+      ];
+      value.deliver(Buffer.alloc(RUNTIME_ARCHIVE_POLICY.commander.compressedBytes));
+    });
+    await createRuntimeArchiveDownloader(fixture.request)("commander", vi.fn(), signal());
+    expect(fixture.request.mock.calls[0][0].headers).not.toHaveProperty("cookie");
+    const claude = harness((value) => {
+      value.response.rawHeaders = [
+        "Content-Length",
+        "3",
+        "Set-Cookie",
+        "fixture-a=ignored",
+        "set-cookie",
+        "fixture-b=ignored",
+      ];
+      value.deliver();
+    });
+    await expectFailure(claude.download(input(), vi.fn(), signal()));
+  });
+
+  it.each([
+    ["set-cookie", "fixture=bad\nvalue"],
+    ["set-cookie", "x".repeat(8193)],
+    Array.from({ length: 33 }, () => ["set-cookie", "fixture=ignored"]).flat(),
+    ["Content-Length", "52736", "content-length", "52736"],
+    ["Location", "https://example.invalid/", "set-cookie", "fixture=ignored"],
+    ["Cookie", "fixture=a", "cookie", "fixture=b"],
+  ])("retains header syntax, size, framing and redirect rejection %#", async (headers) => {
+    const fixture = harness((value) => {
+      value.response.rawHeaders = headers;
+      value.deliver(Buffer.alloc(RUNTIME_ARCHIVE_POLICY.commander.compressedBytes));
+    });
+    await expectFailure(
+      createRuntimeArchiveDownloader(fixture.request)("commander", vi.fn(), signal()),
+    );
+  });
+
+  it.each(Object.keys(RUNTIME_ARCHIVE_POLICY) as (keyof typeof RUNTIME_ARCHIVE_POLICY)[])(
+    "uses only the reviewed URL and exact size for %s",
+    async (name) => {
+      const policy = RUNTIME_ARCHIVE_POLICY[name];
+      const fixture = harness((value) => {
+        value.response.rawHeaders = ["Content-Length", String(policy.compressedBytes)];
+        value.deliver(Buffer.alloc(policy.compressedBytes));
+      });
+      const sink = vi.fn();
+      await createRuntimeArchiveDownloader(fixture.request)(name, sink, signal());
+      expect(fixture.request).toHaveBeenCalledOnce();
+      expect(fixture.request.mock.calls[0][0]).toMatchObject({
+        hostname: "registry.npmjs.org",
+        path: `/${name}/-/${name}-${policy.version}.tgz`,
+        method: "GET",
+        rejectUnauthorized: true,
+      });
+      expect(sink.mock.calls[0][0]).toHaveLength(policy.compressedBytes);
+      expect(fixture.socket.destroyed && fixture.response.closed).toBe(true);
+    },
+  );
+
+  it.each([
+    undefined,
+    null,
+    "__proto__",
+    "Commander",
+    "commander@15.0.0",
+    "https://registry.npmjs.org/commander/-/commander-15.0.0.tgz",
+    { name: "commander" },
+    { url: MANIFEST, size: 3 },
+  ])("rejects name/URL/size overrides %# before requesting", async (input) => {
+    const fixture = harness();
+    await expectFailure(
+      createRuntimeArchiveDownloader(fixture.request)(input, vi.fn(), signal()),
+      "download_invalid_input",
+    );
+    expect(fixture.request).not.toHaveBeenCalled();
+  });
+
+  it("does not coerce objects or accept a short fixture-size override", async () => {
+    const coerce = vi.fn(() => "commander");
+    const fixture = harness();
+    await expectFailure(
+      createRuntimeArchiveDownloader(fixture.request)({ toString: coerce }, vi.fn(), signal()),
+      "download_invalid_input",
+    );
+    expect(coerce).not.toHaveBeenCalled();
+    await expectFailure(
+      createRuntimeArchiveDownloader(fixture.request)("commander", vi.fn(), signal()),
+    );
+  });
+});
 
 describe("fixed Claude artifact HTTPS streaming", () => {
   it("exports the production downloader without creating a network request at import", () => {

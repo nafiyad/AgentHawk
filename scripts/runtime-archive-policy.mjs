@@ -72,6 +72,7 @@ export const RUNTIME_ARCHIVE_POLICY = Object.freeze({
 const typedArray = Object.getPrototypeOf(Uint8Array.prototype);
 const byteLength = Object.getOwnPropertyDescriptor(typedArray, "byteLength").get;
 const backingBuffer = Object.getOwnPropertyDescriptor(typedArray, "buffer").get;
+const verifiedEntries = new WeakMap();
 const FAILURE = Object.freeze({
   status: "rejected",
   executed: false,
@@ -241,7 +242,7 @@ function checkExportTargets(value, paths, depth = 0) {
   } else reject();
 }
 
-function inspect(name, tar, policy, integrity) {
+function inspect(name, tar, policy, integrity, entries) {
   if (tar.length < 1536 || tar.length % 512 !== 0) reject();
   const files = [];
   const paths = new Set();
@@ -313,6 +314,7 @@ function inspect(name, tar, policy, integrity) {
     const paddedEnd = start + Math.ceil(size / 512) * 512;
     if (paddedEnd > tar.length - 1024 || !zero(tar.subarray(end, paddedEnd))) reject();
     const data = tar.subarray(start, end);
+    entries?.push({ path, data });
     if (path === "package.json") manifestBytes = data;
     if (path === "LICENSE") licensePresent = size > 0 && data.some((value) => value > 32);
     files.push(
@@ -385,13 +387,23 @@ export function verifyRuntimeArchive(name, bytes) {
       return FAILURE;
     const tar = gunzipSync(archive, { maxOutputLength: policy.tarBytes });
     if (tar.length !== policy.tarBytes) return FAILURE;
-    const result = inspect(name, tar, policy, "sha512_pin_matched");
-    return result.files.length === policy.files &&
-      result.fileBytes === policy.fileBytes &&
-      result.largestFile === policy.largestFile
-      ? result
-      : FAILURE;
+    const entries = [];
+    const result = inspect(name, tar, policy, "sha512_pin_matched", entries);
+    if (
+      result.files.length !== policy.files ||
+      result.fileBytes !== policy.fileBytes ||
+      result.largestFile !== policy.largestFile
+    )
+      return FAILURE;
+    verifiedEntries.set(result, entries);
+    return result;
   } catch {
     return FAILURE;
   }
+}
+
+/** Entry bytes are available only from this process's completely verified inventory. */
+export function runtimeArchiveFiles(inventory) {
+  const entries = verifiedEntries.get(inventory);
+  return entries?.map(({ path, data }) => ({ path, data: Buffer.from(data) }));
 }
