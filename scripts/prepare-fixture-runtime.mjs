@@ -16,6 +16,7 @@ import { inspectRuntimeDestination, writeRuntimeTree } from "./runtime-tree.mjs"
 
 const ROOT = resolve(import.meta.dirname, "..");
 const FLAGS = Object.freeze({ executed: false, portableRuntime: false, nativeSupport: false });
+const freshPlans = new WeakMap();
 const REASONS = new Set([
   "unsupported_host",
   "invalid_destination",
@@ -49,6 +50,11 @@ function sha256(bytes) {
 }
 function sameIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
+}
+
+/** In-process freshness evidence only; neither a receipt nor authority to launch. */
+export function fixtureRuntimePlan(result) {
+  return freshPlans.get(result);
 }
 
 /** Trusted test seams only. Production accepts one destination and no overrides. */
@@ -86,6 +92,7 @@ export function createFixtureRuntimePreparer(overrides = {}) {
 
   return async (destination, externalSignal) => {
     let result;
+    let assembledPlan;
     let storage;
     let retained = false;
     let subscribed;
@@ -285,6 +292,7 @@ export function createFixtureRuntimePreparer(overrides = {}) {
         fail("source_changed");
       check();
       result = Object.freeze({ ...written, sourceBinding: "observed_fresh_build", ...FLAGS });
+      assembledPlan = plan;
     } catch (error) {
       result = failure(REASONS.has(error?.reason) ? error.reason : "storage_failed");
     } finally {
@@ -294,6 +302,9 @@ export function createFixtureRuntimePreparer(overrides = {}) {
       clearTimeout(timer);
       subscribed?.removeEventListener("abort", abort);
     }
+    // No capability escapes before the final source fence, confirmed settlement
+    // and sticky cancellation handling. Serialized or cloned results carry none.
+    if (result?.status === "assembled" && assembledPlan) freshPlans.set(result, assembledPlan);
     return result;
   };
 }

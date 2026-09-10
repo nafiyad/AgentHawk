@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createFixtureRuntimePreparer,
+  fixtureRuntimePlan,
   runFixtureRuntimeCommand,
 } from "./prepare-fixture-runtime.mjs";
 
@@ -40,7 +41,7 @@ function fixture() {
     open: vi.fn(async () => {
       throw new Error("unexpected fixture open");
     }),
-    opendir: vi.fn(async () => ({
+    opendir: vi.fn(async (_path: string) => ({
       read: vi.fn(async () => {
         const name = [...names, ...(state.extra ? ["unexpected"] : [])][state.index++];
         return name ? { name, isFile: () => true, isSymbolicLink: () => false } : null;
@@ -398,6 +399,201 @@ describe("fresh fixture runtime orchestration", () => {
       retainedState: "present_or_uncertain",
     });
   });
+});
+
+describe("finalized fresh-preparation capability", () => {
+  function deferred() {
+    let release: () => void = () => {};
+    let reject: (reason: unknown) => void = () => {};
+    const pending = new Promise<void>((resolve, fail) => {
+      release = resolve;
+      reject = fail;
+    });
+    return { pending, release, reject };
+  }
+
+  function holdSettlement(f: ReturnType<typeof fixture>) {
+    const closing = deferred();
+    const closed = deferred();
+    const opendir = f.io.opendir.getMockImplementation();
+    if (!opendir) throw new Error("fixture directory missing");
+    const retainedPath = join(f.destination, "synthetic-settlement-handle");
+    f.io.opendir.mockImplementation(async (path) =>
+      path === retainedPath
+        ? {
+            read: vi.fn(async () => null),
+            close: vi.fn(async () => {
+              closing.release();
+              await closed.pending;
+            }),
+          }
+        : opendir(path),
+    );
+    let observations = 0;
+    f.observe.mockImplementation(async (input) => {
+      if (++observations === 4) {
+        // The bounded storage owns this deliberately retained trusted-test
+        // handle; successful preparation still has to wait for its closure.
+        const { io } = input as { io: { opendir: (path: string) => Promise<unknown> } };
+        await io.opendir(retainedPath);
+      }
+      return { ...f.source };
+    });
+    return { closing, closed };
+  }
+
+  it("recovers the exact opaque plan only from the finalized frozen result", async () => {
+    const f = fixture();
+    const result = await f.prepare();
+    const plan = f.plan.mock.results[0]?.value;
+    expect(result).toHaveProperty("status", "assembled");
+    expect(fixtureRuntimePlan(result)).toBe(plan);
+    expect(Object.isFrozen(result)).toBe(true);
+    const written = await f.write.mock.results[0]?.value;
+    expect(result).toEqual({ ...written, sourceBinding: "observed_fresh_build", ...flags });
+    expect(Reflect.ownKeys(result)).toEqual(Reflect.ownKeys(written));
+    expect(fixtureRuntimePlan(written)).toBeUndefined();
+    expect(fixtureRuntimePlan(plan)).toBeUndefined();
+  });
+
+  it.each(["spread", "json", "structured", "prototype", "proxy"])(
+    "refuses a %s copy without weakening the original capability",
+    async (kind) => {
+      const f = fixture();
+      const result = await f.prepare();
+      const copy =
+        kind === "spread"
+          ? { ...result }
+          : kind === "json"
+            ? JSON.parse(JSON.stringify(result))
+            : kind === "structured"
+              ? structuredClone(result)
+              : kind === "prototype"
+                ? Object.create(result)
+                : new Proxy(result, {});
+      expect(fixtureRuntimePlan(copy)).toBeUndefined();
+      expect(fixtureRuntimePlan(result)).toBe(f.plan.mock.results[0]?.value);
+    },
+  );
+
+  it("never inspects arbitrary caller objects or forged success fields", () => {
+    const inspect = vi.fn(() => {
+      throw new Error("untrusted getter must not run");
+    });
+    const accessor = Object.defineProperty({}, "status", { get: inspect });
+    const proxy = new Proxy({}, { get: inspect, getPrototypeOf: inspect, ownKeys: inspect });
+    const revoked = Proxy.revocable({}, {});
+    revoked.revoke();
+    for (const input of [
+      undefined,
+      null,
+      false,
+      0,
+      "assembled",
+      Symbol("synthetic"),
+      {},
+      accessor,
+      proxy,
+      revoked.proxy,
+      Object.freeze({ status: "assembled", sourceBinding: "observed_fresh_build", ...flags }),
+    ])
+      expect(fixtureRuntimePlan(input)).toBeUndefined();
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it("does not expose freshness before the final source fence completes", async () => {
+    const f = fixture();
+    const entered = deferred();
+    const fence = deferred();
+    let observations = 0;
+    f.observe.mockImplementation(async () => {
+      if (++observations === 4) {
+        entered.release();
+        await fence.pending;
+      }
+      return { ...f.source };
+    });
+    let completed = false;
+    const pending = f.prepare().then((value) => {
+      completed = true;
+      return value;
+    });
+    await entered.pending;
+    expect(completed).toBe(false);
+    expect(fixtureRuntimePlan(await f.write.mock.results[0]?.value)).toBeUndefined();
+    expect(fixtureRuntimePlan(f.plan.mock.results[0]?.value)).toBeUndefined();
+    fence.release();
+    const result = await pending;
+    expect(fixtureRuntimePlan(result)).toBe(f.plan.mock.results[0]?.value);
+  });
+
+  it("does not expose freshness until every retained handle is closed", async () => {
+    const f = fixture();
+    const { closing, closed } = holdSettlement(f);
+    let completed = false;
+    const pending = f.prepare().then((value) => {
+      completed = true;
+      return value;
+    });
+    await closing.pending;
+    expect(completed).toBe(false);
+    expect(fixtureRuntimePlan(await f.write.mock.results[0]?.value)).toBeUndefined();
+    closed.release();
+    const result = await pending;
+    expect(result).toHaveProperty("status", "assembled");
+    expect(fixtureRuntimePlan(result)).toBe(f.plan.mock.results[0]?.value);
+  });
+
+  it.each(["source_changed", "closure_unconfirmed"])(
+    "never brands a result after final source failure %s",
+    async (reason) => {
+      const f = fixture();
+      let observations = 0;
+      f.observe.mockImplementation(async () => {
+        if (++observations === 4) throw { reason };
+        return { ...f.source };
+      });
+      const result = await f.prepare();
+      expect(result).toMatchObject({ status: "failed", reason, ...flags });
+      expect(f.write).toHaveBeenCalledOnce();
+      expect(fixtureRuntimePlan(result)).toBeUndefined();
+      expect(fixtureRuntimePlan(await f.write.mock.results[0]?.value)).toBeUndefined();
+    },
+  );
+
+  it("never brands success when final settlement fails", async () => {
+    const f = fixture();
+    const { closing, closed } = holdSettlement(f);
+    const pending = f.prepare();
+    await closing.pending;
+    closed.reject(new Error("synthetic close failure"));
+    const result = await pending;
+    expect(result).toMatchObject({ status: "failed", reason: "closure_unconfirmed", ...flags });
+    expect(fixtureRuntimePlan(result)).toBeUndefined();
+    expect(fixtureRuntimePlan(await f.write.mock.results[0]?.value)).toBeUndefined();
+  });
+
+  it.each([false, true])(
+    "cannot brand cancelled final settlement, including close failure %s",
+    async (closeFails) => {
+      const f = fixture();
+      const { closing, closed } = holdSettlement(f);
+      const controller = new AbortController();
+      const pending = createFixtureRuntimePreparer(f.overrides)(f.destination, controller.signal);
+      await closing.pending;
+      controller.abort();
+      if (closeFails) closed.reject(new Error("synthetic close failure"));
+      else closed.release();
+      const result = await pending;
+      expect(result).toMatchObject({
+        status: "failed",
+        reason: closeFails ? "closure_unconfirmed" : "cancelled",
+        ...flags,
+      });
+      expect(fixtureRuntimePlan(result)).toBeUndefined();
+      expect(fixtureRuntimePlan(await f.write.mock.results[0]?.value)).toBeUndefined();
+    },
+  );
 });
 
 describe("closed development command", () => {

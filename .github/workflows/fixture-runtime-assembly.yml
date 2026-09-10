@@ -1,4 +1,4 @@
-name: Fixture runtime assembly
+name: Fixture runtime assembly and relocation
 
 on:
   pull_request:
@@ -7,6 +7,7 @@ on:
       - "scripts/runtime-*.mjs"
       - "scripts/runtime-*.test.ts"
       - "scripts/prepare-fixture-runtime*"
+      - "scripts/relocate-fixture-runtime*"
       - "scripts/claude-artifact-download*"
       - "scripts/claude-artifact-storage*"
       - "scripts/package-policy*"
@@ -23,6 +24,7 @@ on:
       - "scripts/runtime-*.mjs"
       - "scripts/runtime-*.test.ts"
       - "scripts/prepare-fixture-runtime*"
+      - "scripts/relocate-fixture-runtime*"
       - "scripts/claude-artifact-download*"
       - "scripts/claude-artifact-storage*"
       - "scripts/package-policy*"
@@ -38,9 +40,9 @@ permissions:
 
 jobs:
   assemble:
-    name: fresh runtime assembly (Ubuntu 24.04, Node 24)
+    name: fresh runtime relocation (Ubuntu 24.04, Node 24)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Check out the exact head without retained credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,8 +73,9 @@ jobs:
           scripts/runtime-assembly-inputs.test.ts scripts/package-policy.test.ts
           scripts/claude-artifact-download.test.ts scripts/claude-artifact-storage.test.ts
           scripts/runtime-tree.test.ts
+          scripts/runtime-tree-reader.test.ts scripts/relocate-fixture-runtime.test.ts
 
-      - name: Build, acquire and independently remeasure without executing the runtime
+      - name: Build, relocate and independently remeasure without executing the runtime
         shell: bash
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -94,5 +97,5 @@ jobs:
           # Fresh dist is mandatory. Never delete old output or upload/run retained
           # trees, even on failure. Cleanup belongs to this disposable runner.
           exec env -i PATH="$PATH" LANG=C LC_ALL=C \
-            node scripts/prepare-fixture-runtime.mjs \
+            node scripts/relocate-fixture-runtime.mjs \
             "$RUNNER_TEMP/agenthawk-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"

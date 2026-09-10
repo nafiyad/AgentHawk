@@ -155,6 +155,24 @@ authorizes later execution. `executed: false` refers to the assembled runtime an
 vendor software; trusted Git/compiler/pack tools do run during development preparation.
 Portability, image isolation, host activation and native support remain unproven.
 
+[ADR 0023](adr/0023-runtime-relocation.md) adds non-executing relocation evidence.
+Only a successful preparation result, branded after final source verification and
+confirmed handle settlement, yields its current plan. Actual source files and the
+expected assembly record are independently reread through bounded regular-file
+and directory checks. The record is data, not authority. A separate private
+snapshot contains copied actual reread bytes; the writer requires that snapshot's
+exact plan and checks its inventory again before exclusive destination creation.
+Final source/destination rereads require unchanged identities and hashes within
+each tree, matching planned digests and disjoint file identities between trees.
+No filesystem copy, installed-store links, overwrite or automatic cleanup is used.
+Unconfirmed closure remains a hard failure, and partial state is retained.
+
+This is point-in-time byte equality, not atomic immunity to a same-account writer,
+publisher authentication, permission to launch, or portability proof. Node 24's
+permission model is a trusted-code guardrail, not malicious-code isolation; it
+does not establish the required OS-level checkout/store exclusion. Execution
+smokes therefore follow the separately verified contained-image boundary.
+
 The Claude lifecycle candidate implements ADR 0017 receipt-first install and
 settings-first remove. Four exact paths must be ignored/untracked before any
 artifact and under its owned lock. Real-filesystem no-replace probes, repeated

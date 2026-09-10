@@ -5,11 +5,12 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFixtureCleanupFence } from "../packages/cli/test/fixture-cleanup-fence.js";
 
-const inputs = vi.hoisted(() => ({ describe: vi.fn(), files: vi.fn() }));
+const inputs = vi.hoisted(() => ({ describe: vi.fn(), files: vi.fn(), snapshotFiles: vi.fn() }));
 vi.mock("./runtime-assembly-inputs.mjs", () => ({
   describeRuntimeAssemblyPlan: inputs.describe,
   runtimeAssemblyFiles: inputs.files,
 }));
+vi.mock("./runtime-tree-reader.mjs", () => ({ runtimeTreeSnapshotFiles: inputs.snapshotFiles }));
 
 import { createRuntimeDestinationInspector, createRuntimeTreeWriter } from "./runtime-tree.mjs";
 
@@ -20,6 +21,7 @@ beforeEach(({ signal }) => {
   fence.begin(signal);
   inputs.describe.mockReset();
   inputs.files.mockReset();
+  inputs.snapshotFiles.mockReset();
 });
 afterEach(async () => {
   vi.useRealTimers();
@@ -249,6 +251,71 @@ describe("contained fixture runtime tree with synthetic input boundary", {
     expect(f.io.open).not.toHaveBeenCalled();
     expect(f.io.opendir).not.toHaveBeenCalled();
   });
+
+  it("uses only plan-bound independently reread snapshot bytes for relocation", async () => {
+    const f = await fixture();
+    const snapshot = Object.freeze({ fixtureSnapshot: true });
+    inputs.snapshotFiles.mockImplementation((value, plan) =>
+      value === snapshot && plan === f.plan
+        ? f.files.map((file) => ({ ...file, data: Buffer.from(file.data) }))
+        : undefined,
+    );
+    inputs.files.mockImplementation(() => {
+      throw new Error("archive bytes must not substitute for rereads");
+    });
+    const result = await createRuntimeTreeWriter(f.dependencies)({
+      destination: f.destination,
+      plan: f.plan,
+      sourceSnapshot: snapshot,
+    });
+    expect(result).toMatchObject({
+      status: "assembled",
+      storedTreeSha256: f.description.plannedTreeSha256,
+    });
+    expect(inputs.snapshotFiles).toHaveBeenCalledWith(snapshot, f.plan);
+    expect(inputs.files).not.toHaveBeenCalled();
+    for (const file of f.files)
+      expect(await fs.readFile(join(f.destination, ...file.path.split("/")))).toEqual(file.data);
+  });
+
+  it.each([undefined, null, {}, { status: "measured" }])(
+    "rejects a supplied unbranded snapshot without falling back",
+    async (sourceSnapshot) => {
+      const f = await fixture();
+      rejected(
+        await createRuntimeTreeWriter(f.dependencies)({
+          destination: f.destination,
+          plan: f.plan,
+          sourceSnapshot,
+        }),
+        "invalid_plan",
+      );
+      expect(inputs.files).not.toHaveBeenCalled();
+      expect(f.io.mkdir).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["bytes", "digest", "path", "count"])(
+    "rechecks snapshot %s against the opaque plan before writes",
+    async (field) => {
+      const f = await fixture();
+      const files = f.files.map((file) => ({ ...file, data: Buffer.from(file.data) }));
+      if (field === "bytes") files[0].data[0] ^= 1;
+      if (field === "digest") files[0].sha256 = "0".repeat(64);
+      if (field === "path") files[0].path += ".different";
+      if (field === "count") files.pop();
+      inputs.snapshotFiles.mockReturnValue(files);
+      rejected(
+        await createRuntimeTreeWriter(f.dependencies)({
+          destination: f.destination,
+          plan: f.plan,
+          sourceSnapshot: {},
+        }),
+        "invalid_plan",
+      );
+      expect(f.io.mkdir).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(["win32", "darwin"])("rejects unsupported host %s before I/O", async (platform) => {
     const f = await fixture();

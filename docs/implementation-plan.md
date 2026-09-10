@@ -4,18 +4,44 @@ Date: 2026-08-20
 
 ## Current state
 
-### Active slice: fresh fixture-runtime assembly (ADR 0022)
+### Active slice: independently measured runtime relocation (ADR 0023)
+
+PR #63 delivered ADR 0022 as `43b3b8d`; all eight exact-head and post-merge
+checks, independent approval and clean local/remote main were reverified on
+2026-09-10 UTC; no open PR or issue existed at that checkpoint. Implement only
+[ADR 0023](adr/0023-runtime-relocation.md)'s bounded source reread, private
+finalized-preparation/snapshot authority, fresh relocation and independent final
+tree fences. Its acceptance criteria, expected files, threat assumptions and
+rollback precede implementation. No runtime or vendor execution. Research and
+independent design review move own-runtime smokes after contained-image preparation
+so checkout/store exclusion is observed, not inferred from Node permission flags.
+Full quality gates, exact-head independent review and hosted relocation are required.
+
+Local validation on 2026-09-10 UTC passed lint, package and explicit strict
+development-test typechecks, 2,901 tests (five existing platform skips) across
+61 suites, coverage, build, package verification, CLI help, dependency audit
+with no known vulnerabilities, and diff checks. Coverage is 94.85% statements /
+92.73% branches / 97.07% functions / 96.70% lines. The new reader has 98.14%
+statement / 96.56% branch coverage; the relocator has 97.16% / 98.91%.
+Independent review repaired first-cause cancellation reporting and separately
+passed all 279 focused tests. Published inventories remain core 38 files /
+198,888 bytes and CLI 58 files / 350,819 bytes. Frozen-head review, actual hosted
+Linux relocation and green pre/post-merge CI remain delivery gates.
+
+### Delivered slice: fresh fixture-runtime assembly (ADR 0022)
 
 PR #62 delivered ADR 0021 as `04dbfbb`; independent approval and all six exact-head
 and post-merge Quality jobs passed. Clean local/remote main and no open PR/issues
-were reverified on 2026-09-09 UTC. Implement only [ADR 0022](adr/0022-fixture-runtime-assembly.md)'s
+were reverified on 2026-09-09 UTC. Historical acceptance criteria for
+[ADR 0022](adr/0022-fixture-runtime-assembly.md)'s
 Linux development preparation: observed fresh own build/pack, six verified inputs,
 contained physical runtime, bounded independent stored-byte and directory checks.
 Research and independent design review precede implementation. Expected modules,
 adversarial acceptance criteria, trust assumptions and rollback are in that ADR.
-Run all local gates, strict development checks, independent exact-head review and
-the secretless hosted preparation gate. No vendor execution or native support;
-relocation proof, image preparation and real-host activation follow separately.
+Required delivery gates were all local checks, strict development-test checks,
+independent exact-head review and the secretless hosted preparation gate. They
+subsequently passed as recorded below. No vendor execution or native support;
+byte relocation, image preparation and real-host activation follow separately.
 
 Implementation now includes the six-input capability, fixed npm acquisition,
 physical writer, bounded directory-handle guard, observed-source reader and
@@ -29,7 +55,8 @@ pin/inventory validation in memory. The full local gate passed on 2026-09-09 UTC
 CLI help, dependency audit with no known vulnerabilities, and diff checks. All new
 logic modules exceed 90% statement and branch coverage. Published inventories remain
 core 38 files / 198,888 bytes and CLI 58 files / 350,819 bytes. Exact-head hosted
-preparation, frozen-head approval and merge remain pending. Preparation has not launched the assembled
+preparation, frozen-head approval and merge subsequently passed in PR #63, along
+with all eight post-merge checks. Preparation has not launched the assembled
 runtime or vendor software; ordinary tests exercise AgentHawk's own code.
 
 ### Delivered slice: fixed runtime dependency archive preflight (ADR 0021)
