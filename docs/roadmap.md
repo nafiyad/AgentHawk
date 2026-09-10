@@ -411,15 +411,20 @@ all seven PR checks and both post-merge workflows passed, including authenticate
 hosted acquisition without vendor execution. PR #62 delivered
 [ADR 0021](adr/0021-runtime-archive-preflight.md)'s fixed runtime-dependency archive
 preflight as `04dbfbb`, with independent approval and all six Quality jobs green
-before and after merge. The current slice is
-[ADR 0022](adr/0022-fixture-runtime-assembly.md)'s fresh six-package runtime assembly:
-derive source identity, build/pack only the reviewed own packages, verify four fixed
-external archives, create private physical files and independently remeasure them.
-Its full local gate passed with 2,721 tests and 94.66% statement / 92.44% branch
-coverage. Exact-head hosted preparation and delivery review remain pending.
-Assembly alone does not prove portability. Following slices prove independent
-relocation, prepare a contained image and implement the bounded real-host driver. Actual
-host execution and the support decision remain separate gates; no new native
-support or public release follows from these prerequisites.
+before and after merge. PR #63 delivered
+[ADR 0022](adr/0022-fixture-runtime-assembly.md)'s fresh six-package runtime assembly
+as `43b3b8d`, with independent approval and all eight checks green before and
+after merge. Its local gate passed 2,721 tests with 94.66% statement / 92.44%
+branch coverage; hosted assembly independently remeasured 1,112 physical files
+and 6,102,215 bytes with matching planned/stored hashes.
+The current slice is [ADR 0023](adr/0023-runtime-relocation.md)'s independently
+measured byte relocation, with no runtime execution. Its local gate passed
+2,901 tests with 94.85% statement / 92.73% branch coverage; exact-head hosted
+relocation, frozen-head review and pre/post-merge CI remain delivery gates.
+Research corrects the next
+dependency order: contained-image preparation precedes fixed own CLI/core/hook
+smokes that prove checkout/store exclusion. The bounded real-host driver,
+activation matrix and support decision follow separately. Neither assembly nor
+byte relocation alone proves portability, isolation, activation or native support.
 
 Milestone 16 is complete. Milestone 17's vendor-neutral contracts, conservative qualifier, typed cancellation, co-root authority, bounded aggregate evaluator, unsupported Codex compatibility candidate, closed Claude `2.1.241` fixture edge, project-settings preflight, root-bound lifecycle format, invocation verification, and receipt-aware status are complete. The Claude install/remove transaction was delivered in PR #56, merged as `1f6fd02`, with independent approval and passing CI before and after merge. It verifies ignored/untracked targets before mutation, uses an exclusive lock and actual-filesystem no-replace probes, publishes the receipt before settings, removes settings before the receipt, and preserves unverified state for recovery. Activation remains `unproven`, every Claude support row remains unsupported, and lifecycle operations contact no providers. Assembly, independent relocation, contained image preparation and the bounded driver precede ADR 0017's full isolated real-host activation matrix and separate support decision; no native support follows merely from installation.

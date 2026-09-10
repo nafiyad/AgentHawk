@@ -8,6 +8,8 @@ export default defineConfig({
         "scripts/package-policy.mjs",
         "scripts/runtime-assembly-inputs.mjs",
         "scripts/runtime-tree.mjs",
+        "scripts/runtime-tree-reader.mjs",
+        "scripts/relocate-fixture-runtime.mjs",
         "scripts/runtime-build-process.mjs",
         "scripts/runtime-build-source.mjs",
         "scripts/prepare-fixture-runtime.mjs",

@@ -4,6 +4,7 @@ import * as filesystem from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { createBoundedRuntimeStorage } from "./claude-artifact-storage.mjs";
 import { describeRuntimeAssemblyPlan, runtimeAssemblyFiles } from "./runtime-assembly-inputs.mjs";
+import { runtimeTreeSnapshotFiles } from "./runtime-tree-reader.mjs";
 
 const OPERATION_MS = 240_000;
 const MAX_IO = 262_144;
@@ -189,9 +190,11 @@ export function createRuntimeDestinationInspector(overrides = {}) {
 }
 export const inspectRuntimeDestination = createRuntimeDestinationInspector();
 
-function verifiedFiles(plan) {
+function verifiedFiles(plan, sourceSnapshot, useSnapshot) {
   const description = describeRuntimeAssemblyPlan(plan);
-  const source = runtimeAssemblyFiles(plan);
+  const source = useSnapshot
+    ? runtimeTreeSnapshotFiles(sourceSnapshot, plan)
+    : runtimeAssemblyFiles(plan);
   if (!description || !Array.isArray(source) || source.length === 0 || source.length > 1400)
     fail("invalid_plan");
   const files = [];
@@ -235,7 +238,11 @@ export function createRuntimeTreeWriter(overrides = {}) {
   return createOperation(overrides, async (context) => {
     const { input, io, stat, check, checkAncestors, uid, destination, markRetained } = context;
     // Only the private WeakMap brand yields bytes. Plain inventories cannot authorize writes.
-    const { description, files } = verifiedFiles(input.plan);
+    const { description, files } = verifiedFiles(
+      input.plan,
+      input.sourceSnapshot,
+      Object.hasOwn(input, "sourceSnapshot"),
+    );
     const directories = new Map();
     const expected = new Map([[destination, new Set()]]);
     const identities = new Map();

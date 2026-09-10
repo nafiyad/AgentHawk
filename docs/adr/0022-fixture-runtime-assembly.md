@@ -2,6 +2,10 @@
 
 ## Status and scope
 
+Delivered in PR #63 as `43b3b8d`; reviewed head `462f64b` received independent
+approval and all eight pre-merge and post-merge checks passed. Actual hosted
+assembly independently measured 1,112 files / 6,102,215 bytes with matching planned
+and stored tree digests. Live main and checks were reverified 2026-09-10 UTC.
 Implemented after PR #62 (`04dbfbb`), which received independent approval and all six
 pre-merge and post-merge Quality jobs green. This development-only Linux command
 materializes the six-package fixture runtime and independently
@@ -15,7 +19,7 @@ Lint, package and explicit development-test typechecks, build, package verificat
 CLI help, dependency audit and diff checks passed. Independent working-tree review
 found no remaining blocker after preserving unconfirmed transport closure. Exact-head
 hosted assembly, frozen-commit approval, feature delivery and post-merge verification
-remain required; local fixtures are not substituted for that actual preparation.
+subsequently passed; local fixtures were not substituted for actual preparation.
 
 ## Research and decision
 
@@ -114,9 +118,10 @@ The independent reviewer owns no implementation files. Full gates and exact-head
 review precede feature-only delivery. Rollback is a normal revert; retained state
 requires owner review and is never automatically deleted by the next invocation.
 
-The following slice proves relocation with separately measured copies and fixed
-own CLI/core/hook smokes without checkout/store access. Image preparation and
-actual Claude execution remain separate reviewed boundaries after that proof.
+[ADR 0023](0023-runtime-relocation.md) splits separately measured byte relocation
+from execution proof. Contained-image preparation must precede fixed own
+CLI/core/hook smokes with observed checkout/store exclusion; Node permission flags
+alone do not prove that OS boundary. Actual Claude execution remains separate.
 
 The preparation command retains its fresh `<destination>.build` scratch directory
 and the controlled own `dist` outputs. It never removes them, even after success.
