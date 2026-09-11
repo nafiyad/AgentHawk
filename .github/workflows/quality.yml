@@ -46,6 +46,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Strictly check fixed image-base metadata code and tests
+        run: >-
+          pnpm exec tsc --ignoreConfig --noEmit --strict --allowJs --checkJs
+          --module NodeNext --moduleResolution NodeNext --target ES2023
+          --skipLibCheck --types node --typeRoots packages/cli/node_modules/@types
+          scripts/fixture-image-base.mjs scripts/fixture-image-base.test.ts
+          scripts/fixtures/image-base-metadata.mjs
+
       - name: Test
         run: pnpm test
 

@@ -2,8 +2,12 @@
 
 ## Status and scope
 
-Implemented on 2026-09-10 UTC after research and independent design review;
-exact-head hosted relocation, frozen-head approval and delivery remain pending.
+Delivered in PR #64 on 2026-09-10 UTC, reviewed head `d9b3ec6`, normal merge
+`28f4425`. Independent approval, all seven exact-head checks and all seven
+post-merge checks passed. Hosted relocation measured 1,112 files / 6,102,215
+bytes, with planned/source/destination hashes all
+`af1baec9c9de0e601e0c9ab51384eba3f2c11f0212e7acfcc0f48cd0c2b408e2`.
+Execution, portability and native-support flags remained false.
 PR #63 delivered ADR 0022 as `43b3b8d`, with all eight
 exact-head and post-merge checks green. This slice revalidates the actual fresh
 assembly and copies its verified bytes into a separate fresh physical tree.
@@ -16,7 +20,8 @@ coverage. Both new logic modules exceed 90% statement and branch coverage.
 Lint, package and explicit strict development-test typechecks, build, package
 verification, CLI help, dependency audit and diff checks passed. Independent
 review found no remaining blocker and separately passed all 279 focused tests.
-This local fixture evidence does not substitute for the hosted relocation gate.
+The local fixture evidence and independently measured hosted result are distinct;
+neither establishes runtime execution or isolation.
 
 ## Research and decision
 

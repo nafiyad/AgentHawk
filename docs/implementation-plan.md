@@ -4,7 +4,34 @@ Date: 2026-08-20
 
 ## Current state
 
-### Active slice: independently measured runtime relocation (ADR 0023)
+### Active slice: fixed image-base metadata preflight (ADR 0024)
+
+Local/remote main `28f4425`, no open PR/issues and all seven post-merge checks
+were reverified 2026-09-11 UTC. Research and independent design review identify
+the next smallest image-preparation prerequisite: the fixed Linux/amd64 Node
+base manifest/config chain, not layer acquisition or image construction.
+[ADR 0024](adr/0024-image-base-metadata-preflight.md) records primary sources,
+observed pins, scope, acceptance criteria, expected files and rollback before
+implementation. Require raw-byte pins before decoding, intrinsic byte snapshots,
+private metadata-only capability, adversarial tests, all local gates, independent
+exact-head review and green pre/post-merge CI. No Docker, vendor or runtime launch.
+
+Local validation passed 2,914 tests across 62 suites with five existing platform
+skips; coverage is 94.88% statements / 92.75% branches / 97.08% functions /
+96.72% lines. The new verifier has 100% in all four measures. Lint, package
+typecheck, strict semantic checkJs/TypeScript, build, package verification, CLI
+help, dependency audit and diff checks passed. Independent working-tree review
+passed all 13 focused tests and strict checks, with fresh public-byte evidence
+through the production verifier. Exact-head review and pre/post-merge CI remain
+delivery gates; no layer bytes, prepared image, execution or support is proven.
+
+### Delivered slice: independently measured runtime relocation (ADR 0023)
+
+PR #64 delivered this slice as `28f4425`. Its exact reviewed head was `d9b3ec6`;
+all seven checks passed before and after merge. Hosted relocation independently
+measured 1,112 files / 6,102,215 bytes with matching planned/source/destination
+digests. Execution, portability and native-support flags remained false. The
+following records the historical implementation and local validation.
 
 PR #63 delivered ADR 0022 as `43b3b8d`; all eight exact-head and post-merge
 checks, independent approval and clean local/remote main were reverified on
@@ -26,7 +53,7 @@ statement / 96.56% branch coverage; the relocator has 97.16% / 98.91%.
 Independent review repaired first-cause cancellation reporting and separately
 passed all 279 focused tests. Published inventories remain core 38 files /
 198,888 bytes and CLI 58 files / 350,819 bytes. Frozen-head review, actual hosted
-Linux relocation and green pre/post-merge CI remain delivery gates.
+Linux relocation and green pre/post-merge CI subsequently passed in PR #64.
 
 ### Delivered slice: fresh fixture-runtime assembly (ADR 0022)
 
