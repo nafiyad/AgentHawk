@@ -173,6 +173,25 @@ permission model is a trusted-code guardrail, not malicious-code isolation; it
 does not establish the required OS-level checkout/store exclusion. Execution
 smokes therefore follow the separately verified contained-image boundary.
 
+[ADR 0024](adr/0024-image-base-metadata-preflight.md) adds only fixed base-image
+metadata preflight. Two detached bounded byte snapshots must match compiled raw
+size/hash pins before decoding. Exact-wire pins exclude alternate configuration,
+embedded download URLs, platform/media drift, build triggers and parser ambiguity.
+The linked manifest/configuration fixtures are independently checked for their
+closed profile. Private success state holds only copied metadata; cloned public
+summaries cannot recover it and no caller pin can expand acceptance.
+
+Layer descriptors, compressed-size totals and uncompressed diff IDs remain
+declarations, not verified image bytes. Initial registry/TLS/pin selection is a
+trust assumption, not signature verification, benignness or a vulnerability scan.
+The Node base's environment and entrypoint are not accepted as the final launch
+profile. A later builder must inspect inputs before any inherited ONBUILD trigger
+could run and close every acquisition/context path; checking the resulting image
+alone is too late. Current Docker absent/null inspection differences remain
+fail-closed compatibility gaps pending separately reviewed daemon observations.
+No image creation, Docker call, layer acquisition, runtime or vendor execution,
+isolation, activation or native support follows from metadata verification.
+
 The Claude lifecycle candidate implements ADR 0017 receipt-first install and
 settings-first remove. Four exact paths must be ignored/untracked before any
 artifact and under its owned lock. Real-filesystem no-replace probes, repeated

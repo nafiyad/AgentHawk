@@ -417,12 +417,16 @@ as `43b3b8d`, with independent approval and all eight checks green before and
 after merge. Its local gate passed 2,721 tests with 94.66% statement / 92.44%
 branch coverage; hosted assembly independently remeasured 1,112 physical files
 and 6,102,215 bytes with matching planned/stored hashes.
-The current slice is [ADR 0023](adr/0023-runtime-relocation.md)'s independently
-measured byte relocation, with no runtime execution. Its local gate passed
-2,901 tests with 94.85% statement / 92.73% branch coverage; exact-head hosted
-relocation, frozen-head review and pre/post-merge CI remain delivery gates.
-Research corrects the next
-dependency order: contained-image preparation precedes fixed own CLI/core/hook
+PR #64 delivered [ADR 0023](adr/0023-runtime-relocation.md)'s independently
+measured byte relocation as `28f4425`, with no runtime execution. Its local gate
+passed 2,901 tests with 94.85% statement / 92.73% branch coverage. Independent
+approval, all seven exact-head checks and all seven post-merge checks passed;
+hosted planned/source/destination digests match for 1,112 files / 6,102,215 bytes.
+The current slice is [ADR 0024](adr/0024-image-base-metadata-preflight.md)'s fixed
+base manifest/configuration preflight. This verifies small pinned metadata only,
+not the advertised layers or a prepared image. Its research identifies inherited
+image defaults and Docker inspection representation as later explicit gates.
+The dependency order remains: contained-image preparation precedes fixed own CLI/core/hook
 smokes that prove checkout/store exclusion. The bounded real-host driver,
 activation matrix and support decision follow separately. Neither assembly nor
 byte relocation alone proves portability, isolation, activation or native support.
