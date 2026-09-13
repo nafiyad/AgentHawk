@@ -192,6 +192,33 @@ fail-closed compatibility gaps pending separately reviewed daemon observations.
 No image creation, Docker call, layer acquisition, runtime or vendor execution,
 isolation, activation or native support follows from metadata verification.
 
+[ADR 0025](adr/0025-image-layer-verification.md) specifies the next compressed-byte
+acquisition boundary. Only the exact private metadata result yields the fixed
+ordered layer descriptors. The separate Docker transport cannot broaden existing
+Claude/npm transport policy. Anonymous tokens are read from one fixed pull-only
+auth endpoint and sent only to the registry, never its one allowed digest-bound
+CloudFront redirect. No account credentials, cookie jar, proxy environment,
+challenge-selected realm, range/resume, retries or alternate CDN are admitted.
+Tokens, signed URLs and raw failures are neither logged nor stored.
+
+Explicit raw-header/framing, chunk, request, elapsed-time and total-byte limits
+bound acquisition. Streamed counts/hashes and independent stored-file rereads
+must both match, with complete flat-directory inventory, exclusive private regular
+single-link files, safe canonical ancestors and pre/open/post identity fences.
+Tracked I/O settlement preserves first-cause cancellation and gives unconfirmed
+closure precedence over ordinary failure. Partial state is retained without
+automatic deletion. Synthetic test-world results cannot recover production-private
+observations; public receipts and copied summaries are not authority.
+
+The stored result is point-in-time compressed-byte evidence, not an immutable
+snapshot against same-account/privileged writers or hostile filesystems. Future
+construction must revalidate actual files independently. Hash equality does not
+authenticate a publisher, verify uncompressed diff IDs or tar semantics, establish
+current vulnerability status, prepare an image, or permit execution. Registry/CDN
+availability, anonymous rate limits, TLS/DNS and host trust remain external risks.
+Actual fixed-layer hosted verification is required before delivery of this slice;
+no native-support row changes because its byte-verification fixtures pass.
+
 The Claude lifecycle candidate implements ADR 0017 receipt-first install and
 settings-first remove. Four exact paths must be ignored/untracked before any
 artifact and under its owned lock. Real-filesystem no-replace probes, repeated

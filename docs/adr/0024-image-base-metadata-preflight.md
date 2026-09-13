@@ -2,9 +2,9 @@
 
 ## Status and scope
 
-Implemented 2026-09-11 UTC after research, a written scoped plan and independent
-design review. Local validation and working-tree review pass; exact-head review,
-CI and delivery remain pending for this image-preparation prerequisite.
+Delivered in PR #65 on 2026-09-11 UTC, reviewed head `c330bf7`, normal merge
+`2edd305`, after research, written plan and independent agent approval. Local
+gates, all six exact-head and all six post-merge Quality checks passed.
 ADR 0023 was delivered in PR #64 as `28f4425`; all seven checks passed before and
 after merge. This slice verifies only two small fixed image-metadata documents.
 It does not prepare an image, download layers, contact Docker, start services,
@@ -126,7 +126,8 @@ The new verifier has 100% coverage in all four measures. Independent review
 separately passed all 13 focused tests and strict checks. Review repaired shared
 memory disguised with an ArrayBuffer prototype; intrinsic branding and regression
 tests now reject it. Package inventories remain core 38 files / 198,888 bytes
-and CLI 58 files / 350,819 bytes. Exact-head review and CI still gate delivery.
+and CLI 58 files / 350,819 bytes. Exact-head review and pre/post-merge CI passed
+before delivery was declared.
 
 ## Next boundary
 

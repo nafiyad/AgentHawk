@@ -422,10 +422,24 @@ measured byte relocation as `28f4425`, with no runtime execution. Its local gate
 passed 2,901 tests with 94.85% statement / 92.73% branch coverage. Independent
 approval, all seven exact-head checks and all seven post-merge checks passed;
 hosted planned/source/destination digests match for 1,112 files / 6,102,215 bytes.
-The current slice is [ADR 0024](adr/0024-image-base-metadata-preflight.md)'s fixed
-base manifest/configuration preflight. This verifies small pinned metadata only,
-not the advertised layers or a prepared image. Its research identifies inherited
-image defaults and Docker inspection representation as later explicit gates.
+PR #65 delivered [ADR 0024](adr/0024-image-base-metadata-preflight.md)'s fixed
+base manifest/configuration preflight as `2edd305`, reviewed head `c330bf7`, with
+independent approval and all six checks green before and after merge. Its local
+gate passed 2,914 tests (five existing skips), 94.88% statement / 92.75% branch
+coverage and 100% coverage for the verifier. It verifies small pinned metadata
+only, not the advertised layers or a prepared image.
+The current slice is [ADR 0025](adr/0025-image-layer-verification.md)'s bounded
+eight-layer acquisition and independent stored-byte verification. Research and
+written acceptance criteria precede code: private descriptor authority, a closed
+anonymous Docker transport, sequential exact-size/hash checks, private retained
+files, bounded rereads and confirmed settlement. No extraction, construction or
+Docker/runtime/vendor execution. Exact-head review and actual secretless hosted
+verification are delivery gates, not claims supplied by a JSON receipt.
+Its complete local gate passes 3,137 tests (five existing skips) with 94.87%
+statement / 92.89% branch coverage; the independent working-tree reviewer separately
+passed all 223 focused tests and strict checking. Actual blob verification remains
+a hosted gate; no image preparation or native support is implied.
+Inherited image defaults and Docker inspection representation remain later gates.
 The dependency order remains: contained-image preparation precedes fixed own CLI/core/hook
 smokes that prove checkout/store exclusion. The bounded real-host driver,
 activation matrix and support decision follow separately. Neither assembly nor

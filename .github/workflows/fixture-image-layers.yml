@@ -1,0 +1,67 @@
+name: Fixed image-layer verification
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/fixture-image-layers.yml"
+      - "scripts/fixture-image-*.mjs"
+      - "scripts/fixture-image-*.test.ts"
+      - "scripts/verify-fixture-image-layers.mjs"
+      - "scripts/verify-fixture-image-layers.test.ts"
+      - "scripts/fixtures/image-base-metadata.mjs"
+      - "scripts/claude-artifact-storage.mjs"
+      - "scripts/claude-artifact-storage.test.ts"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/fixture-image-layers.yml"
+      - "scripts/fixture-image-*.mjs"
+      - "scripts/fixture-image-*.test.ts"
+      - "scripts/verify-fixture-image-layers.mjs"
+      - "scripts/verify-fixture-image-layers.test.ts"
+      - "scripts/fixtures/image-base-metadata.mjs"
+      - "scripts/claude-artifact-storage.mjs"
+      - "scripts/claude-artifact-storage.test.ts"
+
+permissions:
+  contents: read
+
+jobs:
+  fixed-layer-bytes:
+    name: fixed image-layer bytes (Ubuntu 24.04, Node 24)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact source without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js without package caching
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          architecture: x64
+          package-manager-cache: false
+
+      - name: Verify compressed bytes without extraction or execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT:-}" != "github-hosted" || "${RUNNER_OS:-}" != "Linux" || "${RUNNER_ARCH:-}" != "X64" ]]; then
+            printf '%s\n' 'Refusing an unsupported runner.' >&2
+            exit 1
+          fi
+          if [[ ! "${GITHUB_RUN_ID:-}" =~ ^[1-9][0-9]{0,19}$ || ! "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]{0,19}$ || "${RUNNER_TEMP:-}" != /* ]]; then
+            printf '%s\n' 'Refusing an invalid temporary destination.' >&2
+            exit 1
+          fi
+          umask 077
+          # No install, extraction, Docker, vendor launch, cache or artifact upload.
+          # Retained data belongs only to this disposable hosted runner's lifetime.
+          # The command refuses unsafe ancestors and any existing destination.
+          exec env -i PATH="$PATH" LANG=C LC_ALL=C \
+            node scripts/verify-fixture-image-layers.mjs \
+            "$RUNNER_TEMP/agenthawk-image-layers-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
