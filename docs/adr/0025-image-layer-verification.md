@@ -183,5 +183,17 @@ unchanged: core 38 files / 198,888 bytes, CLI 58 files / 350,819 bytes.
 Actual hosted layer verification and exact-head/pre/post-merge checks remain gates;
 local fixture success does not prove complete acquisition or delivery.
 
+Initial PR #66 head `04083bf` passed the actual hosted fixed-layer check: eight
+layers / 409,613,156 compressed bytes, with every construction/execution/support
+flag false. A separately triggered legacy runtime workflow correctly blocked merge
+at strict checking: the new production storage declaration was incompatible with
+its deliberately minimal or malformed test inputs. A test-local adversarial port
+now admits unknown inputs/results for those runtime-validation tests while keeping
+production types, runtime code, assertions and bounds unchanged. The complete
+legacy strict command is also included in Quality. Independent repair review
+passed it and all 278 combined storage/image tests. All discovered workflows,
+including retained-artifact/runtime preparation, must pass again on the repaired
+head; the initial layer result alone is not delivery approval.
+
 Next: separately reviewed image construction and independent inspection, then
 isolated own-runtime smokes, bounded vendor driver, activation and support gates.

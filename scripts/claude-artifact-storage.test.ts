@@ -1,12 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  createBoundedArtifactStorage,
-  createBoundedRuntimeStorage,
+  createBoundedArtifactStorage as artifactStorage,
+  createBoundedRuntimeStorage as runtimeStorage,
 } from "./claude-artifact-storage.mjs";
 
 const PRIVATE = "fixture-private-storage-path-error";
 const IO_NAMES = ["realpath", "lstat", "mkdir", "open"] as const;
 const HANDLE_NAMES = ["stat", "read", "write", "sync", "close"] as const;
+
+// This adversarial port deliberately admits malformed inputs and minimal mock
+// results to exercise runtime rejection, forwarding and settlement. It is test-
+// local: production callers retain the strict Node filesystem declaration.
+// Unknown return values require assertions, never fabricated BigIntStats.
+type FixtureCall = (...args: unknown[]) => Promise<unknown>;
+type FixtureFilesystem = Record<Exclude<(typeof IO_NAMES)[number], "open">, FixtureCall> & {
+  open(...args: unknown[]): Promise<Readonly<Record<(typeof HANDLE_NAMES)[number], FixtureCall>>>;
+};
+type FixtureRuntimeFilesystem = FixtureFilesystem & {
+  lstatIfPresent: FixtureCall;
+  opendir(...args: unknown[]): Promise<Readonly<Record<"read" | "close", FixtureCall>>>;
+};
+type FixtureGuard<T> = Readonly<{ filesystem: Readonly<T>; settle(): Promise<boolean> }>;
+const createBoundedArtifactStorage = artifactStorage as unknown as (
+  filesystem: unknown,
+  signal: unknown,
+) => FixtureGuard<FixtureFilesystem>;
+const createBoundedRuntimeStorage = runtimeStorage as unknown as (
+  filesystem: unknown,
+  signal: unknown,
+) => FixtureGuard<FixtureRuntimeFilesystem>;
+
 const signal = () => new AbortController().signal;
 
 function deferred<T = unknown>() {

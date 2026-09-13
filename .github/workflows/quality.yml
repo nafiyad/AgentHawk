@@ -64,6 +64,18 @@ jobs:
           scripts/verify-fixture-image-layers.mjs scripts/verify-fixture-image-layers.test.ts
           scripts/fixture-image-workflow.test.ts
 
+      - name: Strictly check retained runtime boundary tests
+        run: >-
+          pnpm exec tsc --ignoreConfig --noEmit --strict --allowJs
+          --module NodeNext --moduleResolution NodeNext --target ES2023
+          --skipLibCheck --types node --typeRoots packages/cli/node_modules/@types
+          scripts/runtime-build-process.test.ts scripts/runtime-build-source.test.ts
+          scripts/prepare-fixture-runtime.test.ts scripts/runtime-archive-policy.test.ts
+          scripts/runtime-assembly-inputs.test.ts scripts/package-policy.test.ts
+          scripts/claude-artifact-download.test.ts scripts/claude-artifact-storage.test.ts
+          scripts/runtime-tree.test.ts scripts/runtime-tree-reader.test.ts
+          scripts/relocate-fixture-runtime.test.ts
+
       - name: Test
         run: pnpm test
 

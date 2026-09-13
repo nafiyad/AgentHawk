@@ -27,6 +27,11 @@ build, package verification, CLI smokes, dependency audit and diff checks pass.
 Independent working-tree review passed all 223 focused tests and strict checking.
 The final production metadata probe matched both pins without local layer downloads.
 Exact-head review and actual hosted pre/post-merge verification still gate delivery.
+Initial PR #66 layer acquisition passed, but a legacy strict-check incompatibility
+in adversarial storage fixtures blocked merge. The repair isolates only test input
+types and adds the legacy strict command to Quality; production behavior and all
+assertions remain unchanged. Independent repair review passed 278 focused tests.
+All discovered checks must pass on the repaired head before a normal merge.
 
 ### Delivered slice: fixed image-base metadata preflight (ADR 0024)
 
