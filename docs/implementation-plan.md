@@ -4,7 +4,35 @@ Date: 2026-08-20
 
 ## Current state
 
-### Active slice: fixed image-base metadata preflight (ADR 0024)
+### Active slice: bounded fixed image-layer verification (ADR 0025)
+
+Clean local/remote main `2edd305`, no open PR/issues and all six exact-main checks
+were reverified 2026-09-12 UTC. Historical unmerged-looking branches belong to
+already merged PRs #5/#9 and are not unfinished slices. Research and independent
+design review select streamed private compressed-blob storage plus independent
+stored-byte remeasurement; no extraction, construction, Docker or execution.
+[ADR 0025](adr/0025-image-layer-verification.md) records the sources, observed
+metadata/redirect shapes, closed transport/descriptor authority, resource limits,
+adversarial criteria, expected files, rollback and residual risks before code.
+Implement its separate fixed Docker transport, capability-derived eight-layer
+plan, bounded private writer/rereader, secretless hosted proof, strict development
+checks and public threat-model/roadmap updates. Require the full local gate,
+independent exact-head review and all pre/post-merge CI before declaring delivery.
+Retained files and JSON summaries never authorize image construction or launch.
+
+Implemented and locally validated 2026-09-13 UTC: 3,137 tests pass across 66 suites,
+with five existing platform skips; coverage is 94.87% statements / 92.89% branches /
+97.04% functions / 96.72% lines. Lint, package and strict development typechecks,
+build, package verification, CLI smokes, dependency audit and diff checks pass.
+Independent working-tree review passed all 223 focused tests and strict checking.
+The final production metadata probe matched both pins without local layer downloads.
+Exact-head review and actual hosted pre/post-merge verification still gate delivery.
+
+### Delivered slice: fixed image-base metadata preflight (ADR 0024)
+
+PR #65 delivered this slice as `2edd305`, reviewed head `c330bf7`, after independent
+agent approval and all six exact-head plus all six exact-merge Quality checks.
+The following describes its historical implementation and local validation.
 
 Local/remote main `28f4425`, no open PR/issues and all seven post-merge checks
 were reverified 2026-09-11 UTC. Research and independent design review identify
@@ -22,8 +50,8 @@ skips; coverage is 94.88% statements / 92.75% branches / 97.08% functions /
 typecheck, strict semantic checkJs/TypeScript, build, package verification, CLI
 help, dependency audit and diff checks passed. Independent working-tree review
 passed all 13 focused tests and strict checks, with fresh public-byte evidence
-through the production verifier. Exact-head review and pre/post-merge CI remain
-delivery gates; no layer bytes, prepared image, execution or support is proven.
+through the production verifier. Exact-head review and pre/post-merge CI subsequently
+passed in PR #65; no layer bytes, prepared image, execution or support was proven.
 
 ### Delivered slice: independently measured runtime relocation (ADR 0023)
 

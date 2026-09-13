@@ -54,6 +54,16 @@ jobs:
           scripts/fixture-image-base.mjs scripts/fixture-image-base.test.ts
           scripts/fixtures/image-base-metadata.mjs
 
+      - name: Strictly check fixed image-layer code and tests
+        run: >-
+          pnpm exec tsc --ignoreConfig --noEmit --strict --allowJs --checkJs
+          --module NodeNext --moduleResolution NodeNext --target ES2023
+          --skipLibCheck --types node --typeRoots packages/cli/node_modules/@types
+          scripts/fixture-image-layer-policy.mjs scripts/fixture-image-layer-policy.test.ts
+          scripts/fixture-image-download.mjs scripts/fixture-image-download.test.ts
+          scripts/verify-fixture-image-layers.mjs scripts/verify-fixture-image-layers.test.ts
+          scripts/fixture-image-workflow.test.ts
+
       - name: Test
         run: pnpm test
 

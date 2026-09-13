@@ -5,6 +5,9 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: [
+        "scripts/fixture-image-layer-policy.mjs",
+        "scripts/fixture-image-download.mjs",
+        "scripts/verify-fixture-image-layers.mjs",
         "scripts/fixture-image-base.mjs",
         "scripts/package-policy.mjs",
         "scripts/runtime-assembly-inputs.mjs",
